@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: x86_64-pc-windows-msvc
+          os: windows-latest
+        - target: x86_64-unknown-linux-gnu
+          os: ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Debug build
+      run: cargo build --locked --verbose --target ${{ matrix.target }}
+    
+    - name: Release build
+      run: cargo build --release --locked --verbose --target ${{ matrix.target }}
+
+    - name: Run tests (Debug)
+      run: cargo test --locked --verbose --all-features --target ${{ matrix.target }}
+
+  code_guidelines:
+    runs-on: ubuntu-latest
+    name: Code guidelines
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: fmt
+      run: cargo fmt --check
+
+    - name: clippy
+      run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+    - name: machete
+      uses: bnjbvr/cargo-machete@main
+
+  linelint:
+    runs-on: ubuntu-latest
+    name: Linelint
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fernandrone/linelint@0.0.6
+        id: linelint

@@ -829,7 +829,8 @@ pub async fn nfsproc3_readdirplus(
     };
 
     let dirversion = if let Ok(ref dir_attr) = dir_attr_maybe {
-        let cvf_version = ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
+        let cvf_version =
+            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
         cvf_version.to_be_bytes()
     } else {
         nfs::cookieverf3::default()
@@ -1021,7 +1022,8 @@ pub async fn nfsproc3_readdir(
     };
 
     let dirversion = if let Ok(ref dir_attr) = dir_attr_maybe {
-        let cvf_version = ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
+        let cvf_version =
+            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
         cvf_version.to_be_bytes()
     } else {
         nfs::cookieverf3::default()
