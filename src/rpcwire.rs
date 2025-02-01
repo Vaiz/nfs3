@@ -47,10 +47,16 @@ async fn handle_rpc(
             return Ok(true);
         }
 
-        if context.transaction_tracker.is_retransmission(xid, &context.client_addr) {
+        if context
+            .transaction_tracker
+            .is_retransmission(xid, &context.client_addr)
+        {
             // This is a retransmission
             // Drop the message and return
-            debug!("Retransmission detected, xid: {}, client_addr: {}, call: {:?}", xid, context.client_addr, call);
+            debug!(
+                "Retransmission detected, xid: {}, client_addr: {}, call: {:?}",
+                xid, context.client_addr, call
+            );
             return Ok(false);
         }
 
@@ -77,8 +83,11 @@ async fn handle_rpc(
                 prog_unavail_reply_message(xid).serialize(output)?;
                 Ok(())
             }
-        }.map(|_| true);
-        context.transaction_tracker.mark_processed(xid, &context.client_addr);
+        }
+        .map(|_| true);
+        context
+            .transaction_tracker
+            .mark_processed(xid, &context.client_addr);
         res
     } else {
         error!("Unexpectedly received a Reply instead of a Call");
@@ -127,7 +136,7 @@ async fn read_fragment(
 
 pub async fn write_fragment(
     socket: &mut tokio::net::TcpStream,
-    buf: &Vec<u8>,
+    buf: &[u8],
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
     assert!(buf.len() < (1 << 31));

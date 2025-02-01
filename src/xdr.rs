@@ -4,8 +4,9 @@ use std::io::{Read, Write};
 pub type XDREndian = BigEndian;
 use crate::nfs::nfsstring;
 
+/// XDR trait
+///
 /// See https://datatracker.ietf.org/doc/html/rfc1014
-
 #[allow(clippy::upper_case_acronyms)]
 pub trait XDR {
     fn serialize<R: Write>(&self, dest: &mut R) -> std::io::Result<()>;

@@ -265,10 +265,10 @@ pub struct call_body {
     /* procedure specific parameters start here */
 }
 XDRStruct!(call_body, rpcvers, prog, vers, proc, cred, verf);
+
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
 #[repr(u32)]
-
 pub enum reply_body {
     MSG_ACCEPTED(accepted_reply),
     MSG_DENIED(rejected_reply),
