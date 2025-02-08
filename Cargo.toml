@@ -7,3 +7,5 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 authors = ["Vaiz"]
+homepage = "https://github.com/Vaiz/nfsserve"
+repository = "https://github.com/Vaiz/nfsserve"

@@ -2,13 +2,11 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-
-use nfsserve::{
-    nfs::{
-        self, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, specdata3,
-    },
-    tcp::*,
-    vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities},
+use nfs3_server::tcp::*;
+use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
+use nfs3_server::xdrgen::nfsv3::{
+    self as nfs, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3,
+    specdata3,
 };
 
 #[derive(Debug, Clone)]
@@ -17,18 +15,18 @@ enum FSContents {
     Directory(Vec<fileid3>),
 }
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct FSEntry {
     id: fileid3,
     attr: fattr3,
-    name: filename3,
+    name: filename3<'static>,
     parent: fileid3,
     contents: FSContents,
 }
 
-fn make_file(name: &str, id: fileid3, parent: fileid3, contents: &[u8]) -> FSEntry {
+fn make_file(name: filename3<'static>, id: fileid3, parent: fileid3, contents: &[u8]) -> FSEntry {
     let attr = fattr3 {
-        ftype: ftype3::NF3REG,
+        type_: ftype3::NF3REG,
         mode: 0o755,
         nlink: 1,
         uid: 507,
@@ -45,15 +43,20 @@ fn make_file(name: &str, id: fileid3, parent: fileid3, contents: &[u8]) -> FSEnt
     FSEntry {
         id,
         attr,
-        name: name.as_bytes().into(),
+        name,
         parent,
         contents: FSContents::File(contents.to_vec()),
     }
 }
 
-fn make_dir(name: &str, id: fileid3, parent: fileid3, contents: Vec<fileid3>) -> FSEntry {
+fn make_dir(
+    name: filename3<'static>,
+    id: fileid3,
+    parent: fileid3,
+    contents: Vec<fileid3>,
+) -> FSEntry {
     let attr = fattr3 {
-        ftype: ftype3::NF3DIR,
+        type_: ftype3::NF3DIR,
         mode: 0o777,
         nlink: 1,
         uid: 507,
@@ -70,7 +73,7 @@ fn make_dir(name: &str, id: fileid3, parent: fileid3, contents: Vec<fileid3>) ->
     FSEntry {
         id,
         attr,
-        name: name.as_bytes().into(),
+        name,
         parent,
         contents: FSContents::Directory(contents),
     }
@@ -92,22 +95,32 @@ impl Default for DemoFS {
         //      |-thisworks.txt
         //
         let entries = vec![
-            make_file("", 0, 0, &[]), // fileid 0 is special
+            make_file("".as_bytes().into(), 0, 0, &[]), // fileid 0 is special
             make_dir(
-                "/",
+                "/".as_bytes().into(),
                 1,             // current id. Must match position in entries
                 1,             // parent id
                 vec![2, 3, 4], // children
             ),
             make_file(
-                "a.txt",
+                "a.txt".as_bytes().into(),
                 2, // current id
                 1, // parent id
                 "hello world\n".as_bytes(),
             ),
-            make_file("b.txt", 3, 1, "Greetings to xet data\n".as_bytes()),
-            make_dir("another_dir", 4, 1, vec![5]),
-            make_file("thisworks.txt", 5, 4, "i hope\n".as_bytes()),
+            make_file(
+                "b.txt".as_bytes().into(),
+                3,
+                1,
+                "Greetings to xet data\n".as_bytes(),
+            ),
+            make_dir("another_dir".as_bytes().into(), 4, 1, vec![5]),
+            make_file(
+                "thisworks.txt".as_bytes().into(),
+                5,
+                4,
+                "i hope\n".as_bytes(),
+            ),
         ];
 
         DemoFS {
@@ -158,7 +171,7 @@ impl NFSFileSystem for DemoFS {
             let mut fs = self.fs.lock().unwrap();
             newid = fs.len() as fileid3;
             fs.push(make_file(
-                std::str::from_utf8(filename).unwrap(),
+                filename.clone_to_owned(),
                 newid,
                 dirid,
                 "".as_bytes(),
@@ -185,16 +198,16 @@ impl NFSFileSystem for DemoFS {
             return Err(nfsstat3::NFS3ERR_NOTDIR);
         } else if let FSContents::Directory(dir) = &entry.contents {
             // if looking for dir/. its the current directory
-            if filename[..] == [b'.'] {
+            if filename == ".".as_bytes() {
                 return Ok(dirid);
             }
             // if looking for dir/.. its the parent directory
-            if filename[..] == [b'.', b'.'] {
+            if filename == "..".as_bytes() {
                 return Ok(entry.parent);
             }
             for i in dir {
                 if let Some(f) = fs.get(*i as usize) {
-                    if f.name[..] == filename[..] {
+                    if &f.name == filename {
                         return Ok(*i);
                     }
                 }
@@ -205,7 +218,7 @@ impl NFSFileSystem for DemoFS {
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
         let fs = self.fs.lock().unwrap();
         let entry = fs.get(id as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        Ok(entry.attr)
+        Ok(entry.attr.clone())
     }
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.lock().unwrap();
@@ -237,28 +250,28 @@ impl NFSFileSystem for DemoFS {
             }
         };
         match setattr.uid {
-            nfs::set_uid3::uid(u) => {
+            nfs::set_uid3::Some(u) => {
                 entry.attr.uid = u;
             }
-            nfs::set_uid3::Void => {}
+            nfs::set_uid3::None => {}
         }
         match setattr.gid {
-            nfs::set_gid3::gid(u) => {
+            nfs::set_gid3::Some(u) => {
                 entry.attr.gid = u;
             }
-            nfs::set_gid3::Void => {}
+            nfs::set_gid3::None => {}
         }
         match setattr.size {
-            nfs::set_size3::size(s) => {
+            nfs::set_size3::Some(s) => {
                 entry.attr.size = s;
                 entry.attr.used = s;
                 if let FSContents::File(bytes) = &mut entry.contents {
                     bytes.resize(s as usize, 0);
                 }
             }
-            nfs::set_size3::Void => {}
+            nfs::set_size3::None => {}
         }
-        Ok(entry.attr)
+        Ok(entry.attr.clone())
     }
 
     async fn read(
@@ -314,8 +327,8 @@ impl NFSFileSystem for DemoFS {
             for i in dir[start_index..].iter() {
                 ret.entries.push(DirEntry {
                     fileid: *i,
-                    name: fs[(*i) as usize].name.clone(),
-                    attr: fs[(*i) as usize].attr,
+                    name: fs[(*i) as usize].name.clone_to_owned(),
+                    attr: fs[(*i) as usize].attr.clone(),
                 });
                 if ret.entries.len() >= max_entries {
                     break;
@@ -382,7 +395,7 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(std::io::stderr)
         .init();
-    let listener = NFSTcpListener::bind(&format!("127.0.0.1:{HOSTPORT}"), DemoFS::default())
+    let listener = NFSTcpListener::bind(&format!("0.0.0.0:{HOSTPORT}"), DemoFS::default())
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();

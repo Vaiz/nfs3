@@ -1,14 +1,17 @@
-use crate::transaction_tracker::TransactionTracker;
-use crate::vfs::NFSFileSystem;
 use std::fmt;
 use std::sync::Arc;
+
+use nfs3_types::rpc::auth_unix;
 use tokio::sync::mpsc;
+
+use crate::transaction_tracker::TransactionTracker;
+use crate::vfs::NFSFileSystem;
 
 #[derive(Clone)]
 pub struct RPCContext {
     pub local_port: u16,
     pub client_addr: String,
-    pub auth: crate::rpc::auth_unix,
+    pub auth: auth_unix,
     pub vfs: Arc<dyn NFSFileSystem + Send + Sync>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
     pub export_name: Arc<String>,

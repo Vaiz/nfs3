@@ -1,17 +1,19 @@
-use crate::context::RPCContext;
-use crate::rpcwire::*;
-use crate::transaction_tracker::TransactionTracker;
-use crate::vfs::NFSFileSystem;
-use anyhow;
-use async_trait::async_trait;
-use std::net::SocketAddr;
+use std::io;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{io, net::IpAddr};
+
+use anyhow;
+use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
+
+use crate::context::RPCContext;
+use crate::rpcwire::*;
+use crate::transaction_tracker::TransactionTracker;
+use crate::vfs::NFSFileSystem;
 
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NFSFileSystem + Send + Sync + 'static> {
@@ -42,7 +44,7 @@ async fn process_socket(
     tokio::spawn(async move {
         loop {
             if let Err(e) = message_handler.read().await {
-                debug!("Message loop broken due to {:?}", e);
+                debug!("Message loop broken due to {e}");
                 break;
             }
         }
@@ -63,7 +65,7 @@ async fn process_socket(
                         continue;
                     }
                     Err(e) => {
-                        debug!("Message handling closed : {:?}", e);
+                        debug!("Message handling closed : {e}");
                         return Err(e.into());
                     }
                 }
@@ -72,12 +74,12 @@ async fn process_socket(
             reply = msgrecvchan.recv() => {
                 match reply {
                     Some(Err(e)) => {
-                        debug!("Message handling closed : {:?}", e);
+                        debug!("Message handling closed : {e}");
                         return Err(e);
                     }
                     Some(Ok(msg)) => {
                         if let Err(e) = write_fragment(&mut socket, &msg).await {
-                            error!("Write error {:?}", e);
+                            error!("Write error {e}");
                         }
                     }
                     None => {
@@ -216,7 +218,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
             let context = RPCContext {
                 local_port: self.port,
                 client_addr: socket.peer_addr().unwrap().to_string(),
-                auth: crate::rpc::auth_unix::default(),
+                auth: nfs3_types::rpc::auth_unix::default(),
                 vfs: self.arcfs.clone(),
                 mount_signal: self.mount_signal.clone(),
                 export_name: self.export_name.clone(),

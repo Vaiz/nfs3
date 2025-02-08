@@ -1,43 +1,47 @@
-use crate::nfs;
-use crate::nfs::*;
-use async_trait::async_trait;
 use std::cmp::Ordering;
 use std::sync::Once;
 use std::time::SystemTime;
-#[derive(Default, Debug)]
-pub struct DirEntrySimple {
+
+use async_trait::async_trait;
+use nfs3_types::xdr_codec::Opaque;
+
+use crate::xdrgen::nfsv3 as nfs;
+use crate::xdrgen::nfsv3::{FSINFO3resok as fsinfo3, *};
+
+#[derive(Debug)]
+pub struct DirEntrySimple<'a> {
     pub fileid: fileid3,
-    pub name: filename3,
+    pub name: filename3<'a>,
 }
 #[derive(Default, Debug)]
-pub struct ReadDirSimpleResult {
-    pub entries: Vec<DirEntrySimple>,
+pub struct ReadDirSimpleResult<'a> {
+    pub entries: Vec<DirEntrySimple<'a>>,
     pub end: bool,
 }
 
-#[derive(Default, Debug)]
-pub struct DirEntry {
+#[derive(Debug)]
+pub struct DirEntry<'a> {
     pub fileid: fileid3,
-    pub name: filename3,
+    pub name: filename3<'a>,
     pub attr: fattr3,
 }
 #[derive(Default, Debug)]
-pub struct ReadDirResult {
-    pub entries: Vec<DirEntry>,
+pub struct ReadDirResult<'a> {
+    pub entries: Vec<DirEntry<'a>>,
     pub end: bool,
 }
 
-impl ReadDirSimpleResult {
-    fn from_readdir_result(result: &ReadDirResult) -> ReadDirSimpleResult {
+impl<'a> ReadDirSimpleResult<'a> {
+    fn from_readdir_result(result: ReadDirResult<'a>) -> Self {
         let entries: Vec<DirEntrySimple> = result
             .entries
-            .iter()
+            .into_iter()
             .map(|e| DirEntrySimple {
                 fileid: e.fileid,
-                name: e.name.clone(),
+                name: e.name,
             })
             .collect();
-        ReadDirSimpleResult {
+        Self {
             entries,
             end: result.end,
         }
@@ -196,7 +200,7 @@ pub trait NFSFileSystem: Sync {
         count: usize,
     ) -> Result<ReadDirSimpleResult, nfsstat3> {
         Ok(ReadDirSimpleResult::from_readdir_result(
-            &self.readdir(dirid, 0, count).await?,
+            self.readdir(dirid, 0, count).await?,
         ))
     }
 
@@ -217,8 +221,8 @@ pub trait NFSFileSystem: Sync {
     /// Get static file system Information
     async fn fsinfo(&self, root_fileid: fileid3) -> Result<fsinfo3, nfsstat3> {
         let dir_attr: nfs::post_op_attr = match self.getattr(root_fileid).await {
-            Ok(v) => nfs::post_op_attr::attributes(v),
-            Err(_) => nfs::post_op_attr::Void,
+            Ok(v) => nfs::post_op_attr::Some(v),
+            Err(_) => nfs::post_op_attr::None,
         };
 
         let res = fsinfo3 {
@@ -235,7 +239,7 @@ pub trait NFSFileSystem: Sync {
                 seconds: 0,
                 nseconds: 1000000,
             },
-            properties: nfs::FSF_SYMLINK | nfs::FSF_HOMOGENEOUS | nfs::FSF_CANSETTIME,
+            properties: nfs::FSF3_SYMLINK | nfs::FSF3_HOMOGENEOUS | nfs::FSF3_CANSETTIME,
         };
         Ok(res)
     }
@@ -246,7 +250,9 @@ pub trait NFSFileSystem: Sync {
         let mut ret: Vec<u8> = Vec::new();
         ret.extend_from_slice(&gennum.to_le_bytes());
         ret.extend_from_slice(&id.to_le_bytes());
-        nfs_fh3 { data: ret }
+        nfs_fh3 {
+            data: Opaque::owned(ret),
+        }
     }
     /// Converts an opaque NFS file handle to a fileid.  Optional.
     fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
@@ -264,20 +270,20 @@ pub trait NFSFileSystem: Sync {
     }
     /// Converts a complete path to a fileid.  Optional.
     /// The default implementation walks the directory structure with lookup()
-    async fn path_to_id(&self, path: &[u8]) -> Result<fileid3, nfsstat3> {
-        let splits = path.split(|&r| r == b'/');
+    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
+        let splits = path.split('/');
         let mut fid = self.root_dir();
         for component in splits {
             if component.is_empty() {
                 continue;
             }
-            fid = self.lookup(fid, &component.into()).await?;
+            fid = self.lookup(fid, &component.as_bytes().into()).await?;
         }
         Ok(fid)
     }
 
     fn serverid(&self) -> cookieverf3 {
         let gennum = get_generation_number();
-        gennum.to_le_bytes()
+        cookieverf3(gennum.to_le_bytes())
     }
 }

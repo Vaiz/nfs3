@@ -1,0 +1,7 @@
+# https://rust-lang.github.io/rustfmt
+
+edition = "2018"
+
+# imports
+group_imports = "StdExternalCrate"
+imports_granularity = "module"

@@ -1,11 +1,11 @@
 [package]
-name = "nfsserve"
-version = "0.10.2"
+name = "nfs3_server"
+version = "0.1.0"
 edition.workspace = true
-authors = ["Yucheng Low <ylow@xethub.com>"]
+homepage.workspace = true
+repository.workspace = true
+authors = ["Yucheng Low <ylow@xethub.com>", "Vaiz"]
 description = "A Rust NFS Server implementation"
-homepage = "https://github.com/xetdata/nfsserve"
-repository = "https://github.com/xetdata/nfsserve"
 readme = "README.md"
 keywords = ["nfs"]
 license = "BSD-3-Clause"
@@ -13,32 +13,20 @@ categories = ["network-programming", "filesystem"]
 publish = true
 include = ["src/**/*", "src/*", "Cargo.toml", "LICENSE", "README.md"]
 
-[features]
-strict = []
-
 [lib]
 doctest = false
 
 [dependencies]
-byteorder = "1.5.0"
-num-traits = "0.2.19"
-num-derive = "0.4.2"
+nfs3_types = { path = "../nfs3_types", version = "0.1.0" }
+
 tokio = { version="1.43.0", features = [ "net", "io-util", "sync", "fs", "rt", "macros" ], default-features = false }
 tracing = "0.1.41"
 anyhow = "1.0.95"
 async-trait = "0.1.86"
 filetime = "0.2.25"
+xdr-codec = "0.4.4"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
 intaglio = { version = "1.10"}
 tokio = { version="1.43.0", features = [ "rt-multi-thread" ], default-features = false }
-
-
-[[example]]
-name = "demo"
-path = "examples/demo.rs"
-
-[[example]]
-name = "mirrorfs"
-path = "examples/mirrorfs.rs"

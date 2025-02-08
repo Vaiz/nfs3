@@ -1,24 +1,17 @@
+use std::io::{Cursor, Read, Write};
+
 use anyhow::anyhow;
-use std::io::Cursor;
-use std::io::{Read, Write};
+use nfs3_types::portmap;
+use nfs3_types::rpc::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+use tokio::sync::mpsc;
 use tracing::{debug, error, trace, warn};
+use xdr_codec::{Pack, Unpack};
 
 use crate::context::RPCContext;
 use crate::rpc::*;
-use crate::xdr::*;
-
-use crate::mount;
-use crate::mount_handlers;
-
-use crate::nfs;
-use crate::nfs_handlers;
-
-use crate::portmap;
-use crate::portmap_handlers;
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::DuplexStream;
-use tokio::sync::mpsc;
+use crate::xdrgen::nfsv3 as nfs;
+use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
@@ -32,18 +25,16 @@ async fn handle_rpc(
     output: &mut impl Write,
     mut context: RPCContext,
 ) -> Result<bool, anyhow::Error> {
-    let mut recv = rpc_msg::default();
-    recv.deserialize(input)?;
+    let recv = rpc_msg::unpack(input)?.0;
     let xid = recv.xid;
-    if let rpc_body::CALL(call) = recv.body {
+    if let msg_body::CALL(call) = recv.body {
         if let auth_flavor::AUTH_UNIX = call.cred.flavor {
-            let mut auth = auth_unix::default();
-            auth.deserialize(&mut Cursor::new(&call.cred.body))?;
+            let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
             context.auth = auth;
         }
         if call.rpcvers != 2 {
             warn!("Invalid RPC version {} != 2", call.rpcvers);
-            rpc_vers_mismatch(xid).serialize(output)?;
+            rpc_vers_mismatch(xid).pack(output)?;
             return Ok(true);
         }
 
@@ -65,14 +56,14 @@ async fn handle_rpc(
                 nfs_handlers::handle_nfs(xid, call, input, output, &context).await
             } else if call.prog == portmap::PROGRAM {
                 portmap_handlers::handle_portmap(xid, call, input, output, &context)
-            } else if call.prog == mount::PROGRAM {
+            } else if call.prog == nfs3_types::mount::PROGRAM {
                 mount_handlers::handle_mount(xid, call, input, output, &context).await
             } else if call.prog == NFS_ACL_PROGRAM
                 || call.prog == NFS_ID_MAP_PROGRAM
                 || call.prog == NFS_METADATA_PROGRAM
             {
                 trace!("ignoring NFS_ACL packet");
-                prog_unavail_reply_message(xid).serialize(output)?;
+                prog_unavail_reply_message(xid).pack(output)?;
                 Ok(())
             } else {
                 warn!(
@@ -80,7 +71,7 @@ async fn handle_rpc(
                     call.prog,
                     nfs::PROGRAM
                 );
-                prog_unavail_reply_message(xid).serialize(output)?;
+                prog_unavail_reply_message(xid).pack(output)?;
                 Ok(())
             }
         }

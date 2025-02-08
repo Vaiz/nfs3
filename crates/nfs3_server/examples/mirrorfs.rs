@@ -16,21 +16,25 @@ mod unix {
     use std::fs::Metadata;
     use std::io::SeekFrom;
     use std::ops::Bound;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStrExt;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
+    //#[cfg(windows)]
+    //use std::os::windows::ffi::OsStrExt;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use async_trait::async_trait;
     use intaglio::osstr::SymbolTable;
     use intaglio::Symbol;
+    use nfs3_server::fs_util::*;
+    use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+    use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
+    use nfs3_types::nfs3::*;
     use tokio::fs::{File, OpenOptions};
     use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
     use tracing::debug;
-
-    use nfsserve::fs_util::*;
-    use nfsserve::nfs::*;
-    use nfsserve::tcp::{NFSTcp, NFSTcpListener};
-    use nfsserve::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 
     #[derive(Debug, Clone)]
     struct FSEntry {
@@ -160,13 +164,13 @@ mod unix {
                 return Ok(RefreshResult::Noop);
             }
             // If we get here we have modifications
-            if entry.fsmeta.ftype as u32 != meta.ftype as u32 {
+            if entry.fsmeta.type_ as u32 != meta.type_ as u32 {
                 // if the file type changed ex: file->dir or dir->file
                 // really the entire file has been replaced.
                 // we expire the entire id
                 debug!(
                     "File Type Mismatch FT {:?} : {:?} vs {:?}",
-                    id, entry.fsmeta.ftype, meta.ftype
+                    id, entry.fsmeta.type_, meta.type_
                 );
                 debug!(
                     "File Type Mismatch META {:?} : {:?} vs {:?}",
@@ -192,7 +196,7 @@ mod unix {
             if entry.children.is_some() && !fattr3_differ(&entry.children_meta, &entry.fsmeta) {
                 return Ok(());
             }
-            if !matches!(entry.fsmeta.ftype, ftype3::NF3DIR) {
+            if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
                 return Ok(());
             }
             let mut cur_path = entry.name.clone();
@@ -233,7 +237,7 @@ mod unix {
                 let metafattr = metadata_to_fattr3(next_id, &meta);
                 let new_entry = FSEntry {
                     name: fullpath.clone(),
-                    fsmeta: metafattr,
+                    fsmeta: metafattr.clone(),
                     children_meta: metafattr,
                     children: None,
                 };
@@ -251,7 +255,7 @@ mod unix {
     }
 
     /// Enumeration for the create_fs_object method
-    enum CreateFSObject {
+    enum CreateFSObject<'a> {
         /// Creates a directory
         Directory,
         /// Creates a file with a set of attributes
@@ -259,7 +263,7 @@ mod unix {
         /// Creates an exclusive file with a set of attributes
         Exclusive,
         /// Creates a symlink with a set of attributes to a target location
-        Symlink((sattr3, nfspath3)),
+        Symlink((sattr3, nfspath3<'a>)),
     }
     impl MirrorFS {
         pub fn new(root: PathBuf) -> MirrorFS {
@@ -273,13 +277,13 @@ mod unix {
         async fn create_fs_object(
             &self,
             dirid: fileid3,
-            objectname: &filename3,
-            object: &CreateFSObject,
+            objectname: &filename3<'_>,
+            object: &CreateFSObject<'_>,
         ) -> Result<(fileid3, fattr3), nfsstat3> {
             let mut fsmap = self.fsmap.lock().await;
             let ent = fsmap.find_entry(dirid)?;
             let mut path = fsmap.sym_to_path(&ent.name).await;
-            let objectname_osstr = OsStr::from_bytes(objectname).to_os_string();
+            let objectname_osstr = OsStr::from_bytes(objectname.as_ref()).to_os_string();
             path.push(&objectname_osstr);
 
             match object {
@@ -310,7 +314,7 @@ mod unix {
                     if exists_no_traverse(&path) {
                         return Err(nfsstat3::NFS3ERR_EXIST);
                     }
-                    tokio::fs::symlink(OsStr::from_bytes(target), &path)
+                    tokio::fs::symlink(OsStr::from_bytes(target.as_ref()), &path)
                         .await
                         .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                     // we do not set attributes on symlinks
@@ -349,7 +353,7 @@ mod unix {
 
         async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
             let mut fsmap = self.fsmap.lock().await;
-            if let Ok(id) = fsmap.find_child(dirid, filename).await {
+            if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()).await {
                 if fsmap.id_to_path.contains_key(&id) {
                     return Ok(id);
                 }
@@ -358,7 +362,7 @@ mod unix {
             // See if the file actually exists on the filesystem
             let dirent = fsmap.find_entry(dirid)?;
             let mut path = fsmap.sym_to_path(&dirent.name).await;
-            let objectname_osstr = OsStr::from_bytes(filename).to_os_string();
+            let objectname_osstr = OsStr::from_bytes(filename.as_ref()).to_os_string();
             path.push(&objectname_osstr);
             if !exists_no_traverse(&path) {
                 return Err(nfsstat3::NFS3ERR_NOENT);
@@ -372,7 +376,7 @@ mod unix {
             }
             let _ = fsmap.refresh_dir_list(dirid).await;
 
-            fsmap.find_child(dirid, filename).await
+            fsmap.find_child(dirid, filename.as_ref()).await
             //debug!("lookup({:?}, {:?})", dirid, filename);
 
             //debug!(" -- lookup result {:?}", res);
@@ -430,7 +434,7 @@ mod unix {
             fsmap.refresh_dir_list(dirid).await?;
 
             let entry = fsmap.find_entry(dirid)?;
-            if !matches!(entry.fsmeta.ftype, ftype3::NF3DIR) {
+            if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
                 return Err(nfsstat3::NFS3ERR_NOTDIR);
             }
             debug!("readdir({:?}, {:?})", entry, start_after);
@@ -460,7 +464,7 @@ mod unix {
                 debug!("\t --- {:?} {:?}", fileid, name);
                 ret.entries.push(DirEntry {
                     fileid,
-                    name: name.as_bytes().into(),
+                    name: name.into_vec().into(),
                     attr: fileent.fsmeta,
                 });
                 if ret.entries.len() >= max_entries {
@@ -544,7 +548,7 @@ mod unix {
             let mut fsmap = self.fsmap.lock().await;
             let ent = fsmap.find_entry(dirid)?;
             let mut path = fsmap.sym_to_path(&ent.name).await;
-            path.push(OsStr::from_bytes(filename));
+            path.push(OsStr::from_bytes(filename.as_ref()));
             if let Ok(meta) = path.symlink_metadata() {
                 if meta.is_dir() {
                     tokio::fs::remove_dir(&path)
@@ -558,7 +562,7 @@ mod unix {
 
                 let filesym = fsmap
                     .intern
-                    .intern(OsStr::from_bytes(filename).to_os_string())
+                    .intern(OsStr::from_bytes(filename.as_ref()).to_os_string())
                     .unwrap();
                 let mut sympath = ent.name.clone();
                 sympath.push(filesym);
@@ -594,7 +598,7 @@ mod unix {
 
             let from_dirent = fsmap.find_entry(from_dirid)?;
             let mut from_path = fsmap.sym_to_path(&from_dirent.name).await;
-            from_path.push(OsStr::from_bytes(from_filename));
+            from_path.push(OsStr::from_bytes(from_filename.as_ref()));
 
             let to_dirent = fsmap.find_entry(to_dirid)?;
             let mut to_path = fsmap.sym_to_path(&to_dirent.name).await;
@@ -602,7 +606,7 @@ mod unix {
             if !exists_no_traverse(&to_path) {
                 return Err(nfsstat3::NFS3ERR_NOENT);
             }
-            to_path.push(OsStr::from_bytes(to_filename));
+            to_path.push(OsStr::from_bytes(to_filename.as_ref()));
 
             // src path must exist
             if !exists_no_traverse(&from_path) {
@@ -615,11 +619,11 @@ mod unix {
 
             let oldsym = fsmap
                 .intern
-                .intern(OsStr::from_bytes(from_filename).to_os_string())
+                .intern(OsStr::from_bytes(from_filename.as_ref()).to_os_string())
                 .unwrap();
             let newsym = fsmap
                 .intern
-                .intern(OsStr::from_bytes(to_filename).to_os_string())
+                .intern(OsStr::from_bytes(to_filename.as_ref()).to_os_string())
                 .unwrap();
 
             let mut from_sympath = from_dirent.name.clone();
@@ -673,7 +677,7 @@ mod unix {
             self.create_fs_object(
                 dirid,
                 linkname,
-                &CreateFSObject::Symlink((*attr, symlink.clone())),
+                &CreateFSObject::Symlink((attr.clone(), symlink.clone())),
             )
             .await
         }
@@ -684,7 +688,7 @@ mod unix {
             drop(fsmap);
             if path.is_symlink() {
                 if let Ok(target) = path.read_link() {
-                    Ok(target.as_os_str().as_bytes().into())
+                    Ok(target.into_os_string().into_vec().into())
                 } else {
                     Err(nfsstat3::NFS3ERR_IO)
                 }
