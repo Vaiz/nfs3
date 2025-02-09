@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "byteorder",
  "nfs3_macros",

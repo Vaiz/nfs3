@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_server"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -17,7 +17,7 @@ include = ["src/**/*", "src/*", "Cargo.toml", "LICENSE", "README.md"]
 doctest = false
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.1.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.1.1" }
 
 tokio = { workspace = true, features = [ "net", "io-util", "sync", "fs", "rt", "macros" ] }
 tracing.workspace = true
