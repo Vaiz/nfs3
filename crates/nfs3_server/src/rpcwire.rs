@@ -1,8 +1,8 @@
 use std::io::{Cursor, Read, Write};
 
 use anyhow::anyhow;
-use nfs3_types::portmap;
 use nfs3_types::rpc::*;
+use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::sync::mpsc;
 use tracing::{debug, error, trace, warn};
@@ -10,7 +10,6 @@ use xdr_codec::{Pack, Unpack};
 
 use crate::context::RPCContext;
 use crate::rpc::*;
-use crate::xdrgen::nfsv3 as nfs;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 // Information from RFC 5531

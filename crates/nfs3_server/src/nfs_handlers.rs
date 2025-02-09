@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use std::io::{Read, Write};
 
-use nfs3_types::nfs3::NFS_PROGRAM;
+use nfs3_types::nfs3::*;
 use nfs3_types::rpc::*;
 use nfs3_types::xdr_codec::Opaque;
 use tracing::{debug, error, trace, warn};
@@ -11,8 +11,6 @@ use xdr_codec::{Pack, Unpack};
 use crate::context::RPCContext;
 use crate::rpc::*;
 use crate::vfs::VFSCapabilities;
-use crate::xdrgen::nfsv3 as nfs;
-use crate::xdrgen::nfsv3::*;
 
 pub async fn handle_nfs(
     xid: u32,
@@ -22,13 +20,9 @@ pub async fn handle_nfs(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     debug!("handle_nfs({xid}, {call:?}");
-    if call.vers != nfs::VERSION {
-        warn!(
-            "Invalid NFS Version number {} != {}",
-            call.vers,
-            nfs::VERSION
-        );
-        prog_mismatch_reply_message(xid, nfs::VERSION).pack(output)?;
+    if call.vers != VERSION {
+        warn!("Invalid NFS Version number {} != {}", call.vers, VERSION);
+        prog_mismatch_reply_message(xid, VERSION).pack(output)?;
         return Ok(());
     }
     let proc = NFS_PROGRAM::try_from(call.proc);
@@ -92,7 +86,7 @@ pub async fn nfsproc3_getattr(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     debug!("nfsproc3_getattr({:?},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
@@ -107,7 +101,7 @@ pub async fn nfsproc3_getattr(
         Ok(fh) => {
             debug!(" {:?} --> {:?}", xid, fh);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             fh.pack(output)?;
         }
         Err(stat) => {
@@ -125,7 +119,7 @@ pub async fn nfsproc3_lookup(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let dirops = nfs::diropargs3::unpack(input)?.0;
+    let dirops = diropargs3::unpack(input)?.0;
     debug!("nfsproc3_lookup({:?},{:?}) ", xid, dirops);
 
     let dirid = context.vfs.fh_to_id(&dirops.dir);
@@ -133,25 +127,25 @@ pub async fn nfsproc3_lookup(
     if let Err(stat) = dirid {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let dirid = dirid.unwrap();
 
     let dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
     match context.vfs.lookup(dirid, &dirops.name).await {
         Ok(fid) => {
             let obj_attr = match context.vfs.getattr(fid).await {
-                Ok(v) => nfs::post_op_attr::Some(v),
-                Err(_) => nfs::post_op_attr::None,
+                Ok(v) => post_op_attr::Some(v),
+                Err(_) => post_op_attr::None,
             };
 
             debug!("lookup success {:?} --> {:?}", xid, obj_attr);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             context.vfs.id_to_fh(fid).pack(output)?;
             obj_attr.pack(output)?;
             dir_attr.pack(output)?;
@@ -172,32 +166,32 @@ pub async fn nfsproc3_read(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let args = nfs::READ3args::unpack(input)?.0;
+    let args = READ3args::unpack(input)?.0;
     debug!("nfsproc3_read({:?},{:?}) ", xid, args);
 
     let id = context.vfs.fh_to_id(&args.file);
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
 
     let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
     match context.vfs.read(id, args.offset, args.count).await {
         Ok((bytes, eof)) => {
-            let res = nfs::READ3resok {
+            let res = READ3resok {
                 file_attributes: obj_attr,
                 count: bytes.len() as u32,
                 eof,
                 data: Opaque::owned(bytes),
             };
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             res.pack(output)?;
         }
         Err(stat) => {
@@ -216,7 +210,7 @@ pub async fn nfsproc3_fsinfo(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     debug!("nfsproc3_fsinfo({:?},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
@@ -224,7 +218,7 @@ pub async fn nfsproc3_fsinfo(
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
@@ -233,7 +227,7 @@ pub async fn nfsproc3_fsinfo(
         Ok(fsinfo) => {
             debug!(" {:?} --> {:?}", xid, fsinfo);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             fsinfo.pack(output)?;
         }
         Err(stat) => {
@@ -258,7 +252,7 @@ pub async fn nfsproc3_access(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     let mut access: u32 = Unpack::unpack(input)?.0;
     debug!("nfsproc3_access({:?},{:?},{:?})", xid, handle, access);
 
@@ -267,14 +261,14 @@ pub async fn nfsproc3_access(
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
 
     let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
     // TODO better checks here
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
@@ -282,7 +276,7 @@ pub async fn nfsproc3_access(
     }
     debug!(" {:?} ---> {:?}", xid, access);
     make_success_reply(xid).pack(output)?;
-    nfs::nfsstat3::NFS3_OK.pack(output)?;
+    nfsstat3::NFS3_OK.pack(output)?;
     obj_attr.pack(output)?;
     access.pack(output)?;
     Ok(())
@@ -294,7 +288,7 @@ pub async fn nfsproc3_pathconf(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     debug!("nfsproc3_pathconf({:?},{:?})", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
@@ -302,16 +296,16 @@ pub async fn nfsproc3_pathconf(
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
 
     let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let res = nfs::PATHCONF3resok {
+    let res = PATHCONF3resok {
         obj_attributes: obj_attr,
         linkmax: 0,
         name_max: 32768,
@@ -322,7 +316,7 @@ pub async fn nfsproc3_pathconf(
     };
     debug!(" {:?} ---> {:?}", xid, res);
     make_success_reply(xid).pack(output)?;
-    nfs::nfsstat3::NFS3_OK.pack(output)?;
+    nfsstat3::NFS3_OK.pack(output)?;
     res.pack(output)?;
     Ok(())
 }
@@ -333,23 +327,23 @@ pub async fn nfsproc3_fsstat(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     debug!("nfsproc3_fsstat({:?},{:?}) ", xid, handle);
     let id = context.vfs.fh_to_id(&handle);
     // fail if unable to convert file handle
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
 
     let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let res = nfs::FSSTAT3resok {
+    let res = FSSTAT3resok {
         obj_attributes: obj_attr,
         tbytes: 1024 * 1024 * 1024 * 1024,
         fbytes: 1024 * 1024 * 1024 * 1024,
@@ -360,7 +354,7 @@ pub async fn nfsproc3_fsstat(
         invarsec: u32::MAX,
     };
     make_success_reply(xid).pack(output)?;
-    nfs::nfsstat3::NFS3_OK.pack(output)?;
+    nfsstat3::NFS3_OK.pack(output)?;
     debug!(" {:?} ---> {:?}", xid, res);
     res.pack(output)?;
     Ok(())
@@ -372,7 +366,7 @@ pub async fn nfsproc3_readdirplus(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let args = nfs::READDIRPLUS3args::unpack(input)?.0;
+    let args = READDIRPLUS3args::unpack(input)?.0;
     debug!("nfsproc3_readdirplus({:?},{:?}) ", xid, args);
 
     let dirid = context.vfs.fh_to_id(&args.dir);
@@ -380,27 +374,27 @@ pub async fn nfsproc3_readdirplus(
     if let Err(stat) = dirid {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
     let dir_attr = match dir_attr_maybe {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
 
     let dirversion = if let Nfs3Option::Some(dir_attr) = &dir_attr {
         let cvf_version =
             ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        nfs::cookieverf3(cvf_version.to_be_bytes())
+        cookieverf3(cvf_version.to_be_bytes())
     } else {
-        nfs::cookieverf3::default()
+        cookieverf3::default()
     };
     debug!(" -- Dir attr {:?}", dir_attr);
     debug!(" -- Dir version {:?}", dirversion);
-    let has_version = args.cookieverf != nfs::cookieverf3::default();
+    let has_version = args.cookieverf != cookieverf3::default();
     // initial call should hve empty cookie verf
     // subsequent calls should have cvf_version as defined above
     // which is based off the mtime.
@@ -457,10 +451,10 @@ pub async fn nfsproc3_readdirplus(
     //  The best solution is simply to really completely avoid sending
     //  BAD_COOKIE all together and to ignore the cookie mechanism.
     //
-    /*if args.cookieverf != nfs::cookieverf3::default() && args.cookieverf != dirversion {
+    /*if args.cookieverf != cookieverf3::default() && args.cookieverf != dirversion {
         info!(" -- Dir version mismatch. Received {:?}", args.cookieverf);
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
+        nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
         dir_attr.pack(output)?;
         return Ok(());
     }*/
@@ -486,18 +480,18 @@ pub async fn nfsproc3_readdirplus(
             let mut counting_output = crate::write_counter::WriteCounter::new(output);
 
             make_success_reply(xid).pack(&mut counting_output)?;
-            nfs::nfsstat3::NFS3_OK.pack(&mut counting_output)?;
+            nfsstat3::NFS3_OK.pack(&mut counting_output)?;
             dir_attr.pack(&mut counting_output)?;
             dirversion.pack(&mut counting_output)?;
             for entry in result.entries {
                 let obj_attr = entry.attr;
-                let handle = nfs::post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
+                let handle = post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
 
-                let entry = nfs::entryplus3 {
+                let entry = entryplus3 {
                     fileid: entry.fileid,
                     name: entry.name,
                     cookie: entry.fileid,
-                    name_attributes: nfs::post_op_attr::Some(obj_attr),
+                    name_attributes: post_op_attr::Some(obj_attr),
                     name_handle: handle,
                 };
                 // write the entry into a buffer first
@@ -507,9 +501,9 @@ pub async fn nfsproc3_readdirplus(
                 true.pack(&mut write_cursor)?;
                 entry.pack(&mut write_cursor)?;
                 write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<nfs::fileid3>()                   // fileid
+                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
                                     + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<nfs::cookie3>(); // cookie
+                                    + std::mem::size_of::<cookie3>(); // cookie
                 let added_output_bytes = write_buf.len();
                 // check if we can write without hitting the limits
                 if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed
@@ -564,7 +558,7 @@ pub async fn nfsproc3_readdir(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let args = nfs::READDIR3args::unpack(input)?.0;
+    let args = READDIR3args::unpack(input)?.0;
     debug!("nfsproc3_readdirplus({:?},{:?}) ", xid, args);
 
     let dirid = context.vfs.fh_to_id(&args.dir);
@@ -572,27 +566,27 @@ pub async fn nfsproc3_readdir(
     if let Err(stat) = dirid {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::post_op_attr::None.pack(output)?;
+        post_op_attr::None.pack(output)?;
         return Ok(());
     }
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
     let dir_attr = match dir_attr_maybe {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
 
     let dirversion = if let Nfs3Option::Some(dir_attr) = &dir_attr {
         let cvf_version =
             ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        nfs::cookieverf3(cvf_version.to_be_bytes())
+        cookieverf3(cvf_version.to_be_bytes())
     } else {
-        nfs::cookieverf3::default()
+        cookieverf3::default()
     };
     debug!(" -- Dir attr {:?}", dir_attr);
     debug!(" -- Dir version {:?}", dirversion);
-    let has_version = args.cookieverf != nfs::cookieverf3::default();
+    let has_version = args.cookieverf != cookieverf3::default();
     // subtract off the final entryplus* field (which must be false) and the eof
     let max_bytes_allowed = args.count as usize - 128;
     // args.dircount is bytes of just fileid, name, cookie.
@@ -614,7 +608,7 @@ pub async fn nfsproc3_readdir(
             let mut counting_output = crate::write_counter::WriteCounter::new(output);
 
             make_success_reply(xid).pack(&mut counting_output)?;
-            nfs::nfsstat3::NFS3_OK.pack(&mut counting_output)?;
+            nfsstat3::NFS3_OK.pack(&mut counting_output)?;
             dir_attr.pack(&mut counting_output)?;
             dirversion.pack(&mut counting_output)?;
             for entry in result.entries {
@@ -630,9 +624,9 @@ pub async fn nfsproc3_readdir(
                 true.pack(&mut write_cursor)?;
                 entry.pack(&mut write_cursor)?;
                 write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<nfs::fileid3>()                   // fileid
+                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
                                     + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<nfs::cookie3>(); // cookie
+                                    + std::mem::size_of::<cookie3>(); // cookie
                 let added_output_bytes = write_buf.len();
                 // check if we can write without hitting the limits
                 if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed {
@@ -688,12 +682,12 @@ pub async fn nfsproc3_write(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
 
-    let args = nfs::WRITE3args::unpack(input)?.0;
+    let args = WRITE3args::unpack(input)?.0;
     debug!("nfsproc3_write({:?},...) ", xid);
     // sanity check the length
     if args.data.len() != args.count as usize {
@@ -705,7 +699,7 @@ pub async fn nfsproc3_write(
     if let Err(stat) = id {
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
     let id = id.unwrap();
@@ -713,37 +707,37 @@ pub async fn nfsproc3_write(
     // get the object attributes before the write
     let pre_obj_attr = match context.vfs.getattr(id).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
-        Err(_) => nfs::pre_op_attr::None,
+        Err(_) => pre_op_attr::None,
     };
 
     match context.vfs.write(id, args.offset, &args.data).await {
         Ok(fattr) => {
             debug!("write success {:?} --> {:?}", xid, fattr);
             let res = WRITE3resok {
-                file_wcc: nfs::wcc_data {
+                file_wcc: wcc_data {
                     before: pre_obj_attr,
-                    after: nfs::post_op_attr::Some(fattr),
+                    after: post_op_attr::Some(fattr),
                 },
                 count: args.count,
                 committed: stable_how::FILE_SYNC,
                 verf: writeverf3(context.vfs.serverid().0),
             };
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             res.pack(output)?;
         }
         Err(stat) => {
             error!("write error {:?} --> {:?}", xid, stat);
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
         }
     }
     Ok(())
@@ -759,8 +753,8 @@ pub async fn nfsproc3_create(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
 
@@ -777,7 +771,7 @@ pub async fn nfsproc3_create(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -787,18 +781,18 @@ pub async fn nfsproc3_create(
     // get the object attributes before the write
     let pre_dir_attr = match context.vfs.getattr(dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -813,13 +807,13 @@ pub async fn nfsproc3_create(
                 // Re-read dir attributes
                 // for post op attr
                 let post_dir_attr = match context.vfs.getattr(dirid).await {
-                    Ok(v) => nfs::post_op_attr::Some(v),
-                    Err(_) => nfs::post_op_attr::None,
+                    Ok(v) => post_op_attr::Some(v),
+                    Err(_) => post_op_attr::None,
                 };
 
                 make_success_reply(xid).pack(output)?;
-                nfs::nfsstat3::NFS3ERR_EXIST.pack(output)?;
-                nfs::wcc_data {
+                nfsstat3::NFS3ERR_EXIST.pack(output)?;
+                wcc_data {
                     before: pre_dir_attr,
                     after: post_dir_attr,
                 }
@@ -832,14 +826,14 @@ pub async fn nfsproc3_create(
         }
     }
 
-    let fid: Result<nfs::fileid3, nfs::nfsstat3>;
-    let postopattr: nfs::post_op_attr;
+    let fid: Result<fileid3, nfsstat3>;
+    let postopattr: post_op_attr;
     // fill in the fid and post op attr here
     if matches!(createhow, createhow3::EXCLUSIVE(_)) {
         // the API for exclusive is very slightly different
         // We are not returning a post op attribute
         fid = context.vfs.create_exclusive(dirid, &dirops.name).await;
-        postopattr = nfs::post_op_attr::None;
+        postopattr = post_op_attr::None;
     } else if let createhow3::UNCHECKED(target_attributes) = createhow {
         // create!
         let res = context
@@ -850,11 +844,11 @@ pub async fn nfsproc3_create(
         match res {
             Ok((fid_, fattr)) => {
                 fid = Ok(fid_);
-                postopattr = nfs::post_op_attr::Some(fattr);
+                postopattr = post_op_attr::Some(fattr);
             }
             Err(e) => {
                 fid = Err(e);
-                postopattr = nfs::post_op_attr::None;
+                postopattr = post_op_attr::None;
             }
         }
     } else {
@@ -863,10 +857,10 @@ pub async fn nfsproc3_create(
 
     // Re-read dir attributes for post op attr
     let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let wcc_res = nfs::wcc_data {
+    let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
     };
@@ -875,10 +869,10 @@ pub async fn nfsproc3_create(
         Ok(fid) => {
             debug!("create success --> {:?}, {:?}", fid, postopattr);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             // serialize CREATE3resok
             let fh = context.vfs.id_to_fh(fid);
-            nfs::post_op_fh3::Some(fh).pack(output)?;
+            post_op_fh3::Some(fh).pack(output)?;
             postopattr.pack(output)?;
             wcc_res.pack(output)?;
         }
@@ -903,8 +897,8 @@ pub async fn nfsproc3_setattr(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
     let args = SETATTR3args::unpack(input)?.0;
@@ -923,18 +917,18 @@ pub async fn nfsproc3_setattr(
 
     let pre_op_attr = match context.vfs.getattr(id).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime.clone(),
             };
             ctime = v.ctime;
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -944,8 +938,8 @@ pub async fn nfsproc3_setattr(
         sattrguard3::Some(c) => {
             if c.seconds != ctime.seconds || c.nseconds != ctime.nseconds {
                 make_success_reply(xid).pack(output)?;
-                nfs::nfsstat3::NFS3ERR_NOT_SYNC.pack(output)?;
-                nfs::wcc_data::default().pack(output)?;
+                nfsstat3::NFS3ERR_NOT_SYNC.pack(output)?;
+                wcc_data::default().pack(output)?;
             }
         }
     }
@@ -953,19 +947,19 @@ pub async fn nfsproc3_setattr(
     match context.vfs.setattr(id, args.new_attributes).await {
         Ok(post_op_attr) => {
             debug!(" setattr success {:?} --> {:?}", xid, post_op_attr);
-            let wcc_res = nfs::wcc_data {
+            let wcc_res = wcc_data {
                 before: pre_op_attr,
-                after: nfs::post_op_attr::Some(post_op_attr),
+                after: post_op_attr::Some(post_op_attr),
             };
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             wcc_res.pack(output)?;
         }
         Err(stat) => {
             error!("setattr error {:?} --> {:?}", xid, stat);
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
         }
     }
     Ok(())
@@ -981,12 +975,12 @@ pub async fn nfsproc3_remove(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
 
-    let dirops = nfs::diropargs3::unpack(input)?.0;
+    let dirops = diropargs3::unpack(input)?.0;
 
     debug!("nfsproc3_remove({:?}, {:?}) ", xid, dirops);
 
@@ -996,7 +990,7 @@ pub async fn nfsproc3_remove(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -1005,18 +999,18 @@ pub async fn nfsproc3_remove(
     // get the object attributes before the write
     let pre_dir_attr = match context.vfs.getattr(dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -1026,10 +1020,10 @@ pub async fn nfsproc3_remove(
 
     // Re-read dir attributes for post op attr
     let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let wcc_res = nfs::wcc_data {
+    let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
     };
@@ -1038,7 +1032,7 @@ pub async fn nfsproc3_remove(
         Ok(()) => {
             debug!("remove success");
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             wcc_res.pack(output)?;
         }
         Err(e) => {
@@ -1063,13 +1057,13 @@ pub async fn nfsproc3_rename(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
 
-    let fromdirops = nfs::diropargs3::unpack(input)?.0;
-    let todirops = nfs::diropargs3::unpack(input)?.0;
+    let fromdirops = diropargs3::unpack(input)?.0;
+    let todirops = diropargs3::unpack(input)?.0;
 
     debug!(
         "nfsproc3_rename({:?}, {:?}, {:?}) ",
@@ -1082,7 +1076,7 @@ pub async fn nfsproc3_rename(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -1093,7 +1087,7 @@ pub async fn nfsproc3_rename(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -1105,18 +1099,18 @@ pub async fn nfsproc3_rename(
     // get the object attributes before the write
     let pre_from_dir_attr = match context.vfs.getattr(from_dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -1124,18 +1118,18 @@ pub async fn nfsproc3_rename(
     // get the object attributes before the write
     let pre_to_dir_attr = match context.vfs.getattr(to_dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -1148,19 +1142,19 @@ pub async fn nfsproc3_rename(
 
     // Re-read dir attributes for post op attr
     let post_from_dir_attr = match context.vfs.getattr(from_dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
     let post_to_dir_attr = match context.vfs.getattr(to_dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let from_wcc_res = nfs::wcc_data {
+    let from_wcc_res = wcc_data {
         before: pre_from_dir_attr,
         after: post_from_dir_attr,
     };
 
-    let to_wcc_res = nfs::wcc_data {
+    let to_wcc_res = wcc_data {
         before: pre_to_dir_attr,
         after: post_to_dir_attr,
     };
@@ -1169,7 +1163,7 @@ pub async fn nfsproc3_rename(
         Ok(()) => {
             debug!("rename success");
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             from_wcc_res.pack(output)?;
             to_wcc_res.pack(output)?;
         }
@@ -1196,8 +1190,8 @@ pub async fn nfsproc3_mkdir(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
     let args = MKDIR3args::unpack(input)?.0;
@@ -1211,7 +1205,7 @@ pub async fn nfsproc3_mkdir(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -1221,18 +1215,18 @@ pub async fn nfsproc3_mkdir(
     // get the object attributes before the write
     let pre_dir_attr = match context.vfs.getattr(dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -1241,10 +1235,10 @@ pub async fn nfsproc3_mkdir(
 
     // Re-read dir attributes for post op attr
     let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let wcc_res = nfs::wcc_data {
+    let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
     };
@@ -1253,11 +1247,11 @@ pub async fn nfsproc3_mkdir(
         Ok((fid, fattr)) => {
             debug!("mkdir success --> {:?}, {:?}", fid, fattr);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             // serialize CREATE3resok
             let fh = context.vfs.id_to_fh(fid);
-            nfs::post_op_fh3::Some(fh).pack(output)?;
-            nfs::post_op_attr::Some(fattr).pack(output)?;
+            post_op_fh3::Some(fh).pack(output)?;
+            post_op_attr::Some(fattr).pack(output)?;
             wcc_res.pack(output)?;
         }
         Err(e) => {
@@ -1282,8 +1276,8 @@ pub async fn nfsproc3_symlink(
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         make_success_reply(xid).pack(output)?;
-        nfs::nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        nfsstat3::NFS3ERR_ROFS.pack(output)?;
+        wcc_data::default().pack(output)?;
         return Ok(());
     }
     let args = SYMLINK3args::unpack(input)?.0;
@@ -1297,7 +1291,7 @@ pub async fn nfsproc3_symlink(
         // directory does not exist
         make_success_reply(xid).pack(output)?;
         stat.pack(output)?;
-        nfs::wcc_data::default().pack(output)?;
+        wcc_data::default().pack(output)?;
         error!("Directory does not exist");
         return Ok(());
     }
@@ -1307,18 +1301,18 @@ pub async fn nfsproc3_symlink(
     // get the object attributes before the write
     let pre_dir_attr = match context.vfs.getattr(dirid).await {
         Ok(v) => {
-            let wccattr = nfs::wcc_attr {
+            let wccattr = wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
             };
-            nfs::pre_op_attr::Some(wccattr)
+            pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
             error!("Cannot stat directory");
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::wcc_data::default().pack(output)?;
+            wcc_data::default().pack(output)?;
             return Ok(());
         }
     };
@@ -1335,10 +1329,10 @@ pub async fn nfsproc3_symlink(
 
     // Re-read dir attributes for post op attr
     let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
-        Err(_) => nfs::post_op_attr::None,
+        Ok(v) => post_op_attr::Some(v),
+        Err(_) => post_op_attr::None,
     };
-    let wcc_res = nfs::wcc_data {
+    let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
     };
@@ -1347,11 +1341,11 @@ pub async fn nfsproc3_symlink(
         Ok((fid, fattr)) => {
             debug!("symlink success --> {:?}, {:?}", fid, fattr);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             // serialize CREATE3resok
             let fh = context.vfs.id_to_fh(fid);
-            nfs::post_op_fh3::Some(fh).pack(output)?;
-            nfs::post_op_attr::Some(fattr).pack(output)?;
+            post_op_fh3::Some(fh).pack(output)?;
+            post_op_attr::Some(fattr).pack(output)?;
             wcc_res.pack(output)?;
         }
         Err(e) => {
@@ -1372,7 +1366,7 @@ pub async fn nfsproc3_readlink(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs::nfs_fh3::unpack(input)?.0;
+    let handle = nfs_fh3::unpack(input)?.0;
     debug!("nfsproc3_readlink({:?},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
@@ -1385,11 +1379,11 @@ pub async fn nfsproc3_readlink(
     let id = id.unwrap();
     // if the id does not exist, we fail
     let symlink_attr = match context.vfs.getattr(id).await {
-        Ok(v) => nfs::post_op_attr::Some(v),
+        Ok(v) => post_op_attr::Some(v),
         Err(stat) => {
             make_success_reply(xid).pack(output)?;
             stat.pack(output)?;
-            nfs::post_op_attr::None.pack(output)?;
+            post_op_attr::None.pack(output)?;
             return Ok(());
         }
     };
@@ -1397,7 +1391,7 @@ pub async fn nfsproc3_readlink(
         Ok(path) => {
             debug!(" {:?} --> {:?}", xid, path);
             make_success_reply(xid).pack(output)?;
-            nfs::nfsstat3::NFS3_OK.pack(output)?;
+            nfsstat3::NFS3_OK.pack(output)?;
             symlink_attr.pack(output)?;
             path.pack(output)?;
         }
