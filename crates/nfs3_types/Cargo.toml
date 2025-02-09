@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
+readme = "README.md"
 
 [dependencies]
 nfs3_macros = { path = "../nfs3_macros", version = "0.1.0" }

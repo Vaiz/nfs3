@@ -182,7 +182,7 @@ pub trait NFSFileSystem: Sync {
     /// Up to max_entries may be returned, and start_after is used
     /// to determine where to start returning entries from.
     ///
-    /// For instance if the directory has entry with ids [1,6,2,11,8,9]
+    /// For instance if the directory has entry with ids `[1,6,2,11,8,9]`
     /// and start_after=6, readdir should returning 2,11,8,...
     //
     async fn readdir(
