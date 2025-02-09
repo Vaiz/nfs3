@@ -5,7 +5,21 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
 authors = ["Vaiz"]
+edition = "2021"
 homepage = "https://github.com/Vaiz/nfsserve"
 repository = "https://github.com/Vaiz/nfsserve"
+
+[workspace.dependencies]
+anyhow = "1.0.95"
+async-trait = "0.1.86"
+byteorder = "1.5.0"
+filetime = "0.2.25"
+intaglio = "1.10"
+proc-macro2 = "1.0.93"
+quote = "1.0.38"
+syn = "2.0.96"
+tokio = { version = "1.43.0", default-features = false }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+xdr-codec = "0.4.4"

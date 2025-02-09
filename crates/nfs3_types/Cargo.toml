@@ -9,8 +9,8 @@ repository.workspace = true
 [dependencies]
 nfs3_macros = { path = "../nfs3_macros", version = "0.1.0" }
 
-byteorder = "1.5.0"
-xdr-codec = "0.4.4"
+byteorder.workspace = true
+xdr-codec.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["byteorder"]
