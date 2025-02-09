@@ -1,4 +1,4 @@
-use std::fs::{File, FileType, Permissions};
+use std::fs::{File, Permissions};
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 #[cfg(windows)]
@@ -15,7 +15,7 @@ impl NfsMetadataExt<'_> {
         self.0.mode()
     }
     pub fn nlink(&self) -> u32 {
-        self.0.nlink().min(u32::max_value().into()) as u32
+        self.0.nlink().min(u32::MAX.into()) as u32
     }
 
     pub fn uid(&self) -> u32 {
@@ -27,19 +27,20 @@ impl NfsMetadataExt<'_> {
     }
 
     pub fn file_type(&self) -> ftype3 {
-        if self.0.is_file() {
+        let file_type = self.0.file_type();
+        if file_type.is_file() {
             ftype3::NF3REG
-        } else if self.0.is_dir() {
+        } else if file_type.is_dir() {
             ftype3::NF3DIR
-        } else if self.0.is_symlink() {
+        } else if file_type.is_symlink() {
             ftype3::NF3LNK
-        } else if self.0.is_block_device() {
+        } else if file_type.is_block_device() {
             ftype3::NF3BLK
-        } else if self.0.is_char_device() {
+        } else if file_type.is_char_device() {
             ftype3::NF3CHR
-        } else if self.0.is_fifo() {
+        } else if file_type.is_fifo() {
             ftype3::NF3FIFO
-        } else if self.0.is_socket() {
+        } else if file_type.is_socket() {
             ftype3::NF3SOCK
         } else {
             ftype3::NF3REG // Default case (though ideally unreachable)
