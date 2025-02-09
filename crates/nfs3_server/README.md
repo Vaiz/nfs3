@@ -17,11 +17,11 @@ What is a protocol that pretty much every OS supports? NFS.
 Why not FUSE you may ask:
 1. FUSE is annoying to users on Mac and Windows (drivers necessary).
 2. It takes a lot of care to build a FUSE driver for remote filesystems. 
-NFS clients however have a lot of historical robustification for
-slow-responding, or perhaps, never-responding servers. 
+   NFS clients however have a lot of historical robustification for
+   slow-responding, or perhaps, never-responding servers. 
 3. The OS is pretty good at caching NFS. There are established principles for 
-cache eviction, for metadata, or for data. With a FUSE driver I have to do
-a lot of the work myself.
+   cache eviction, for metadata, or for data. With a FUSE driver I have to do
+   a lot of the work myself.
 
 So, this is a FUSE-like user-mode filesystem API that basically works by 
 creating a localhost NFSv3 server you can mount.
@@ -79,11 +79,10 @@ Relevant RFCs
 Basic Source Layout
 ===================
  - context.rs: A connection context object that is passed around containing
- connection information, VFS information, etc.
+   connection information, VFS information, etc.
  - tcp.rs: Main TCP handling entry point
  - rpcwire.rs: Reads and write RPC messages from a TCP socket and performs outer 
-               most RPC message decoding, redirecting to NFS/Mount/Portmapper 
-               implementations as needed.
+   most RPC message decoding, redirecting to NFS/Mount/Portmapper implementations as needed.
  - rpc.rs: The structure of a RPC call and reply. All XDR encoded.
  - portmap.rs/portmap\_handlers.rs: The XDR structures required by the Portmapper protocol and the Portmapper RPC handlers.
  - mount.rs/mount\_handlers.rs: The XDR structures required by the Mount protocol and the Mount RPC handlers.
@@ -94,14 +93,14 @@ More More Details Than Necessary
 ================================
 The basic way a message works is:
 1. We read a collection of fragments off a TCP stream 
-(a 4 byte length header followed by a bunch of bytes)
+   (a 4 byte length header followed by a bunch of bytes)
 2. We assemble the fragments into a record
 3. The Record is of a SUN RPC message type.
 4. A message tells us 3 pieces of information,
-     - The RPC Program (just an integer denoting
-      a protocol "class". For instance NFS protocol is 100003, the Portmapper protocol is 100000).
-     - The version of the RPC program (ex: 3 = NFSv3, 4 = NFSv4, etc)
-     - The method invoked (Which NFS method to call) (See for instance nfs.rs top comment for the list)
+  - The RPC Program (just an integer denoting
+    a protocol "class". For instance NFS protocol is 100003, the Portmapper protocol is 100000).
+  - The version of the RPC program (ex: 3 = NFSv3, 4 = NFSv4, etc)
+  - The method invoked (Which NFS method to call) (See for instance nfs.rs top comment for the list)
 5. Continuing to decode the message will give us the arguments of the method
 6. And we take the method response, wrap it around a record and return it. 
 
@@ -136,14 +135,14 @@ Basically anytime the client tries to access any information about an object,
 it needs an `nfs_fh3`. The purpose of the `nfs_fh3` serves 2 purposes:
 
  - Allow server to cache additional query information in the handle that may exceed
- 64-bit. For instance if the server has multiple exports on different disk volumes,
- I may need a few more bits to identify the disk volume.
+   64-bit. For instance if the server has multiple exports on different disk volumes,
+   I may need a few more bits to identify the disk volume.
  - Allow client to identify when server has "restarted" and thus client has to
- clear all caches. the `nfs_fh3` handle should contain a token that is unique
- to when the NFS server first started up which allows the server to check that
- the handle is still valid. If the server has restarted, all previous handles
- will therefore be "expired" and any usage of them should trigger a handle expiry
- error informing the clients to expunge all caches.
+   clear all caches. the `nfs_fh3` handle should contain a token that is unique
+   to when the NFS server first started up which allows the server to check that
+   the handle is still valid. If the server has restarted, all previous handles
+   will therefore be "expired" and any usage of them should trigger a handle expiry
+   error informing the clients to expunge all caches.
 
 
 However, the only way to obtain an `nfs_fh3` for a file is via directory traversal.
