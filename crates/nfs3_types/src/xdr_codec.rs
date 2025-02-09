@@ -3,12 +3,11 @@
 //! > NOTE: `xdr_codec` crate has been updated in a long time, so it might be replaced in the future.
 
 pub use ::xdr_codec::*;
-
 /// Derive macro that implements [`Pack`] and [`Unpack`] traits.
 pub use nfs3_macros::XdrCodec;
 
 /// Represents a sequence of optional values in NFS3.
-/// 
+///
 /// This struct is a wrapper around a `Vec<T>`, where `T` is a type that implements
 /// the [`Pack`] and [`Unpack`] traits for serialization and deserialization.
 #[derive(Debug)]
