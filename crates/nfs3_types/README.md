@@ -4,6 +4,6 @@
 
 ## Features
 
-- Type definitions for NFSv3 protocol, including Mount and Portmapper
+- Type definitions for NFSv3 protocol, including Mount and Port Mapper
 - XDR encoding and decoding
 - Utilities for handling NFSv3 operations

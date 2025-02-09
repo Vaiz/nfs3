@@ -4,6 +4,8 @@
     clippy::upper_case_acronyms
 )]
 
+//! This module contains the definitions of the RPC protocol as defined in RFC 1057.
+
 use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{Opaque, Pack, Read, Result, Unpack, Write};
