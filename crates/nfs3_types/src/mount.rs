@@ -4,6 +4,8 @@
     clippy::upper_case_acronyms
 )]
 
+//! This module contains the definitions of the MOUNT3 protocol as defined in RFC 1813.
+
 use std::io::{Read, Write};
 
 use crate::xdr_codec::{Error, List, Opaque, Pack, Unpack, XdrCodec};

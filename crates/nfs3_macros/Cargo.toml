@@ -5,6 +5,11 @@ edition.workspace = true
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
+license.workspace = true
+description = "A Rust library providing a derive macro for XDR codec implementation."
+readme = "README.md"
+exclude = ["tests/*"]
+keywords = ["xdr", "rfc1014"]
 
 [lib]
 proc-macro = true

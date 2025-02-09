@@ -4,7 +4,7 @@
     clippy::upper_case_acronyms
 )]
 
-//! Transcribed from RFC 1057 Appendix A
+//! This module contains the definitions of the Port Mapper protocol as defined in RFC 1057.
 
 use crate::xdr_codec::{List, Opaque, XdrCodec};
 

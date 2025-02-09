@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 extern crate self as nfs3_types;
 
 pub mod mount;
