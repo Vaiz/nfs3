@@ -1,8 +1,8 @@
 Disclaimer
 ==========
 
-This project originated as a fork of [xetdata/nfsserve](https://github.com/xetdata/nfsserve) and 
-includes substantial code from that repository.
+This project originated as a fork of [xetdata/nfsserve](https://github.com/xetdata/nfsserve) and
+includes a substantial amount of code from that repository.
 
 Rust NFSv3 Server
 =================
