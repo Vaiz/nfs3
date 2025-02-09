@@ -2,9 +2,9 @@
 
 pub(crate) mod metadata_ext;
 
-use std::fs::{File, Metadata, Permissions};
+use std::fs::Metadata;
 #[cfg(unix)]
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 use metadata_ext::NfsMetadataExt;

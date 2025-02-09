@@ -1,14 +1,11 @@
 use std::fs::{File, FileType, Permissions};
 #[cfg(unix)]
-use std::os::unix::fs::FileTypeExt;
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 
 use nfs3_types::nfs3::ftype3;
-use tracing::debug;
 
 pub struct NfsMetadataExt<'a>(pub &'a std::fs::Metadata);
 
@@ -18,7 +15,7 @@ impl NfsMetadataExt<'_> {
         self.0.mode()
     }
     pub fn nlink(&self) -> u32 {
-        self.0.nlink().min(u32::max_value()) as u32
+        self.0.nlink().min(u32::max_value().into()) as u32
     }
 
     pub fn uid(&self) -> u32 {
@@ -49,11 +46,11 @@ impl NfsMetadataExt<'_> {
         }
     }
 
-    pub fn set_mode_on_path(_path: impl AsRef<Path>, _mode: u32) -> std::io::Result<()> {
+    pub fn set_mode_on_path(path: impl AsRef<Path>, mode: u32) -> std::io::Result<()> {
         std::fs::set_permissions(path, Permissions::from_mode(mode))
     }
 
-    pub fn set_mode_on_file(_file: &File, _mode: u32) -> std::io::Result<()> {
+    pub fn set_mode_on_file(file: &File, mode: u32) -> std::io::Result<()> {
         file.set_permissions(Permissions::from_mode(mode))
     }
 }
@@ -99,12 +96,12 @@ impl NfsMetadataExt<'_> {
     }
 
     pub fn set_mode_on_path(_path: impl AsRef<Path>, _mode: u32) -> std::io::Result<()> {
-        debug!("setting permissions is not supported");
+        tracing::debug!("setting permissions is not supported");
         Ok(())
     }
 
     pub fn set_mode_on_file(_file: &File, _mode: u32) -> std::io::Result<()> {
-        debug!("setting permissions is not supported");
+        tracing::debug!("setting permissions is not supported");
         Ok(())
     }
 }
