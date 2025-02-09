@@ -3,10 +3,6 @@ use std::ffi::OsString;
 use std::fs::Metadata;
 use std::io::SeekFrom;
 use std::ops::Bound;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -327,7 +323,7 @@ impl MirrorFS {
                 }
 
                 #[cfg(unix)]
-                tokio::fs::symlink(OsStr::from_bytes(target.as_ref()), &path)
+                tokio::fs::symlink(target.as_os_str(), &path)
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
@@ -709,10 +705,12 @@ impl NFSFileSystem for MirrorFS {
 /// NOTE: This is something that works without any guarantees of correctly
 /// handling OS encoding. It should be used for testing purposes only.
 pub mod string_ext {
-
     use std::ffi::{OsStr, OsString};
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStrExt;
 
     use nfs3_types::nfs3::{filename3, nfspath3};
+    #[cfg(not(unix))]
     use nfs3_types::xdr_codec::Opaque;
 
     pub trait IntoOsString {
@@ -743,16 +741,22 @@ pub mod string_ext {
     }
 
     #[cfg(unix)]
-    impl FromOsString for filename3<'_> {
+    impl FromOsString for filename3<'static> {
         fn from_os_str(osstr: &OsStr) -> Self {
-            Self::from(osstr.as_bytes())
+            Self::from(osstr.as_bytes().to_vec())
         }
     }
 
     #[cfg(unix)]
-    impl FromOsString for nfspath3<'_> {
+    impl IntoOsString for nfspath3<'_> {
+        fn as_os_str(&self) -> &OsStr {
+            OsStr::from_bytes(self.as_ref())
+        }
+    }
+    #[cfg(unix)]
+    impl FromOsString for nfspath3<'static> {
         fn from_os_str(osstr: &OsStr) -> Self {
-            Self::from(osstr.as_bytes())
+            Self::from(osstr.as_bytes().to_vec())
         }
     }
 
