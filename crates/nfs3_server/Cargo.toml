@@ -19,14 +19,14 @@ doctest = false
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.1.0" }
 
-tokio = { version="1.43.0", features = [ "net", "io-util", "sync", "fs", "rt", "macros" ], default-features = false }
-tracing = "0.1.41"
-anyhow = "1.0.95"
-async-trait = "0.1.86"
-filetime = "0.2.25"
-xdr-codec = "0.4.4"
+tokio = { workspace = true, features = [ "net", "io-util", "sync", "fs", "rt", "macros" ] }
+tracing.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+filetime.workspace = true
+xdr-codec.workspace = true
 
 [dev-dependencies]
-tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
-intaglio = { version = "1.10"}
-tokio = { version="1.43.0", features = [ "rt-multi-thread" ], default-features = false }
+tracing-subscriber = { workspace = true, features = ["tracing-log"] }
+intaglio.workspace = true
+tokio = { workspace = true, features = [ "rt-multi-thread" ], default-features = false }
