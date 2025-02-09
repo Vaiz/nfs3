@@ -1,10 +1,13 @@
 #![cfg_attr(target_os = "windows", allow(unused_imports))]
 
+pub(crate) mod metadata_ext;
+
 use std::fs::{File, Metadata, Permissions};
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 
+use metadata_ext::NfsMetadataExt;
 use nfs3_types::nfs3::*;
 use tokio::fs::OpenOptions;
 use tracing::debug;
@@ -43,58 +46,6 @@ fn mode_unmask(mode: u32) -> u32 {
     (mode | 0x80) & 0x1FF
 }
 
-#[cfg(unix)]
-fn set_permissions_on_path(path: impl AsRef<Path>, mode: u32) -> std::io::Result<()> {
-    std::fs::set_permissions(path, Permissions::from_mode(mode))
-}
-#[cfg(not(unix))]
-fn set_permissions_on_path(_path: impl AsRef<Path>, _mode: u32) -> std::io::Result<()> {
-    debug!("setting permissions is not supported");
-    Ok(())
-}
-
-#[cfg(unix)]
-fn get_mode(metadata: &Metadata) -> u32 {
-    metadata.mode()
-}
-#[cfg(not(unix))]
-fn get_mode(metadata: &Metadata) -> u32 {
-    // Assume full `rwxrwxrwx` permissions if not read-only
-    if metadata.permissions().readonly() {
-        0o444 // Readable by all, not writable
-    } else {
-        0o666 // Readable and writable by all
-    }
-}
-
-#[cfg(unix)]
-fn set_permissions_on_file(file: &File, mode: u32) -> std::io::Result<()> {
-    file.set_permissions(Permissions::from_mode(mode))
-}
-#[cfg(not(unix))]
-fn set_permissions_on_file(_file: &File, _mode: u32) -> std::io::Result<()> {
-    debug!("setting permissions is not supported");
-    Ok(())
-}
-
-#[cfg(unix)]
-fn get_uid(metadata: &Metadata) -> u32 {
-    metadata.uid()
-}
-#[cfg(not(unix))]
-fn get_uid(_metadata: &Metadata) -> u32 {
-    1000
-}
-
-#[cfg(unix)]
-fn get_gid(metadata: &Metadata) -> u32 {
-    metadata.gid()
-}
-#[cfg(not(unix))]
-fn get_gid(_metadata: &Metadata) -> u32 {
-    1000
-}
-
 fn to_nfstime3(time: std::io::Result<std::time::SystemTime>) -> nfstime3 {
     match time {
         Ok(time) => time.try_into().unwrap_or_default(),
@@ -103,57 +54,24 @@ fn to_nfstime3(time: std::io::Result<std::time::SystemTime>) -> nfstime3 {
 }
 
 /// Converts fs Metadata to NFS fattr3
-pub fn metadata_to_fattr3(fid: fileid3, meta: &Metadata) -> fattr3 {
+pub fn metadata_to_fattr3(fileid: fileid3, meta: &Metadata) -> fattr3 {
+    let meta_ext = NfsMetadataExt(meta);
     let size = meta.len();
-    let file_mode = mode_unmask(get_mode(meta));
-    if meta.is_file() {
-        fattr3 {
-            type_: ftype3::NF3REG,
-            mode: file_mode,
-            nlink: 1,
-            uid: get_uid(meta),
-            gid: get_gid(meta),
-            size,
-            used: size,
-            rdev: specdata3::default(),
-            fsid: 0,
-            fileid: fid,
-            atime: to_nfstime3(meta.accessed()),
-            mtime: to_nfstime3(meta.modified()),
-            ctime: to_nfstime3(meta.created()),
-        }
-    } else if meta.is_symlink() {
-        fattr3 {
-            type_: ftype3::NF3LNK,
-            mode: file_mode,
-            nlink: 1,
-            uid: get_uid(meta),
-            gid: get_gid(meta),
-            size,
-            used: size,
-            rdev: specdata3::default(),
-            fsid: 0,
-            fileid: fid,
-            atime: to_nfstime3(meta.accessed()),
-            mtime: to_nfstime3(meta.modified()),
-            ctime: to_nfstime3(meta.created()),
-        }
-    } else {
-        fattr3 {
-            type_: ftype3::NF3DIR,
-            mode: file_mode,
-            nlink: 2,
-            uid: get_uid(meta),
-            gid: get_gid(meta),
-            size,
-            used: size,
-            rdev: specdata3::default(),
-            fsid: 0,
-            fileid: fid,
-            atime: to_nfstime3(meta.accessed()),
-            mtime: to_nfstime3(meta.modified()),
-            ctime: to_nfstime3(meta.created()),
-        }
+    let mode = mode_unmask(meta_ext.mode());
+    fattr3 {
+        type_: meta_ext.file_type(),
+        mode,
+        nlink: meta_ext.nlink(),
+        uid: meta_ext.uid(),
+        gid: meta_ext.gid(),
+        size,
+        used: size,
+        rdev: specdata3::default(),
+        fsid: 0,
+        fileid,
+        atime: to_nfstime3(meta.accessed()),
+        mtime: to_nfstime3(meta.modified()),
+        ctime: to_nfstime3(meta.created()),
     }
 }
 
@@ -182,7 +100,7 @@ pub async fn path_setattr(path: &Path, setattr: &sattr3) -> Result<(), nfsstat3>
     if let set_mode3::Some(mode) = setattr.mode {
         debug!(" -- set permissions {:?} {:?}", path, mode);
         let mode = mode_unmask(mode);
-        let _ = set_permissions_on_path(path, mode);
+        let _ = NfsMetadataExt::set_mode_on_path(path, mode);
     };
     if let set_uid3::Some(_) = setattr.uid {
         debug!("Set uid not implemented");
@@ -209,7 +127,7 @@ pub async fn file_setattr(file: &std::fs::File, setattr: &sattr3) -> Result<(), 
     if let set_mode3::Some(mode) = setattr.mode {
         debug!(" -- set permissions {:?}", mode);
         let mode = mode_unmask(mode);
-        let _ = set_permissions_on_file(file, mode);
+        let _ = NfsMetadataExt::set_mode_on_file(file, mode);
     }
     if let set_size3::Some(size3) = setattr.size {
         debug!(" -- set size {:?}", size3);
