@@ -7,8 +7,8 @@ resolver = "2"
 [workspace.package]
 authors = ["Vaiz"]
 edition = "2021"
-homepage = "https://github.com/Vaiz/nfsserve"
-repository = "https://github.com/Vaiz/nfsserve"
+homepage = "https://github.com/Vaiz/nfs3"
+repository = "https://github.com/Vaiz/nfs3"
 
 [workspace.dependencies]
 anyhow = "1.0.95"
