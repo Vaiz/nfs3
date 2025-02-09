@@ -3,10 +3,8 @@ use std::sync::Once;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use nfs3_types::nfs3::{FSINFO3resok as fsinfo3, *};
 use nfs3_types::xdr_codec::Opaque;
-
-use crate::xdrgen::nfsv3 as nfs;
-use crate::xdrgen::nfsv3::{FSINFO3resok as fsinfo3, *};
 
 #[derive(Debug)]
 pub struct DirEntrySimple<'a> {
@@ -220,9 +218,9 @@ pub trait NFSFileSystem: Sync {
 
     /// Get static file system Information
     async fn fsinfo(&self, root_fileid: fileid3) -> Result<fsinfo3, nfsstat3> {
-        let dir_attr: nfs::post_op_attr = match self.getattr(root_fileid).await {
-            Ok(v) => nfs::post_op_attr::Some(v),
-            Err(_) => nfs::post_op_attr::None,
+        let dir_attr: post_op_attr = match self.getattr(root_fileid).await {
+            Ok(v) => post_op_attr::Some(v),
+            Err(_) => post_op_attr::None,
         };
 
         let res = fsinfo3 {
@@ -235,11 +233,11 @@ pub trait NFSFileSystem: Sync {
             wtmult: 1024 * 1024,
             dtpref: 1024 * 1024,
             maxfilesize: 128 * 1024 * 1024 * 1024,
-            time_delta: nfs::nfstime3 {
+            time_delta: nfstime3 {
                 seconds: 0,
                 nseconds: 1000000,
             },
-            properties: nfs::FSF3_SYMLINK | nfs::FSF3_HOMOGENEOUS | nfs::FSF3_CANSETTIME,
+            properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
         };
         Ok(res)
     }

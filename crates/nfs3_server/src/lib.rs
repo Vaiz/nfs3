@@ -14,7 +14,3 @@ pub mod fs_util;
 pub mod tcp;
 mod transaction_tracker;
 pub mod vfs;
-
-pub mod xdrgen {
-    pub use nfs3_types::nfs3 as nfsv3;
-}
