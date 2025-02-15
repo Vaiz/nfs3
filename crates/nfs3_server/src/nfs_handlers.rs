@@ -86,31 +86,38 @@ pub async fn nfsproc3_getattr(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs_fh3::unpack(input)?.0;
-    debug!("nfsproc3_getattr({:?},{:?}) ", xid, handle);
+    let getattr3args = GETATTR3args::unpack(input)?.0;
+    let getattr3res = getattr_impl(xid, getattr3args, context).await?;
+    make_success_reply(xid).pack(output)?;
+    getattr3res.pack(output)?;
+
+    Ok(())
+}
+
+async fn getattr_impl(
+    xid: u32,
+    getattr3args: GETATTR3args,
+    context: &RPCContext,
+) -> anyhow::Result<GETATTR3res> {
+    let handle = getattr3args.object;
+    debug!("nfsproc3_getattr({},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
     // fail if unable to convert file handle
     if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        return Ok(());
+        return Ok(GETATTR3res::Err((stat, ())));
     }
     let id = id.unwrap();
     match context.vfs.getattr(id).await {
-        Ok(fh) => {
-            debug!(" {:?} --> {:?}", xid, fh);
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            fh.pack(output)?;
+        Ok(obj_attributes) => {
+            debug!(" {} --> {:?}", xid, obj_attributes);
+            Ok(GETATTR3res::Ok(GETATTR3resok { obj_attributes }))
         }
         Err(stat) => {
-            error!("getattr error {:?} --> {:?}", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
+            error!("getattr error {} --> {:?}", xid, stat);
+            Ok(GETATTR3res::Err((stat, ())))
         }
     }
-    Ok(())
 }
 
 pub async fn nfsproc3_lookup(
