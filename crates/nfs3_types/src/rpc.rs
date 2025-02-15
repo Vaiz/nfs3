@@ -155,9 +155,7 @@ impl PackedSize for accept_stat_data {
         4 + match self {
             accept_stat_data::SUCCESS => 0,
             accept_stat_data::PROG_UNAVAIL => 0,
-            accept_stat_data::PROG_MISMATCH { .. } => {
-                8
-            }
+            accept_stat_data::PROG_MISMATCH { .. } => 8,
             accept_stat_data::PROC_UNAVAIL => 0,
             accept_stat_data::GARBAGE_ARGS => 0,
             accept_stat_data::SYSTEM_ERR => 0,
