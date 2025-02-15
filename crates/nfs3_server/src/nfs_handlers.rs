@@ -119,42 +119,42 @@ pub async fn nfsproc3_lookup(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let dirops = diropargs3::unpack(input)?.0;
+    let lookup3args = LOOKUP3args::unpack(input)?.0;
+    let dirops = lookup3args.what;
     debug!("nfsproc3_lookup({:?},{:?}) ", xid, dirops);
 
     let dirid = context.vfs.fh_to_id(&dirops.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
         make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
+        LOOKUP3res::Err((stat, LOOKUP3resfail::default())).pack(output)?;
         return Ok(());
     }
-    let dirid = dirid.unwrap();
 
-    let dir_attr = match context.vfs.getattr(dirid).await {
+    let dirid = dirid.unwrap();
+    let dir_attributes = match context.vfs.getattr(dirid).await {
         Ok(v) => post_op_attr::Some(v),
         Err(_) => post_op_attr::None,
     };
     match context.vfs.lookup(dirid, &dirops.name).await {
         Ok(fid) => {
-            let obj_attr = match context.vfs.getattr(fid).await {
+            let obj_attributes = match context.vfs.getattr(fid).await {
                 Ok(v) => post_op_attr::Some(v),
                 Err(_) => post_op_attr::None,
             };
 
-            debug!("lookup success {:?} --> {:?}", xid, obj_attr);
+            debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
             make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            context.vfs.id_to_fh(fid).pack(output)?;
-            obj_attr.pack(output)?;
-            dir_attr.pack(output)?;
+            LOOKUP3resok {
+                object: context.vfs.id_to_fh(fid),
+                obj_attributes,
+                dir_attributes,
+            }.pack(output)?;
         }
         Err(stat) => {
             debug!("lookup error {:?}({:?}) --> {:?}", xid, dirops.name, stat);
             make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            dir_attr.pack(output)?;
+            LOOKUP3res::Err((stat, LOOKUP3resfail{ dir_attributes })).pack(output)?;
         }
     }
     Ok(())
