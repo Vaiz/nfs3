@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use nfs3_types::nfs3::{FSINFO3resok as fsinfo3, *};
 use nfs3_types::xdr_codec::Opaque;
 
-use crate::units::{Gibibyte, Mebibyte};
+use crate::units::{GIBIBYTE, MEBIBYTE};
 
 #[derive(Debug)]
 pub struct DirEntrySimple<'a> {
@@ -227,14 +227,14 @@ pub trait NFSFileSystem: Sync {
 
         let res = fsinfo3 {
             obj_attributes: dir_attr,
-            rtmax: Mebibyte.into(),
-            rtpref: Mebibyte.into(),
-            rtmult: Mebibyte.into(),
-            wtmax: Mebibyte.into(),
-            wtpref: Mebibyte.into(),
-            wtmult: Mebibyte.into(),
-            dtpref: Mebibyte.into(),
-            maxfilesize: 128u64 * Gibibyte,
+            rtmax: MEBIBYTE,
+            rtpref: MEBIBYTE,
+            rtmult: MEBIBYTE,
+            wtmax: MEBIBYTE,
+            wtpref: MEBIBYTE,
+            wtmult: MEBIBYTE,
+            dtpref: MEBIBYTE,
+            maxfilesize: 128u64 * GIBIBYTE,
             time_delta: nfstime3 {
                 seconds: 0,
                 nseconds: 1000000,
