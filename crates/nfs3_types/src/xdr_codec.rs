@@ -9,5 +9,5 @@ pub use ::xdr_codec::*;
 /// Derive macro that implements [`Pack`] and [`Unpack`] traits.
 pub use nfs3_macros::XdrCodec;
 
-pub use self::list::{List, BoundedList};
+pub use self::list::{BoundedList, List};
 pub use self::packed_size::PackedSize;

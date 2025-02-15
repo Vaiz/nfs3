@@ -287,7 +287,6 @@ fn test_bounded_list() {
     let list = bounded_list.into_inner();
     assert_eq!(list.0, vec![0x1234, 0x5678, 0x9abc]);
 
-
     let mut bounded_list = nfs3_types::xdr_codec::BoundedList::<u32>::new(27);
     assert!(bounded_list.try_push(0x1234).is_ok());
     assert!(bounded_list.try_push(0x5678).is_ok());
@@ -295,7 +294,6 @@ fn test_bounded_list() {
 
     let list = bounded_list.into_inner();
     assert_eq!(list.0, vec![0x1234, 0x5678]);
-
 
     let mut bounded_list = nfs3_types::xdr_codec::BoundedList::<u32>::new(29);
     assert!(bounded_list.try_push(0x1234).is_ok());

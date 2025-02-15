@@ -403,7 +403,7 @@ pub struct READDIR3args {
     pub count: count3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Default, XdrCodec)]
 pub struct READDIR3resfail {
     pub dir_attributes: post_op_attr,
 }
@@ -583,7 +583,7 @@ pub struct devicedata3 {
     pub spec: specdata3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Default, XdrCodec)]
 pub struct dirlist3<'a> {
     pub entries: List<entry3<'a>>,
     pub eof: bool,

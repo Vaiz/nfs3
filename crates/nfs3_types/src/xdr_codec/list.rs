@@ -11,6 +11,12 @@ use crate::xdr_codec::PackedSize;
 #[derive(Debug)]
 pub struct List<T>(pub Vec<T>);
 
+impl<T> Default for List<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
 impl<T, Out> Pack<Out> for List<T>
 where
     Out: Write,
@@ -69,7 +75,6 @@ where
         Ok((List(items), len))
     }
 }
-
 
 pub struct BoundedList<T> {
     list: List<T>,
