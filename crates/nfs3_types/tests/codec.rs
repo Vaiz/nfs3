@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 
-use nfs3_types::xdr_codec::{Opaque, Pack, PackedSize, Unpack, XdrCodec};
+use nfs3_types::xdr_codec::{List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -22,10 +22,10 @@ fn enum_pack() {
     let mut bytes = Vec::new();
     let len = TestEnum::Field2.pack(&mut bytes).unwrap();
     assert_eq!(TestEnum::Field2.packed_size(), 4);
-    assert_eq!(len, 4);    
+    assert_eq!(len, 4);
     assert_eq!(bytes, [0, 0, 0, 2]);
 
-    let mut bytes = Vec::new();    
+    let mut bytes = Vec::new();
     let len = TestEnum::Field3.pack(&mut bytes).unwrap();
     assert_eq!(TestEnum::Field3.packed_size(), 4);
     assert_eq!(len, 4);
@@ -158,4 +158,48 @@ fn test_unit_struct_serialization() {
     let (deserialized, len) = UnitStruct::unpack(&mut cursor).unwrap();
     assert_eq!(len, 0);
     assert_eq!(original, deserialized);
+}
+
+#[test]
+fn test_vec_serialization() {
+    let original = vec![0x1234, 0x5678, 0x9abc];
+
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 16); // 4 bytes for length + 12 bytes for data
+    assert_eq!(len, 16);
+    assert_eq!(
+        buffer,
+        [
+            0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x12, 0x34, 0x00, 0x00, 0x56, 0x78, 0x00, 0x00,
+            0x9a, 0xbc
+        ]
+    );
+
+    let mut cursor = Cursor::new(buffer);
+    let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
+    assert_eq!(len, 16);
+    assert_eq!(original, deserialized);
+}
+
+#[test]
+fn test_list_serialization() {
+    let original = List(vec![0x1234, 0x5678, 0x9abc]);
+
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.count_packed_size(), 28);
+    assert_eq!(len, 28);
+    assert_eq!(
+        buffer,
+        [
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x12, 0x34, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x56, 0x78, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x9a, 0xbc, 0x00, 0x00, 0x00, 0x00,
+        ]
+    );
+
+    let mut cursor = Cursor::new(buffer);
+    let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
+    assert_eq!(len, 28);
+    assert_eq!(original.0, deserialized.0);
 }
