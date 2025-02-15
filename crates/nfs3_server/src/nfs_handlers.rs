@@ -120,15 +120,25 @@ pub async fn nfsproc3_lookup(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     let lookup3args = LOOKUP3args::unpack(input)?.0;
+    let lookup3res = lookup_impl(xid, lookup3args, context).await?;
+    make_success_reply(xid).pack(output)?;
+    lookup3res.pack(output)?;
+
+    Ok(())
+}
+
+async fn lookup_impl(
+    xid: u32,
+    lookup3args: LOOKUP3args<'_>,
+    context: &RPCContext,
+) -> anyhow::Result<LOOKUP3res> {
     let dirops = lookup3args.what;
     debug!("nfsproc3_lookup({:?},{:?}) ", xid, dirops);
 
     let dirid = context.vfs.fh_to_id(&dirops.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        make_success_reply(xid).pack(output)?;
-        LOOKUP3res::Err((stat, LOOKUP3resfail::default())).pack(output)?;
-        return Ok(());
+        return Ok(LOOKUP3res::Err((stat, LOOKUP3resfail::default())));
     }
 
     let dirid = dirid.unwrap();
@@ -144,21 +154,17 @@ pub async fn nfsproc3_lookup(
             };
 
             debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
-            make_success_reply(xid).pack(output)?;
-            LOOKUP3res::Ok(LOOKUP3resok {
+            Ok(LOOKUP3res::Ok(LOOKUP3resok {
                 object: context.vfs.id_to_fh(fid),
                 obj_attributes,
                 dir_attributes,
-            })
-            .pack(output)?;
+            }))
         }
         Err(stat) => {
             debug!("lookup error {:?}({:?}) --> {:?}", xid, dirops.name, stat);
-            make_success_reply(xid).pack(output)?;
-            LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })).pack(output)?;
+            Ok(LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })))
         }
     }
-    Ok(())
 }
 
 pub async fn nfsproc3_read(
