@@ -145,16 +145,17 @@ pub async fn nfsproc3_lookup(
 
             debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
             make_success_reply(xid).pack(output)?;
-            LOOKUP3resok {
+            LOOKUP3res::Ok(LOOKUP3resok {
                 object: context.vfs.id_to_fh(fid),
                 obj_attributes,
                 dir_attributes,
-            }.pack(output)?;
+            })
+            .pack(output)?;
         }
         Err(stat) => {
             debug!("lookup error {:?}({:?}) --> {:?}", xid, dirops.name, stat);
             make_success_reply(xid).pack(output)?;
-            LOOKUP3res::Err((stat, LOOKUP3resfail{ dir_attributes })).pack(output)?;
+            LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })).pack(output)?;
         }
     }
     Ok(())
