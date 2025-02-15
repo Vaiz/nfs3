@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, Read, Result, Unpack, Write};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
 pub const PROGRAM: u32 = 100003;
 pub const VERSION: u32 = 3;
@@ -74,6 +74,21 @@ where
     }
 }
 
+impl<T, E> PackedSize for Nfs3Result<T, E>
+where
+    T: PackedSize,
+    E: PackedSize,
+{
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Nfs3Result::Ok(v) => v.packed_size(),
+            Nfs3Result::Err((code, err)) => code.packed_size() + err.packed_size(),
+        }
+    }
+}
+
 pub type ACCESS3res = Nfs3Result<ACCESS3args, ACCESS3resfail>;
 pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
@@ -133,6 +148,17 @@ where
                 Ok((Self::Some(val), sz))
             }
             _ => Ok((Self::None, sz)),
+        }
+    }
+}
+
+impl<T: PackedSize> PackedSize for Nfs3Option<T> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Nfs3Option::Some(v) => v.packed_size(),
+            Nfs3Option::None => 0,
         }
     }
 }
@@ -846,6 +872,14 @@ impl<Out: Write> Pack<Out> for cookieverf3 {
     }
 }
 
+impl PackedSize for cookieverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_COOKIEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_COOKIEVERFSIZE
+    }
+}
+
 impl<Out: Write> Pack<Out> for createhow3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         Ok(match self {
@@ -856,9 +890,29 @@ impl<Out: Write> Pack<Out> for createhow3 {
     }
 }
 
+impl PackedSize for createhow3 {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            createhow3::UNCHECKED(val) => val.packed_size(),
+            createhow3::GUARDED(val) => val.packed_size(),
+            createhow3::EXCLUSIVE(val) => val.packed_size(),
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for createverf3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+    }
+}
+
+impl PackedSize for createverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_CREATEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_CREATEVERFSIZE
     }
 }
 
@@ -874,6 +928,20 @@ impl<Out: Write> Pack<Out> for mknoddata3 {
     }
 }
 
+impl PackedSize for mknoddata3 {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            mknoddata3::NF3CHR(val) => val.packed_size(),
+            mknoddata3::NF3BLK(val) => val.packed_size(),
+            mknoddata3::NF3SOCK(val) => val.packed_size(),
+            mknoddata3::NF3FIFO(val) => val.packed_size(),
+            mknoddata3::default => 0,
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for set_atime {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         let len = match self {
@@ -882,6 +950,18 @@ impl<Out: Write> Pack<Out> for set_atime {
             Self::SET_TO_CLIENT_TIME(val) => 2.pack(out)? + val.pack(out)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for set_atime {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
     }
 }
 
@@ -896,9 +976,29 @@ impl<Out: Write> Pack<Out> for set_mtime {
     }
 }
 
+impl PackedSize for set_mtime {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for writeverf3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+    }
+}
+
+impl PackedSize for writeverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_WRITEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_WRITEVERFSIZE
     }
 }
 

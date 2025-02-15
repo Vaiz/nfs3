@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Opaque, Pack, Read, Result, Unpack, Write};
+use crate::xdr_codec::{Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
 pub const RPC_VERSION_2: u32 = 2;
 
@@ -82,13 +82,25 @@ impl Default for opaque_auth<'static> {
     }
 }
 
-#[derive(Default, Clone, Debug, XdrCodec)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct auth_unix {
     pub stamp: u32,
-    pub machinename: String,
+    pub machinename: Opaque<'static>,
     pub uid: u32,
     pub gid: u32,
     pub gids: Vec<u32>,
+}
+
+impl Default for auth_unix {
+    fn default() -> Self {
+        Self {
+            stamp: 0,
+            machinename: Opaque::owned(vec![]),
+            uid: 0,
+            gid: 0,
+            gids: vec![],
+        }
+    }
 }
 
 #[derive(Debug, XdrCodec)]
@@ -133,6 +145,23 @@ where
             accept_stat_data::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(w)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for accept_stat_data {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            accept_stat_data::SUCCESS => 0,
+            accept_stat_data::PROG_UNAVAIL => 0,
+            accept_stat_data::PROG_MISMATCH { .. } => {
+                8
+            }
+            accept_stat_data::PROC_UNAVAIL => 0,
+            accept_stat_data::GARBAGE_ARGS => 0,
+            accept_stat_data::SYSTEM_ERR => 0,
+        }
     }
 }
 
@@ -193,6 +222,17 @@ where
     }
 }
 
+impl PackedSize for rejected_reply {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            rejected_reply::RPC_MISMATCH { .. } => 8,
+            rejected_reply::AUTH_ERROR(_) => 4,
+        }
+    }
+}
+
 impl<In> Unpack<In> for rejected_reply
 where
     In: Read,
@@ -240,6 +280,17 @@ where
     }
 }
 
+impl PackedSize for reply_body<'_> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            reply_body::MSG_ACCEPTED(accepted_reply) => accepted_reply.packed_size(),
+            reply_body::MSG_DENIED(rejected_reply) => rejected_reply.packed_size(),
+        }
+    }
+}
+
 impl<In> Unpack<In> for reply_body<'_>
 where
     In: Read,
@@ -282,6 +333,17 @@ where
             msg_body::REPLY(reply_body) => msg_type::REPLY.pack(w)? + reply_body.pack(w)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for msg_body<'_, '_> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            msg_body::CALL(call_body) => call_body.packed_size(),
+            msg_body::REPLY(reply_body) => reply_body.packed_size(),
+        }
     }
 }
 

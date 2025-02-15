@@ -1,12 +1,7 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 
-use nfs3_macros::XdrCodec;
-use xdr_codec::{Opaque, Pack, Unpack};
-
-pub mod nfs3_types {
-    pub use xdr_codec;
-}
+use nfs3_types::xdr_codec::{Opaque, Pack, PackedSize, Unpack, XdrCodec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -20,16 +15,19 @@ enum TestEnum {
 fn enum_pack() {
     let mut bytes = Vec::new();
     let len = TestEnum::Field1.pack(&mut bytes).unwrap();
+    assert_eq!(TestEnum::Field1.packed_size(), 4);
     assert_eq!(len, 4);
     assert_eq!(bytes, [0, 0, 0, 1]);
 
     let mut bytes = Vec::new();
     let len = TestEnum::Field2.pack(&mut bytes).unwrap();
-    assert_eq!(len, 4);
+    assert_eq!(TestEnum::Field2.packed_size(), 4);
+    assert_eq!(len, 4);    
     assert_eq!(bytes, [0, 0, 0, 2]);
 
-    let mut bytes = Vec::new();
+    let mut bytes = Vec::new();    
     let len = TestEnum::Field3.pack(&mut bytes).unwrap();
+    assert_eq!(TestEnum::Field3.packed_size(), 4);
     assert_eq!(len, 4);
     assert_eq!(bytes, [0x12, 0x34, 0x56, 0x78]);
 }
@@ -65,6 +63,7 @@ fn test_simple_struct_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 8);
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
@@ -86,6 +85,7 @@ fn test_nested_struct_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 12);
     assert_eq!(len, 12);
     assert_eq!(
         buffer,
@@ -111,6 +111,7 @@ fn test_struct_with_lifetime_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 12);
     assert_eq!(len, 12);
     assert_eq!(buffer[0..4], [0u8, 0, 0, 5]);
     assert_eq!(&buffer[4..], "Hello\0\0\0".as_bytes());
@@ -130,6 +131,7 @@ fn test_tuple_struct_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 8);
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
@@ -148,6 +150,7 @@ fn test_unit_struct_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.packed_size(), 0);
     assert_eq!(len, 0);
     assert_eq!(buffer, []);
 
