@@ -203,3 +203,74 @@ fn test_list_serialization() {
     assert_eq!(len, 28);
     assert_eq!(original.0, deserialized.0);
 }
+
+#[test]
+fn test_empty_dirlist3_serialization() {
+    use nfs3_types::nfs3::dirlist3;
+
+    let original = dirlist3 {
+        entries: List(vec![]),
+        eof: true,
+    };
+
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.count_packed_size(), 8); // 4 bytes for entries + 4 bytes for eof
+    assert_eq!(len, 8);
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
+
+    let mut cursor = Cursor::new(buffer);
+    let (deserialized, len) = dirlist3::unpack(&mut cursor).unwrap();
+    assert_eq!(len, 8);
+    assert!(deserialized.entries.0.is_empty());
+    assert_eq!(original.eof, deserialized.eof);
+}
+
+#[test]
+fn test_dirlist3_with_entries_serialization() {
+    use nfs3_types::nfs3::{dirlist3, entry3, filename3};
+
+    let original = dirlist3 {
+        entries: List(vec![
+            entry3 {
+                fileid: 0x1234,
+                name: filename3::from("file1".as_bytes()),
+                cookie: 0x5678,
+            },
+            entry3 {
+                fileid: 0x9abc,
+                name: filename3::from("file2".as_bytes()),
+                cookie: 0xdef0,
+            },
+        ]),
+        eof: false,
+    };
+
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(original.count_packed_size(), 72); // 2 entries * (4 + 4 + 8 + 4) + 4 for eof
+    assert_eq!(len, 72);
+    assert_eq!(
+        buffer,
+        [
+            0x00, 0x00, 0x00, 0x01, // first entry
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, // fileid
+            0x00, 0x00, 0x00, 0x05, // name length
+            0x66, 0x69, 0x6c, 0x65, 0x31, 0x00, 0x00, 0x00, // name "file1\0\0\0"
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x56, 0x78, // cookie
+            0x00, 0x00, 0x00, 0x01, // second entry
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9a, 0xbc, // fileid
+            0x00, 0x00, 0x00, 0x05, // name length
+            0x66, 0x69, 0x6c, 0x65, 0x32, 0x00, 0x00, 0x00, // name "file2\0\0\0"
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xf0, // cookie
+            0x00, 0x00, 0x00, 0x00, // end of list
+            0x00, 0x00, 0x00, 0x00, // eof
+        ]
+    );
+
+    let mut cursor = Cursor::new(buffer);
+    let (deserialized, len) = dirlist3::unpack(&mut cursor).unwrap();
+    assert_eq!(len, 72);
+    assert_eq!(original.entries.0, deserialized.entries.0);
+    assert_eq!(original.eof, deserialized.eof);
+}

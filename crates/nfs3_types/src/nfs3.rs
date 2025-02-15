@@ -600,7 +600,7 @@ pub struct diropargs3<'a> {
     pub name: filename3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, XdrCodec, PartialEq)]
 pub struct entry3<'a> {
     pub fileid: fileid3,
     pub name: filename3<'a>,
