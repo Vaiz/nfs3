@@ -274,3 +274,35 @@ fn test_dirlist3_with_entries_serialization() {
     assert_eq!(original.entries.0, deserialized.entries.0);
     assert_eq!(original.eof, deserialized.eof);
 }
+
+#[test]
+fn test_bounded_list() {
+    // (4+4)*3 + 4 = 28 bytes
+    let mut bounded_list = nfs3_types::xdr_codec::BoundedList::<u32>::new(28);
+    assert!(bounded_list.try_push(0x1234).is_ok());
+    assert!(bounded_list.try_push(0x5678).is_ok());
+    assert!(bounded_list.try_push(0x9abc).is_ok());
+    assert!(bounded_list.try_push(0xdef0).is_err());
+
+    let list = bounded_list.into_inner();
+    assert_eq!(list.0, vec![0x1234, 0x5678, 0x9abc]);
+
+
+    let mut bounded_list = nfs3_types::xdr_codec::BoundedList::<u32>::new(27);
+    assert!(bounded_list.try_push(0x1234).is_ok());
+    assert!(bounded_list.try_push(0x5678).is_ok());
+    assert!(bounded_list.try_push(0x9abc).is_err());
+
+    let list = bounded_list.into_inner();
+    assert_eq!(list.0, vec![0x1234, 0x5678]);
+
+
+    let mut bounded_list = nfs3_types::xdr_codec::BoundedList::<u32>::new(29);
+    assert!(bounded_list.try_push(0x1234).is_ok());
+    assert!(bounded_list.try_push(0x5678).is_ok());
+    assert!(bounded_list.try_push(0x9abc).is_ok());
+    assert!(bounded_list.try_push(0xdef0).is_err());
+
+    let list = bounded_list.into_inner();
+    assert_eq!(list.0, vec![0x1234, 0x5678, 0x9abc]);
+}

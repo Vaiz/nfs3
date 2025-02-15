@@ -69,3 +69,40 @@ where
         Ok((List(items), len))
     }
 }
+
+
+pub struct BoundedList<T> {
+    list: List<T>,
+    current_size: usize,
+    max_size: usize,
+}
+
+impl<T> BoundedList<T>
+where
+    T: PackedSize,
+{
+    pub fn new(max_size: usize) -> Self {
+        let list = List(Vec::new());
+        let current_size = list.packed_size();
+        BoundedList {
+            list,
+            current_size,
+            max_size,
+        }
+    }
+
+    pub fn try_push(&mut self, item: T) -> Result<(), T> {
+        let item_size = item.packed_size() + 4;
+        if self.current_size + item_size > self.max_size {
+            return Err(item);
+        }
+
+        self.list.0.push(item);
+        self.current_size += item_size;
+        Ok(())
+    }
+
+    pub fn into_inner(self) -> List<T> {
+        self.list
+    }
+}
