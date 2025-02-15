@@ -1,12 +1,22 @@
 use xdr_codec::Opaque;
 
+/// A trait for calculating the packed size of an object.
+/// 
+/// This trait provides a way to determine the packed size of an object, either through a constant
+/// value or by calculating it dynamically.
 pub trait PackedSize {
+    /// An optional constant representing the packed size of the type. If this is `Some`, it
+    /// indicates that the type has a constant size. If it is `None`, the packed size will be
+    /// calculated using the `count_packed_size` method.
     const PACKED_SIZE: Option<usize>;
 
+    /// Returns the packed size of the object. If `PACKED_SIZE` is `Some`, it returns that value.
+    /// Otherwise, it calls `count_packed_size` to calculate the size.
     fn packed_size(&self) -> usize {
         Self::PACKED_SIZE.unwrap_or(self.count_packed_size())
     }
 
+    /// Calculates the packed size of the object dynamically.
     fn count_packed_size(&self) -> usize;
 }
 
