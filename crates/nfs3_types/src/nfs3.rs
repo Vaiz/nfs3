@@ -13,16 +13,17 @@ use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Wri
 pub const PROGRAM: u32 = 100003;
 pub const VERSION: u32 = 3;
 
-pub const ACCESS3_DELETE: u32 = 16;
-pub const ACCESS3_EXECUTE: u32 = 32;
-pub const ACCESS3_EXTEND: u32 = 8;
+pub const ACCESS3_READ: u32 = 1;
 pub const ACCESS3_LOOKUP: u32 = 2;
 pub const ACCESS3_MODIFY: u32 = 4;
-pub const ACCESS3_READ: u32 = 1;
-pub const FSF3_CANSETTIME: u32 = 16;
-pub const FSF3_HOMOGENEOUS: u32 = 8;
+pub const ACCESS3_EXTEND: u32 = 8;
+pub const ACCESS3_DELETE: u32 = 16;
+pub const ACCESS3_EXECUTE: u32 = 32;
+
 pub const FSF3_LINK: u32 = 1;
 pub const FSF3_SYMLINK: u32 = 2;
+pub const FSF3_HOMOGENEOUS: u32 = 8;
+pub const FSF3_CANSETTIME: u32 = 16;
 
 pub const NFS3_COOKIEVERFSIZE: usize = 8;
 pub const NFS3_CREATEVERFSIZE: usize = 8;

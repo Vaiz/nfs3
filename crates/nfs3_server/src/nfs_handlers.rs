@@ -239,13 +239,6 @@ pub async fn nfsproc3_fsinfo(
     Ok(())
 }
 
-const ACCESS3_READ: u32 = 0x0001;
-const ACCESS3_LOOKUP: u32 = 0x0002;
-const ACCESS3_MODIFY: u32 = 0x0004;
-const ACCESS3_EXTEND: u32 = 0x0008;
-const ACCESS3_DELETE: u32 = 0x0010;
-const ACCESS3_EXECUTE: u32 = 0x0020;
-
 pub async fn nfsproc3_access(
     xid: u32,
     input: &mut impl Read,
