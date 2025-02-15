@@ -501,9 +501,9 @@ pub async fn nfsproc3_readdirplus(
                 true.pack(&mut write_cursor)?;
                 entry.pack(&mut write_cursor)?;
                 write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
-                                    + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<cookie3>(); // cookie
+                let added_dircount = size_of::<fileid3>()                  // fileid
+                                    + size_of::<u32>() + entry.name.len()  // name
+                                    + size_of::<cookie3>(); // cookie
                 let added_output_bytes = write_buf.len();
                 // check if we can write without hitting the limits
                 if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed
@@ -624,9 +624,9 @@ pub async fn nfsproc3_readdir(
                 true.pack(&mut write_cursor)?;
                 entry.pack(&mut write_cursor)?;
                 write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
-                                    + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<cookie3>(); // cookie
+                let added_dircount = size_of::<fileid3>()                  // fileid
+                                    + size_of::<u32>() + entry.name.len()  // name
+                                    + size_of::<cookie3>(); // cookie
                 let added_output_bytes = write_buf.len();
                 // check if we can write without hitting the limits
                 if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed {
