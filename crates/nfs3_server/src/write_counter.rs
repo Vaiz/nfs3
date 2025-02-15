@@ -16,10 +16,6 @@ where
         WriteCounter { inner, count: 0 }
     }
 
-    pub fn into_inner(self) -> W {
-        self.inner
-    }
-
     pub fn bytes_written(&self) -> usize {
         self.count
     }
