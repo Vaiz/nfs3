@@ -37,3 +37,15 @@ where
         self.inner.flush()
     }
 }
+
+pub(crate) struct FakeWriter;
+
+impl Write for FakeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
