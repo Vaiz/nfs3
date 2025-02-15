@@ -1,7 +1,7 @@
 use xdr_codec::Opaque;
 
 /// A trait for calculating the packed size of an object.
-/// 
+///
 /// This trait provides a way to determine the packed size of an object, either through a constant
 /// value or by calculating it dynamically.
 pub trait PackedSize {
