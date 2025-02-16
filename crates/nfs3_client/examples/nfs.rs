@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         nfs3::FSINFO3res::Err((err, _)) => {
             eprintln!("fsinfo error: {}", err as u32);
-        }        
+        }
     }
 
     println!("Calling readdir");
@@ -71,7 +71,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         nfs3::READDIR3res::Err((err, _)) => {
             eprintln!("readdir error: {}", err as u32);
         }
-        
     }
 
     // TODO: unmount
