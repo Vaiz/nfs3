@@ -10,6 +10,7 @@ pub enum Error {
     Rpc(RpcError),
     Portmap(PortmapError),
     MountError(nfs3_types::mount::mountstat3),
+    NfsError(nfs3_types::nfs3::nfsstat3),
 }
 
 impl fmt::Display for Error {
@@ -20,6 +21,7 @@ impl fmt::Display for Error {
             Error::Rpc(e) => e.fmt(f),
             Error::Portmap(e) => e.fmt(f),
             Error::MountError(e) => (*e as u32).fmt(f),
+            Error::NfsError(e) => (*e as u32).fmt(f),
         }
     }
 }
