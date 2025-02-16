@@ -12,6 +12,7 @@ pub const IPPROTO_TCP: u32 = 6;
 pub const IPPROTO_UDP: u32 = 17;
 pub const PROGRAM: u32 = 100000;
 pub const VERSION: u32 = 2;
+pub const PMAP_PORT: u16 = 111;
 
 #[derive(Copy, Clone, Debug, XdrCodec)]
 pub struct mapping {

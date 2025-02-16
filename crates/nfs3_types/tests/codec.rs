@@ -304,3 +304,26 @@ fn test_bounded_list() {
     let list = bounded_list.into_inner();
     assert_eq!(list.0, vec![0x1234, 0x5678, 0x9abc]);
 }
+
+#[test]
+fn test_rpc_call_len() {
+    use nfs3_types::rpc::{call_body, msg_body, opaque_auth, rpc_msg, RPC_VERSION_2};
+
+    let call = call_body {
+        rpcvers: RPC_VERSION_2,
+        prog: 100003,
+        vers: 3,
+        proc: 0,
+        cred: opaque_auth::default(),
+        verf: opaque_auth::default(),
+    };
+
+    assert_eq!(call.packed_size(), 32);
+
+    let msg = rpc_msg {
+        xid: 123,
+        body: msg_body::CALL(call),
+    };
+
+    assert_eq!(msg.packed_size(), 40);
+}

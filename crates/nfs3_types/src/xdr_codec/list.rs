@@ -17,6 +17,12 @@ impl<T> Default for List<T> {
     }
 }
 
+impl<T> List<T> {
+    pub fn into_inner(self) -> Vec<T> {
+        self.0
+    }
+}
+
 impl<T, Out> Pack<Out> for List<T>
 where
     Out: Write,

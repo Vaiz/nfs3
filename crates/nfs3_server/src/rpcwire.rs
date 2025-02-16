@@ -31,8 +31,8 @@ async fn handle_rpc(
             let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
             context.auth = auth;
         }
-        if call.rpcvers != 2 {
-            warn!("Invalid RPC version {} != 2", call.rpcvers);
+        if call.rpcvers != RPC_VERSION_2 {
+            warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
             rpc_vers_mismatch(xid).pack(output)?;
             return Ok(true);
         }
