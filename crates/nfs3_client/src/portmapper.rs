@@ -38,9 +38,9 @@ where
             .await?;
 
         if port == 0 {
-            return Err(crate::error::PortmapError::ProgramUnavailable.into());
+            Err(crate::error::PortmapError::ProgramUnavailable.into())
         } else {
-            return Ok(port);
+            Ok(port)
         }
     }
 

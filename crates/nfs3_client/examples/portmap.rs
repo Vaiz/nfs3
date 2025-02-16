@@ -51,7 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Portmap dump:");
     println!("Program | Version |  Port");
     for mapping in dump {
-        println!("{:>7}   {:>7}   {:>5}", mapping.prog, mapping.vers, mapping.port);
+        println!(
+            "{:>7}   {:>7}   {:>5}",
+            mapping.prog, mapping.vers, mapping.port
+        );
     }
 
     Ok(())

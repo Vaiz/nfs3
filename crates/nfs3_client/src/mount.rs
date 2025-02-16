@@ -31,12 +31,12 @@ where
             .await
     }
 
-    pub async fn dump(&mut self) -> Result<mountlist<'_, '_>, Error> {
+    pub async fn dump(&mut self) -> Result<mountlist<'static, 'static>, Error> {
         self.call::<Void, mountlist>(MOUNT_PROGRAM::MOUNTPROC3_DUMP, Void)
             .await
     }
 
-    pub async fn umnt<'a>(&mut self, dirpath_: dirpath<'a>) -> Result<(), Error> {
+    pub async fn umnt(&mut self, dirpath_: dirpath<'_>) -> Result<(), Error> {
         let _ = self
             .call::<dirpath, Void>(MOUNT_PROGRAM::MOUNTPROC3_UMNT, dirpath_)
             .await?;
@@ -50,7 +50,7 @@ where
         Ok(())
     }
 
-    pub async fn export(&mut self) -> Result<exports<'_, '_>, Error> {
+    pub async fn export(&mut self) -> Result<exports<'static, 'static>, Error> {
         self.call::<Void, exports>(MOUNT_PROGRAM::MOUNTPROC3_EXPORT, Void)
             .await
     }

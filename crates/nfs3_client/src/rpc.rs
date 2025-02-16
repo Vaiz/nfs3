@@ -63,7 +63,7 @@ where
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
-        if buf.len() - 4 != total_len as usize {
+        if buf.len() - 4 != total_len {
             return Err(RpcError::WrongLength.into());
         }
         self.io.async_write_all(&buf).await?;
