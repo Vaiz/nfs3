@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use nfs3_types::portmap::{PMAP_PROG, PROGRAM, VERSION, mapping};
+use nfs3_types::portmap::{mapping, PMAP_PROG, PROGRAM, VERSION};
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 
 use crate::io::{AsyncRead, AsyncWrite};

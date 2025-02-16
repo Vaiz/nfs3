@@ -1,8 +1,7 @@
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
-    accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg,
-    RPC_VERSION_2,
+    accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg, RPC_VERSION_2,
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 
@@ -27,13 +26,7 @@ where
         }
     }
 
-    pub async fn call<C, R>(
-        &mut self,
-        prog: u32,
-        vers: u32,
-        proc: u32,
-        args: C,
-    ) -> Result<R, Error>
+    pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,
         C: Pack<Vec<u8>> + PackedSize,

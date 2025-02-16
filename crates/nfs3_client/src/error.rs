@@ -107,7 +107,7 @@ impl TryFrom<accept_stat_data> for RpcError {
 
 #[derive(Debug)]
 pub enum PortmapError {
-    ProgramUnavailable,    
+    ProgramUnavailable,
 }
 
 impl fmt::Display for PortmapError {
