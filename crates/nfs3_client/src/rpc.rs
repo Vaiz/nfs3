@@ -105,6 +105,10 @@ where
                 .into());
         }
 
-        Ok(T::unpack(&mut cursor)?.0)
+        let (final_value, _) = T::unpack(&mut cursor)?;
+        if cursor.position() as usize != total_len as usize {
+            return Err(RpcError::NotFullyParsed.into());
+        }
+        Ok(final_value)
     }
 }
