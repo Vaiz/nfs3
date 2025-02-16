@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
+/// Client for the mount service
 pub struct MountClient<IO> {
     rpc: RpcClient<IO>,
 }

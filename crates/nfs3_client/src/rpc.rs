@@ -10,6 +10,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 
 const EOF_FLAG: u32 = 0x8000_0000;
 
+/// RPC client
 pub struct RpcClient<IO> {
     io: IO,
     xid: u32,
@@ -19,6 +20,7 @@ impl<IO> RpcClient<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
+    /// Create a new RPC client. XID is initialized to a random value.
     pub fn new(io: IO) -> Self {
         Self {
             io,
@@ -26,6 +28,12 @@ where
         }
     }
 
+    /// Call an RPC procedure
+    ///
+    /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
+    /// the reply.
+    ///
+    /// `C` stands for `Call` and `R` stands for `Reply`.
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,

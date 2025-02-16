@@ -2,6 +2,10 @@ use tokio::io::{AsyncRead as TokioAsyncRead, AsyncWrite as TokioAsyncWrite};
 
 use super::{AsyncRead, AsyncWrite};
 
+/// Wrapper for Tokio types
+///
+/// Wraps a Tokio's [`AsyncRead`](TokioAsyncRead) and [`AsyncWrite`](TokioAsyncWrite) implementor
+/// to provide an [`AsyncRead`] and [`AsyncWrite`] implementation.
 pub struct TokioIo<T>(T);
 
 impl<T> TokioIo<T> {

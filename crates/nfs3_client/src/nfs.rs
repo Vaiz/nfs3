@@ -9,6 +9,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 use crate::{mount, portmapper};
 
+/// Client for the NFSv3 service
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
 }
@@ -147,6 +148,12 @@ where
     }
 }
 
+/// Connect to an NFSv3 server
+///
+/// `connect` resolves the port for MOUNT3 and NFSv3 service using the portmapper, then mounts the
+/// filesystem at `mount_path`, and returns a client for the NFSv3 service and the mount result.
+///
+/// NOTE: Currently it doesn't implement unmounting the filesystem when the client is dropped.
 pub async fn connect<C, S>(
     connector: C,
     host: &str,

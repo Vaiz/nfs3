@@ -6,6 +6,7 @@ use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
+/// Client for the portmapper service
 pub struct PortmapperClient<IO> {
     rpc: RpcClient<IO>,
 }

@@ -3,6 +3,9 @@ use tokio::net::TcpStream;
 use super::Connector;
 use crate::io::tokio::TokioIo;
 
+/// Connector for Tokio
+///
+/// Connects to a host and port using Tokio's [`TcpStream`].
 pub struct TokioConnector;
 
 #[async_trait::async_trait(?Send)]
