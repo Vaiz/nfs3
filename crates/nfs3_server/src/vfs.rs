@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::sync::Once;
+use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -48,19 +48,15 @@ impl<'a> ReadDirSimpleResult<'a> {
     }
 }
 
-static mut GENERATION_NUMBER: u64 = 0;
-static GENERATION_NUMBER_INIT: Once = Once::new();
+static GENERATION_NUMBER: LazyLock<u64> = LazyLock::new(|| {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+});
 
 fn get_generation_number() -> u64 {
-    unsafe {
-        GENERATION_NUMBER_INIT.call_once(|| {
-            GENERATION_NUMBER = SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-        });
-        GENERATION_NUMBER
-    }
+    *GENERATION_NUMBER
 }
 
 /// What capabilities are supported

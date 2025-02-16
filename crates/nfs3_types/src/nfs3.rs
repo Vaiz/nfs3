@@ -8,21 +8,22 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, Read, Result, Unpack, Write};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
 pub const PROGRAM: u32 = 100003;
 pub const VERSION: u32 = 3;
 
-pub const ACCESS3_DELETE: u32 = 16;
-pub const ACCESS3_EXECUTE: u32 = 32;
-pub const ACCESS3_EXTEND: u32 = 8;
+pub const ACCESS3_READ: u32 = 1;
 pub const ACCESS3_LOOKUP: u32 = 2;
 pub const ACCESS3_MODIFY: u32 = 4;
-pub const ACCESS3_READ: u32 = 1;
-pub const FSF3_CANSETTIME: u32 = 16;
-pub const FSF3_HOMOGENEOUS: u32 = 8;
+pub const ACCESS3_EXTEND: u32 = 8;
+pub const ACCESS3_DELETE: u32 = 16;
+pub const ACCESS3_EXECUTE: u32 = 32;
+
 pub const FSF3_LINK: u32 = 1;
 pub const FSF3_SYMLINK: u32 = 2;
+pub const FSF3_HOMOGENEOUS: u32 = 8;
+pub const FSF3_CANSETTIME: u32 = 16;
 
 pub const NFS3_COOKIEVERFSIZE: usize = 8;
 pub const NFS3_CREATEVERFSIZE: usize = 8;
@@ -70,6 +71,21 @@ where
                 sz += csz;
                 Ok((Self::Err((code, val)), sz))
             }
+        }
+    }
+}
+
+impl<T, E> PackedSize for Nfs3Result<T, E>
+where
+    T: PackedSize,
+    E: PackedSize,
+{
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Nfs3Result::Ok(v) => v.packed_size(),
+            Nfs3Result::Err((code, err)) => code.packed_size() + err.packed_size(),
         }
     }
 }
@@ -133,6 +149,17 @@ where
                 Ok((Self::Some(val), sz))
             }
             _ => Ok((Self::None, sz)),
+        }
+    }
+}
+
+impl<T: PackedSize> PackedSize for Nfs3Option<T> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Nfs3Option::Some(v) => v.packed_size(),
+            Nfs3Option::None => 0,
         }
     }
 }
@@ -279,7 +306,7 @@ pub struct LOOKUP3args<'a> {
     pub what: diropargs3<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Default, XdrCodec)]
 pub struct LOOKUP3resfail {
     pub dir_attributes: post_op_attr,
 }
@@ -376,7 +403,7 @@ pub struct READDIR3args {
     pub count: count3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Default, XdrCodec)]
 pub struct READDIR3resfail {
     pub dir_attributes: post_op_attr,
 }
@@ -556,7 +583,7 @@ pub struct devicedata3 {
     pub spec: specdata3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Default, XdrCodec)]
 pub struct dirlist3<'a> {
     pub entries: List<entry3<'a>>,
     pub eof: bool,
@@ -574,7 +601,7 @@ pub struct diropargs3<'a> {
     pub name: filename3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, XdrCodec, PartialEq)]
 pub struct entry3<'a> {
     pub fileid: fileid3,
     pub name: filename3<'a>,
@@ -631,6 +658,13 @@ impl AsRef<[u8]> for filename3<'_> {
 impl filename3<'_> {
     pub fn clone_to_owned(&self) -> filename3<'static> {
         self.0.to_vec().into()
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -843,6 +877,14 @@ impl<Out: Write> Pack<Out> for cookieverf3 {
     }
 }
 
+impl PackedSize for cookieverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_COOKIEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_COOKIEVERFSIZE
+    }
+}
+
 impl<Out: Write> Pack<Out> for createhow3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         Ok(match self {
@@ -853,9 +895,29 @@ impl<Out: Write> Pack<Out> for createhow3 {
     }
 }
 
+impl PackedSize for createhow3 {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            createhow3::UNCHECKED(val) => val.packed_size(),
+            createhow3::GUARDED(val) => val.packed_size(),
+            createhow3::EXCLUSIVE(val) => val.packed_size(),
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for createverf3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+    }
+}
+
+impl PackedSize for createverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_CREATEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_CREATEVERFSIZE
     }
 }
 
@@ -871,6 +933,20 @@ impl<Out: Write> Pack<Out> for mknoddata3 {
     }
 }
 
+impl PackedSize for mknoddata3 {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            mknoddata3::NF3CHR(val) => val.packed_size(),
+            mknoddata3::NF3BLK(val) => val.packed_size(),
+            mknoddata3::NF3SOCK(val) => val.packed_size(),
+            mknoddata3::NF3FIFO(val) => val.packed_size(),
+            mknoddata3::default => 0,
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for set_atime {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         let len = match self {
@@ -879,6 +955,18 @@ impl<Out: Write> Pack<Out> for set_atime {
             Self::SET_TO_CLIENT_TIME(val) => 2.pack(out)? + val.pack(out)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for set_atime {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
     }
 }
 
@@ -893,9 +981,29 @@ impl<Out: Write> Pack<Out> for set_mtime {
     }
 }
 
+impl PackedSize for set_mtime {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
+    }
+}
+
 impl<Out: Write> Pack<Out> for writeverf3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+    }
+}
+
+impl PackedSize for writeverf3 {
+    const PACKED_SIZE: Option<usize> = Some(NFS3_WRITEVERFSIZE);
+
+    fn count_packed_size(&self) -> usize {
+        NFS3_WRITEVERFSIZE
     }
 }
 

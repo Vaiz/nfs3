@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::*;
-use nfs3_types::xdr_codec::Opaque;
+use nfs3_types::xdr_codec::{BoundedList, Opaque, PackedSize};
 use tracing::{debug, error, trace, warn};
 use xdr_codec::{Pack, Unpack};
 
@@ -86,31 +86,38 @@ pub async fn nfsproc3_getattr(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let handle = nfs_fh3::unpack(input)?.0;
-    debug!("nfsproc3_getattr({:?},{:?}) ", xid, handle);
+    let getattr3args = GETATTR3args::unpack(input)?.0;
+    let getattr3res = getattr_impl(xid, getattr3args, context).await?;
+    make_success_reply(xid).pack(output)?;
+    getattr3res.pack(output)?;
+
+    Ok(())
+}
+
+async fn getattr_impl(
+    xid: u32,
+    getattr3args: GETATTR3args,
+    context: &RPCContext,
+) -> anyhow::Result<GETATTR3res> {
+    let handle = getattr3args.object;
+    debug!("nfsproc3_getattr({},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
     // fail if unable to convert file handle
     if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        return Ok(());
+        return Ok(GETATTR3res::Err((stat, ())));
     }
     let id = id.unwrap();
     match context.vfs.getattr(id).await {
-        Ok(fh) => {
-            debug!(" {:?} --> {:?}", xid, fh);
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            fh.pack(output)?;
+        Ok(obj_attributes) => {
+            debug!(" {} --> {:?}", xid, obj_attributes);
+            Ok(GETATTR3res::Ok(GETATTR3resok { obj_attributes }))
         }
         Err(stat) => {
-            error!("getattr error {:?} --> {:?}", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
+            error!("getattr error {} --> {:?}", xid, stat);
+            Ok(GETATTR3res::Err((stat, ())))
         }
     }
-    Ok(())
 }
 
 pub async fn nfsproc3_lookup(
@@ -119,45 +126,52 @@ pub async fn nfsproc3_lookup(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let dirops = diropargs3::unpack(input)?.0;
+    let lookup3args = LOOKUP3args::unpack(input)?.0;
+    let lookup3res = lookup_impl(xid, lookup3args, context).await?;
+    make_success_reply(xid).pack(output)?;
+    lookup3res.pack(output)?;
+
+    Ok(())
+}
+
+async fn lookup_impl(
+    xid: u32,
+    lookup3args: LOOKUP3args<'_>,
+    context: &RPCContext,
+) -> anyhow::Result<LOOKUP3res> {
+    let dirops = lookup3args.what;
     debug!("nfsproc3_lookup({:?},{:?}) ", xid, dirops);
 
     let dirid = context.vfs.fh_to_id(&dirops.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
+        return Ok(LOOKUP3res::Err((stat, LOOKUP3resfail::default())));
     }
-    let dirid = dirid.unwrap();
 
-    let dir_attr = match context.vfs.getattr(dirid).await {
+    let dirid = dirid.unwrap();
+    let dir_attributes = match context.vfs.getattr(dirid).await {
         Ok(v) => post_op_attr::Some(v),
         Err(_) => post_op_attr::None,
     };
     match context.vfs.lookup(dirid, &dirops.name).await {
         Ok(fid) => {
-            let obj_attr = match context.vfs.getattr(fid).await {
+            let obj_attributes = match context.vfs.getattr(fid).await {
                 Ok(v) => post_op_attr::Some(v),
                 Err(_) => post_op_attr::None,
             };
 
-            debug!("lookup success {:?} --> {:?}", xid, obj_attr);
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            context.vfs.id_to_fh(fid).pack(output)?;
-            obj_attr.pack(output)?;
-            dir_attr.pack(output)?;
+            debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
+            Ok(LOOKUP3res::Ok(LOOKUP3resok {
+                object: context.vfs.id_to_fh(fid),
+                obj_attributes,
+                dir_attributes,
+            }))
         }
         Err(stat) => {
             debug!("lookup error {:?}({:?}) --> {:?}", xid, dirops.name, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            dir_attr.pack(output)?;
+            Ok(LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })))
         }
     }
-    Ok(())
 }
 
 pub async fn nfsproc3_read(
@@ -238,13 +252,6 @@ pub async fn nfsproc3_fsinfo(
     }
     Ok(())
 }
-
-const ACCESS3_READ: u32 = 0x0001;
-const ACCESS3_LOOKUP: u32 = 0x0002;
-const ACCESS3_MODIFY: u32 = 0x0004;
-const ACCESS3_EXTEND: u32 = 0x0008;
-const ACCESS3_DELETE: u32 = 0x0010;
-const ACCESS3_EXECUTE: u32 = 0x0020;
 
 pub async fn nfsproc3_access(
     xid: u32,
@@ -501,9 +508,9 @@ pub async fn nfsproc3_readdirplus(
                 true.pack(&mut write_cursor)?;
                 entry.pack(&mut write_cursor)?;
                 write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
-                                    + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<cookie3>(); // cookie
+                let added_dircount = size_of::<fileid3>()                  // fileid
+                                    + size_of::<u32>() + entry.name.len()  // name
+                                    + size_of::<cookie3>(); // cookie
                 let added_output_bytes = write_buf.len();
                 // check if we can write without hitting the limits
                 if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed
@@ -558,118 +565,132 @@ pub async fn nfsproc3_readdir(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let args = READDIR3args::unpack(input)?.0;
-    debug!("nfsproc3_readdirplus({:?},{:?}) ", xid, args);
+    let readdir3args = READDIR3args::unpack(input)?.0;
+    let readdir3res = readdir_impl(xid, readdir3args, context).await?;
+    make_success_reply(xid).pack(output)?;
+    readdir3res.pack(output)?;
 
-    let dirid = context.vfs.fh_to_id(&args.dir);
+    Ok(())
+}
+
+async fn readdir_impl(
+    xid: u32,
+    readdir3args: READDIR3args,
+    context: &RPCContext,
+) -> anyhow::Result<READDIR3res> {
+    const EMPTY_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
+    const DEFAULT_COOKIE_VERF: cookieverf3 = cookieverf3(0xFFCC_FFCC_FFCC_FFCCu64.to_be_bytes());
+
+    let dirid = context.vfs.fh_to_id(&readdir3args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
+        return Ok(READDIR3res::Err((stat, READDIR3resfail::default())));
     }
+
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
-
-    let dir_attr = match dir_attr_maybe {
+    let dir_attributes = match dir_attr_maybe {
         Ok(v) => post_op_attr::Some(v),
         Err(_) => post_op_attr::None,
     };
 
-    let dirversion = if let Nfs3Option::Some(dir_attr) = &dir_attr {
+    let cookieverf = if let Nfs3Option::Some(dir_attr) = &dir_attributes {
         let cvf_version =
             ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
         cookieverf3(cvf_version.to_be_bytes())
     } else {
-        cookieverf3::default()
+        DEFAULT_COOKIE_VERF
     };
-    debug!(" -- Dir attr {:?}", dir_attr);
-    debug!(" -- Dir version {:?}", dirversion);
-    let has_version = args.cookieverf != cookieverf3::default();
-    // subtract off the final entryplus* field (which must be false) and the eof
-    let max_bytes_allowed = args.count as usize - 128;
-    // args.dircount is bytes of just fileid, name, cookie.
+
+    if readdir3args.cookieverf == EMPTY_COOKIE_VERF {
+        if readdir3args.cookie != 0 {
+            warn!(
+                " -- Invalid cookie. Expected 0, got {}",
+                readdir3args.cookie
+            );
+            return Ok(READDIR3res::Err((
+                nfsstat3::NFS3ERR_BAD_COOKIE,
+                READDIR3resfail::default(),
+            )));
+        }
+        debug!(" -- Start of readdir");
+    } else if readdir3args.cookieverf != cookieverf {
+        warn!(
+            " -- Dir version mismatch. Received {:?}, Expected: {:?}",
+            readdir3args.cookieverf, cookieverf
+        );
+        return Ok(READDIR3res::Err((
+            nfsstat3::NFS3ERR_BAD_COOKIE,
+            READDIR3resfail::default(),
+        )));
+    } else {
+        debug!(" -- Resuming readdir. Cookie {}", readdir3args.cookie);
+    }
+
+    debug!(" -- Dir attr {:?}", dir_attributes);
+    debug!(" -- Dir version {:?}", cookieverf);
+
+    // readdir3args.count is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
-    let estimated_max_results = args.count / 16;
-    let mut ctr = 0;
-    match context
+    let estimated_max_results = readdir3args.count / 16;
+    let readdir_result = context
         .vfs
         .readdir_simple(dirid, estimated_max_results as usize)
-        .await
-    {
-        Ok(result) => {
-            // we count dir_count seperately as it is just a subset of fields
-            let mut accumulated_dircount: usize = 0;
-            let mut all_entries_written = true;
+        .await;
 
-            // this is a wrapper around a writer that also just counts the number of bytes
-            // written
-            let mut counting_output = crate::write_counter::WriteCounter::new(output);
+    if let Err(stat) = readdir_result {
+        return Ok(READDIR3res::Err((stat, READDIR3resfail { dir_attributes })));
+    }
 
-            make_success_reply(xid).pack(&mut counting_output)?;
-            nfsstat3::NFS3_OK.pack(&mut counting_output)?;
-            dir_attr.pack(&mut counting_output)?;
-            dirversion.pack(&mut counting_output)?;
-            for entry in result.entries {
-                let entry = entry3 {
-                    fileid: entry.fileid,
-                    name: entry.name,
-                    cookie: entry.fileid,
-                };
-                // write the entry into a buffer first
-                let mut write_buf: Vec<u8> = Vec::new();
-                let mut write_cursor = std::io::Cursor::new(&mut write_buf);
-                // true flag for the entryplus3* to mark that this contains an entry
-                true.pack(&mut write_cursor)?;
-                entry.pack(&mut write_cursor)?;
-                write_cursor.flush()?;
-                let added_dircount = std::mem::size_of::<fileid3>()                   // fileid
-                                    + std::mem::size_of::<u32>() + entry.name.0.len()  // name
-                                    + std::mem::size_of::<cookie3>(); // cookie
-                let added_output_bytes = write_buf.len();
-                // check if we can write without hitting the limits
-                if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed {
-                    trace!("  -- dirent {:?}", entry);
-                    // commit the entry
-                    ctr += 1;
-                    counting_output.write_all(&write_buf)?;
-                    accumulated_dircount += added_dircount;
-                    trace!(
-                        "  -- lengths: {:?} / {:?} / {:?}",
-                        accumulated_dircount,
-                        counting_output.bytes_written(),
-                        max_bytes_allowed
-                    );
-                } else {
-                    trace!(" -- insufficient space. truncating");
-                    all_entries_written = false;
-                    break;
-                }
+    let result = readdir_result.unwrap();
+
+    let mut resok = READDIR3res::Ok(READDIR3resok {
+        dir_attributes,
+        cookieverf,
+        reply: dirlist3::default(),
+    });
+
+    let empty_len = xid.packed_size() + resok.packed_size();
+    let max_bytes_allowed = readdir3args.count as usize - empty_len;
+    let mut entries = BoundedList::new(max_bytes_allowed);
+    let mut eof = result.end;
+
+    let start_index = if readdir3args.cookie == 0 {
+        0
+    } else {
+        let mut start = result.entries.len();
+        for (index, item) in result.entries.iter().enumerate() {
+            if item.fileid == readdir3args.cookie {
+                start = index + 1;
+                break;
             }
-            // false flag for the final entryplus* linked list
-            false.pack(&mut counting_output)?;
-            // eof flag is only valid here if we wrote everything
-            if all_entries_written {
-                debug!("  -- readdir eof {:?}", result.end);
-                result.end.pack(&mut counting_output)?;
-            } else {
-                debug!("  -- readdir eof {:?}", false);
-                false.pack(&mut counting_output)?;
-            }
-            debug!(
-                "readir {}, has_version {},  start at {}, flushing {} entries, complete {}",
-                dirid, has_version, args.cookie, ctr, all_entries_written
-            );
         }
-        Err(stat) => {
-            error!("readdir error {:?} --> {:?} ", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            dir_attr.pack(output)?;
-        }
+        start
     };
-    Ok(())
+
+    for item in result.entries.into_iter().skip(start_index) {
+        let entry = entry3 {
+            fileid: item.fileid,
+            name: item.name,
+            cookie: item.fileid,
+        };
+        let result = entries.try_push(entry);
+        if result.is_err() {
+            trace!(" -- insufficient space. truncating");
+            eof = false;
+            break;
+        }
+    }
+
+    match &mut resok {
+        READDIR3res::Ok(ok) => {
+            ok.reply.entries = entries.into_inner();
+            ok.reply.eof = eof;
+        }
+        READDIR3res::Err(_) => unreachable!(),
+    }
+
+    Ok(resok)
 }
 
 pub async fn nfsproc3_write(
