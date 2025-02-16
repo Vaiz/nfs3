@@ -2,7 +2,7 @@ use std::env;
 
 use nfs3_client::io::{AsyncRead, AsyncWrite};
 use nfs3_client::net::tokio::TokioConnector;
-use nfs3_client::nfs::Nfs3Client;
+use nfs3_client::Nfs3Client;
 use nfs3_types::mount::mountres3_ok;
 use nfs3_types::nfs3;
 
@@ -88,9 +88,8 @@ where
     C: nfs3_client::net::Connector<Connection = S>,
     S: AsyncRead + AsyncWrite + 'static,
 {
-    use nfs3_client::mount::MountClient;
-    use nfs3_client::portmapper::PortmapperClient;
     use nfs3_client::rpc::RpcClient;
+    use nfs3_client::{MountClient, PortmapperClient};
     use nfs3_types::mount::dirpath;
     use nfs3_types::xdr_codec::Opaque;
 

@@ -1,3 +1,5 @@
+//! RPC client implementation
+
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
@@ -32,8 +34,6 @@ where
     ///
     /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
     /// the reply.
-    ///
-    /// `C` stands for `Call` and `R` stands for `Reply`.
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,

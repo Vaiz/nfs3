@@ -1,7 +1,11 @@
 pub mod error;
 pub mod io;
-pub mod mount;
+pub(crate) mod mount;
 pub mod net;
-pub mod nfs;
-pub mod portmapper;
+pub(crate) mod nfs;
+pub(crate) mod portmapper;
 pub mod rpc;
+
+pub use mount::*;
+pub use nfs::*;
+pub use portmapper::*;

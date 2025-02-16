@@ -1,3 +1,5 @@
+//! Traits for connecting to an endpoint.
+
 #[cfg(feature = "tokio")]
 pub mod tokio;
 
