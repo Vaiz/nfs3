@@ -40,7 +40,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fsroot: root.clone(),
         })
         .await?;
-    println!("Fsinfo: {:?}", fsinfo);
+
+    match fsinfo {
+        nfs3::FSINFO3res::Ok(ok) => {
+            println!("fsinfo: {:?}", ok);
+        }
+        nfs3::FSINFO3res::Err((err, _)) => {
+            eprintln!("fsinfo error: {}", err as u32);
+        }        
+    }
 
     println!("Calling readdir");
     let readdir = client
@@ -52,7 +60,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
-    println!("Readdir: {:?}", readdir);
+    match readdir {
+        nfs3::READDIR3res::Ok(ok) => {
+            println!("readdir:");
+            for entry in ok.reply.entries.0 {
+                println!("  {}", String::from_utf8_lossy(entry.name.0.as_ref()));
+            }
+            println!("  eof: {}", ok.reply.eof);
+        }
+        nfs3::READDIR3res::Err((err, _)) => {
+            eprintln!("readdir error: {}", err as u32);
+        }
+        
+    }
 
     // TODO: unmount
 
