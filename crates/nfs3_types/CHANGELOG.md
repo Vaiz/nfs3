@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.1.0...nfs3_types-v0.1.1) - 2025-02-16
+
+### Other
+
+- implement NfsClient ([#24](https://github.com/Vaiz/nfs3/pull/24))
+- Add nfs3_client crate ([#23](https://github.com/Vaiz/nfs3/pull/23))
+- rework a couple of nfs_handlers ([#22](https://github.com/Vaiz/nfs3/pull/22))
+- release v0.1.0 (#8)
+
 ## [0.1.0](https://github.com/Vaiz/nfs3/releases/tag/nfs3_types-v0.1.0) - 2025-02-09
 
 ### Other
