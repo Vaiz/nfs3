@@ -4,6 +4,7 @@
 
 pub(crate) mod list;
 pub(crate) mod packed_size;
+pub(crate) mod void;
 
 pub use ::xdr_codec::*;
 /// Derive macro that implements [`Pack`] and [`Unpack`] traits.
@@ -11,3 +12,4 @@ pub use nfs3_macros::XdrCodec;
 
 pub use self::list::{BoundedList, List};
 pub use self::packed_size::PackedSize;
+pub use self::void::Void;
