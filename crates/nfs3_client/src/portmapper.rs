@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use nfs3_types::portmap::{mapping, PMAP_PROG, PROGRAM, VERSION};
+use nfs3_types::portmap::{mapping, pmaplist, PMAP_PROG, PROGRAM, VERSION};
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 
 use crate::io::{AsyncRead, AsyncWrite};
@@ -42,6 +42,13 @@ where
         } else {
             return Ok(port);
         }
+    }
+
+    pub async fn dump(&mut self) -> Result<Vec<mapping>, crate::error::Error> {
+        let mappings = self
+            .call::<Void, pmaplist>(PMAP_PROG::PMAPPROC_DUMP, Void)
+            .await?;
+        Ok(mappings.into_inner())
     }
 
     async fn call<C, R>(&mut self, proc: PMAP_PROG, args: C) -> Result<R, crate::error::Error>

@@ -47,5 +47,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => eprintln!("Failed to resolve NFSv3 port: {e}"),
     }
 
+    let dump = portmapper.dump().await?;
+    println!("Portmap dump:");
+    println!("Program | Version |  Port");
+    for mapping in dump {
+        println!("{:>7}   {:>7}   {:>5}", mapping.prog, mapping.vers, mapping.port);
+    }
+
     Ok(())
 }
