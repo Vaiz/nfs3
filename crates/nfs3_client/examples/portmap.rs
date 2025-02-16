@@ -1,5 +1,6 @@
 use std::env;
 
+use nfs3_client::error::{Error, PortmapError};
 use nfs3_client::io::tokio::TokioIo;
 use nfs3_client::portmapper;
 use nfs3_client::rpc::RpcClient;
@@ -23,8 +24,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut portmapper = portmapper::PortmapperClient::new(rpc);
 
     portmapper.null().await?;
-    let port = portmapper.getport(nfs3_types::nfs3::PROGRAM, nfs3_types::nfs3::VERSION).await?;
-    println!("Resolved NFSv3 port: {}", port);
+
+    let result = portmapper
+        .getport(nfs3_types::mount::PROGRAM, nfs3_types::mount::VERSION)
+        .await;
+    match result {
+        Ok(port) => println!("Resolved MOUNT3 port: {port}"),
+        Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
+            eprintln!("MOUNT3 program is unavailable")
+        }
+        Err(e) => eprintln!("Failed to resolve MOUNT3 port: {e}"),
+    }
+
+    let result = portmapper
+        .getport(nfs3_types::nfs3::PROGRAM, nfs3_types::nfs3::VERSION)
+        .await;
+    match result {
+        Ok(port) => println!("Resolved NFSv3 port: {port}"),
+        Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
+            eprintln!("NFSv3 program is unavailable")
+        }
+        Err(e) => eprintln!("Failed to resolve NFSv3 port: {e}"),
+    }
 
     Ok(())
 }
