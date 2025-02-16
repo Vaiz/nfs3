@@ -81,5 +81,40 @@ where
 
 #[inline]
 pub(crate) fn add_padding(sz: usize) -> usize {
-    sz + (4 - (sz % 4))
+    (sz + 3) & !3
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_packed_size() {
+        assert_eq!(true.packed_size(), 4);
+        assert_eq!(false.packed_size(), 4);
+        assert_eq!(u32::PACKED_SIZE, Some(4));
+        assert_eq!(u32::PACKED_SIZE, Some(4));
+        assert_eq!(u64::PACKED_SIZE, Some(8));
+        assert_eq!(u64::PACKED_SIZE, Some(8));
+        assert_eq!(Opaque::borrowed(&[]).packed_size(), 4);
+        assert_eq!(Opaque::borrowed(&[0, 1, 2, 3]).packed_size(), 8);
+
+        assert_eq!([].packed_size(), 4);
+        assert_eq!([1u8].packed_size(), 8);
+        assert_eq!([0u8, 1, 2, 3].packed_size(), 8);
+        assert_eq!(vec![0u32, 1, 2, 3].packed_size(), 20);
+    }
+
+    #[test]
+    fn test_add_padding() {
+        assert_eq!(add_padding(0), 0);
+        assert_eq!(add_padding(1), 4);
+        assert_eq!(add_padding(2), 4);
+        assert_eq!(add_padding(3), 4);
+        assert_eq!(add_padding(4), 4);
+        assert_eq!(add_padding(5), 8);
+        assert_eq!(add_padding(6), 8);
+        assert_eq!(add_padding(7), 8);
+        assert_eq!(add_padding(8), 8);
+    }
 }
