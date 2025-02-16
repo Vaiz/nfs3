@@ -30,6 +30,7 @@ pub const NFS3_CREATEVERFSIZE: usize = 8;
 pub const NFS3_FHSIZE: usize = 64;
 pub const NFS3_WRITEVERFSIZE: usize = 8;
 
+#[derive(Debug)]
 pub enum Nfs3Result<T, E> {
     Ok(T),
     Err((nfsstat3, E)),
@@ -173,53 +174,53 @@ pub type set_mode3 = Nfs3Option<mode3>;
 pub type set_size3 = Nfs3Option<size3>;
 pub type set_uid3 = Nfs3Option<uid3>;
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct ACCESS3args {
     pub object: nfs_fh3,
     pub access: u32,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct ACCESS3resfail {
     pub obj_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct ACCESS3resok {
     pub obj_attributes: post_op_attr,
     pub access: u32,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3args {
     pub file: nfs_fh3,
     pub offset: offset3,
     pub count: count3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3resfail {
     pub file_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3resok {
     pub file_wcc: wcc_data,
     pub verf: writeverf3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct CREATE3args<'a> {
     pub where_: diropargs3<'a>,
     pub how: createhow3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct CREATE3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct CREATE3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
@@ -231,7 +232,7 @@ pub struct FSINFO3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct FSINFO3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -256,7 +257,7 @@ pub struct FSSTAT3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct FSSTAT3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -278,7 +279,7 @@ pub struct GETATTR3args {
     pub object: nfs_fh3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct GETATTR3resok {
     pub obj_attributes: fattr3,
 }
@@ -289,13 +290,13 @@ pub struct LINK3args<'a> {
     pub link: diropargs3<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct LINK3resfail {
     pub file_attributes: post_op_attr,
     pub linkdir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct LINK3resok {
     pub file_attributes: post_op_attr,
     pub linkdir_wcc: wcc_data,
@@ -311,7 +312,7 @@ pub struct LOOKUP3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct LOOKUP3resok {
     pub object: nfs_fh3,
     pub obj_attributes: post_op_attr,
@@ -324,30 +325,30 @@ pub struct MKDIR3args<'a> {
     pub attributes: sattr3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct MKDIR3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct MKDIR3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3args<'a> {
     pub where_: diropargs3<'a>,
     pub what: mknoddata3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
@@ -359,7 +360,7 @@ pub struct PATHCONF3args {
     pub object: nfs_fh3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct PATHCONF3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -382,12 +383,12 @@ pub struct READ3args {
     pub count: count3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READ3resfail {
     pub file_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READ3resok<'a> {
     pub file_attributes: post_op_attr,
     pub count: count3,
@@ -403,12 +404,12 @@ pub struct READDIR3args {
     pub count: count3,
 }
 
-#[derive(Default, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct READDIR3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIR3resok<'a> {
     pub dir_attributes: post_op_attr,
     pub cookieverf: cookieverf3,
@@ -424,12 +425,12 @@ pub struct READDIRPLUS3args {
     pub maxcount: count3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIRPLUS3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIRPLUS3resok<'a> {
     pub dir_attributes: post_op_attr,
     pub cookieverf: cookieverf3,
@@ -441,12 +442,12 @@ pub struct READLINK3args {
     pub symlink: nfs_fh3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READLINK3resfail {
     pub symlink_attributes: post_op_attr,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct READLINK3resok<'a> {
     pub symlink_attributes: post_op_attr,
     pub data: nfspath3<'a>,
@@ -457,12 +458,12 @@ pub struct REMOVE3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct REMOVE3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct REMOVE3resok {
     pub dir_wcc: wcc_data,
 }
@@ -473,13 +474,13 @@ pub struct RENAME3args<'a, 'b> {
     pub to: diropargs3<'b>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct RENAME3resfail {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct RENAME3resok {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,
@@ -490,12 +491,12 @@ pub struct RMDIR3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct RMDIR3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct RMDIR3resok {
     pub dir_wcc: wcc_data,
 }
@@ -507,12 +508,12 @@ pub struct SETATTR3args {
     pub guard: sattrguard3,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct SETATTR3resfail {
     pub obj_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct SETATTR3resok {
     pub obj_wcc: wcc_data,
 }
@@ -523,19 +524,19 @@ pub struct SYMLINK3args<'a> {
     pub symlink: symlinkdata3<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct SYMLINK3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct SYMLINK3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct WRITE3args<'a> {
     pub file: nfs_fh3,
     pub offset: offset3,
@@ -544,12 +545,12 @@ pub struct WRITE3args<'a> {
     pub data: Opaque<'a>,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct WRITE3resfail {
     pub file_wcc: wcc_data,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct WRITE3resok {
     pub file_wcc: wcc_data,
     pub count: count3,
@@ -577,19 +578,19 @@ pub enum createmode3 {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct devicedata3 {
     pub dev_attributes: sattr3,
     pub spec: specdata3,
 }
 
-#[derive(Default, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct dirlist3<'a> {
     pub entries: List<entry3<'a>>,
     pub eof: bool,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct dirlistplus3<'a> {
     pub entries: List<entryplus3<'a>>,
     pub eof: bool,
@@ -685,6 +686,7 @@ pub enum ftype3 {
     NF3FIFO = 7,
 }
 
+#[derive(Debug)]
 pub enum mknoddata3 {
     NF3CHR(devicedata3),
     NF3BLK(devicedata3),
@@ -839,14 +841,14 @@ pub enum time_how {
     SET_TO_CLIENT_TIME = 2,
 }
 
-#[derive(XdrCodec)]
+#[derive(Debug, XdrCodec)]
 pub struct wcc_attr {
     pub size: size3,
     pub mtime: nfstime3,
     pub ctime: nfstime3,
 }
 
-#[derive(Default, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct wcc_data {
     pub before: pre_op_attr,
     pub after: post_op_attr,
