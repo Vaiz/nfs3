@@ -1,13 +1,14 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use nfs3_types::rpc::rejected_reply;
+use nfs3_types::rpc::{accept_stat_data, rejected_reply};
 
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Xdr(nfs3_types::xdr_codec::Error),
     Rpc(RpcError),
+    Portmap(PortmapError),
 }
 
 impl fmt::Display for Error {
@@ -16,6 +17,7 @@ impl fmt::Display for Error {
             Error::Io(e) => e.fmt(f),
             Error::Xdr(e) => e.fmt(f),
             Error::Rpc(e) => e.fmt(f),
+            Error::Portmap(e) => e.fmt(f),
         }
     }
 }
@@ -53,6 +55,11 @@ pub enum RpcError {
     RpcMismatch,
     WrongLength,
     UnexpectedXid,
+    ProgUnavail,
+    ProgMismatch,
+    ProcUnavail,
+    GarbageArgs,
+    SystemErr,
 }
 
 impl fmt::Display for RpcError {
@@ -63,6 +70,11 @@ impl fmt::Display for RpcError {
             RpcError::RpcMismatch => write!(f, "RPC version mismatch"),
             RpcError::WrongLength => write!(f, "Wrong length in RPC message"),
             RpcError::UnexpectedXid => write!(f, "Unexpected XID in RPC reply"),
+            RpcError::ProgUnavail => write!(f, "Program unavailable"),
+            RpcError::ProgMismatch => write!(f, "Program mismatch"),
+            RpcError::ProcUnavail => write!(f, "Procedure unavailable"),
+            RpcError::GarbageArgs => write!(f, "Garbage arguments"),
+            RpcError::SystemErr => write!(f, "System error"),
         }
     }
 }
@@ -75,5 +87,41 @@ impl From<rejected_reply> for RpcError {
             rejected_reply::RPC_MISMATCH { .. } => RpcError::RpcMismatch,
             rejected_reply::AUTH_ERROR(_) => RpcError::Auth,
         }
+    }
+}
+
+impl TryFrom<accept_stat_data> for RpcError {
+    type Error = ();
+
+    fn try_from(value: accept_stat_data) -> Result<Self, Self::Error> {
+        match value {
+            accept_stat_data::SUCCESS => Err(()),
+            accept_stat_data::PROG_UNAVAIL => Ok(RpcError::ProgUnavail),
+            accept_stat_data::PROG_MISMATCH { .. } => Ok(RpcError::ProgMismatch),
+            accept_stat_data::PROC_UNAVAIL => Ok(RpcError::ProcUnavail),
+            accept_stat_data::GARBAGE_ARGS => Ok(RpcError::GarbageArgs),
+            accept_stat_data::SYSTEM_ERR => Ok(RpcError::SystemErr),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum PortmapError {
+    ProgramUnavailable,    
+}
+
+impl fmt::Display for PortmapError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PortmapError::ProgramUnavailable => write!(f, "Program unavailable"),
+        }
+    }
+}
+
+impl StdError for PortmapError {}
+
+impl From<PortmapError> for Error {
+    fn from(e: PortmapError) -> Self {
+        Self::Portmap(e)
     }
 }

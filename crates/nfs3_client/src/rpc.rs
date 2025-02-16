@@ -1,5 +1,8 @@
+use std::io::Cursor;
+
 use nfs3_types::rpc::{
-    accepted_reply, call_body, msg_body, opaque_auth, reply_body, rpc_msg, RPC_VERSION_2,
+    accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg,
+    RPC_VERSION_2,
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 
@@ -24,13 +27,17 @@ where
         }
     }
 
-    pub async fn call<T: Pack<Vec<u8>> + PackedSize>(
+    pub async fn call<C, R>(
         &mut self,
         prog: u32,
         vers: u32,
         proc: u32,
-        args: T,
-    ) -> Result<accepted_reply<'static>, Error> {
+        args: C,
+    ) -> Result<R, Error>
+    where
+        R: Unpack<Cursor<Vec<u8>>>,
+        C: Pack<Vec<u8>> + PackedSize,
+    {
         let call = call_body {
             rpcvers: RPC_VERSION_2,
             prog,
@@ -46,19 +53,13 @@ where
         self.xid = self.xid.wrapping_add(1);
 
         self.send_call(&msg, args).await?;
-        println!("[dbg] Sent RPC call");
-
-        let resp_msg = self.recv_reply().await?;
-        println!("[dbg] Received RPC reply");
-
-        match resp_msg.body {
-            msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => Ok(reply),
-            msg_body::REPLY(reply_body::MSG_DENIED(r)) => Err(r.into()),
-            msg_body::CALL(_) => Err(RpcError::UnexpectedCall.into()),
-        }
+        self.recv_reply::<R>(msg.xid).await
     }
 
-    async fn send_call<T: Pack<Vec<u8>> + PackedSize>(&mut self, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error> {
+    async fn send_call<T>(&mut self, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error>
+    where
+        T: Pack<Vec<u8>> + PackedSize,
+    {
         let total_len = msg.packed_size() + args.packed_size();
         if total_len % 4 != 0 {
             return Err(RpcError::WrongLength.into());
@@ -76,7 +77,10 @@ where
         Ok(())
     }
 
-    async fn recv_reply(&mut self) -> Result<rpc_msg<'static, 'static>, Error> {
+    async fn recv_reply<T>(&mut self, xid: u32) -> Result<T, Error>
+    where
+        T: Unpack<Cursor<Vec<u8>>>,
+    {
         let mut buf = [0u8; 4];
         self.io.async_read_exact(&mut buf).await?;
         let fragment_header = u32::from_be_bytes(buf);
@@ -88,19 +92,26 @@ where
         let mut buf = vec![0u8; total_len as usize];
         self.io.async_read_exact(&mut buf).await?;
 
-        let mut cursor = &buf[..];
+        let mut cursor = std::io::Cursor::new(buf);
         let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;
-        Ok(resp_msg)
-    }
 
-}
-
-fn _dump_hex(buf: &[u8]) {
-    for (i, b) in buf.iter().enumerate() {
-        if i % 16 == 0 {
-            print!("\n{:04x}: ", i);
+        if resp_msg.xid != xid {
+            return Err(RpcError::UnexpectedXid.into());
         }
-        print!("{:02x} ", b);
+
+        let reply = match resp_msg.body {
+            msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
+            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(r.into()),
+            msg_body::CALL(_) => return Err(RpcError::UnexpectedCall.into()),
+        };
+
+        if let accept_stat_data::SUCCESS = reply.reply_data {
+        } else {
+            return Err(crate::error::RpcError::try_from(reply.reply_data)
+                .unwrap()
+                .into());
+        }
+
+        Ok(T::unpack(&mut cursor)?.0)
     }
-    println!();
 }
