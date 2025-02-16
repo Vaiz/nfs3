@@ -26,9 +26,15 @@ where
         Ok(())
     }
 
-    pub async fn mnt(&mut self, dirpath_: dirpath<'_>) -> Result<mountres3<'static>, Error> {
-        self.call::<dirpath, mountres3>(MOUNT_PROGRAM::MOUNTPROC3_MNT, dirpath_)
-            .await
+    pub async fn mnt(&mut self, dirpath_: dirpath<'_>) -> Result<mountres3_ok<'static>, Error> {
+        let result = self
+            .call::<dirpath, mountres3>(MOUNT_PROGRAM::MOUNTPROC3_MNT, dirpath_)
+            .await?;
+
+        match result {
+            mountres3::Ok(ok) => Ok(ok),
+            mountres3::Err(err) => Err(Error::MountError(err)),
+        }
     }
 
     pub async fn dump(&mut self) -> Result<mountlist<'static, 'static>, Error> {

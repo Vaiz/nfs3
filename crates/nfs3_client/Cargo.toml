@@ -25,3 +25,7 @@ tokio = { workspace = true, default-features = false, features = ["net"] }
 [[example]]
 name = "portmap"
 required-features = ["tokio"]
+
+[[example]]
+name = "nfs"
+required-features = ["tokio"]
