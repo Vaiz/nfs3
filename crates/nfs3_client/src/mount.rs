@@ -26,7 +26,7 @@ where
         Ok(())
     }
 
-    pub async fn mnt<'a>(&mut self, dirpath_: dirpath<'a>) -> Result<mountres3<'a>, Error> {
+    pub async fn mnt(&mut self, dirpath_: dirpath<'_>) -> Result<mountres3<'static>, Error> {
         self.call::<dirpath, mountres3>(MOUNT_PROGRAM::MOUNTPROC3_MNT, dirpath_)
             .await
     }
