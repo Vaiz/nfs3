@@ -46,5 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Readdir: {:?}", readdir);
 
+    // TODO: unmount
+
     Ok(())
 }
