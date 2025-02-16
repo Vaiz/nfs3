@@ -13,7 +13,7 @@ description = "Provides an implementation of NFS3 client"
 tokio = ["dep:tokio"]
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.1.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.1.1" }
 
 async-trait.workspace = true
 rand.workspace = true
