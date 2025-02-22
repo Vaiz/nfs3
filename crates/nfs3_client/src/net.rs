@@ -1,8 +1,5 @@
 //! Traits for connecting to an endpoint.
 
-#[cfg(feature = "tokio")]
-pub mod tokio;
-
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// Trait for connecting to a host and port.

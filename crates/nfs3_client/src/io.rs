@@ -1,8 +1,5 @@
 //! Asynchronous I/O traits for reading and writing bytes.
 
-#[cfg(feature = "tokio")]
-pub mod tokio;
-
 /// Trait to read bytes asynchronously.
 #[async_trait::async_trait(?Send)]
 pub trait AsyncRead {

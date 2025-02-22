@@ -1,7 +1,7 @@
 use std::env;
 
 use nfs3_client::error::{Error, PortmapError};
-use nfs3_client::io::tokio::TokioIo;
+use nfs3_client::tokio::TokioIo;
 use tokio::net::TcpStream;
 
 #[tokio::main]

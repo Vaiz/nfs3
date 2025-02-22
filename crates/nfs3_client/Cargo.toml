@@ -23,6 +23,10 @@ tokio = { workspace = true, optional = true, default-features = false }
 [dev-dependencies]
 tokio = { workspace = true, default-features = false, features = ["net"] }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [[example]]
 name = "portmap"
 required-features = ["tokio"]
