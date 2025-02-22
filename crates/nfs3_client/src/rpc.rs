@@ -122,7 +122,12 @@ where
 
         let (final_value, _) = T::unpack(&mut cursor)?;
         if cursor.position() as usize != total_len as usize {
-            return Err(RpcError::NotFullyParsed.into());
+            let pos = cursor.position() as usize;
+            return Err(RpcError::NotFullyParsed {
+                buf: cursor.into_inner(),
+                pos,
+            }
+            .into());
         }
         Ok(final_value)
     }
