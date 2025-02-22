@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_types"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 authors.workspace = true
 homepage.workspace = true
@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 
 [dependencies]
-nfs3_macros = { path = "../nfs3_macros", version = "0.1.0" }
+nfs3_macros = { path = "../nfs3_macros", version = "0.2.0" }
 
 byteorder.workspace = true
 xdr-codec.workspace = true

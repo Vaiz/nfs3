@@ -6,7 +6,7 @@ edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
-publish = false # there is nothing to publish yet
+publish = true
 description = "Provides an implementation of NFS3 client"
 readme = "README.md"
 
@@ -14,7 +14,7 @@ readme = "README.md"
 tokio = ["dep:tokio"]
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.1.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.2.0" }
 
 async-trait.workspace = true
 rand.workspace = true
