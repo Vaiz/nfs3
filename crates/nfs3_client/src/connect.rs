@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::{mount, portmapper, MountClient, Nfs3Client};
 
+/// Contains the connection to the NFS server.
 #[derive(Debug)]
 pub struct Nfs3Connection<IO> {
     pub host: String,
@@ -23,16 +24,21 @@ impl<IO> Nfs3Connection<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
+    /// Returns the root file handle of the mounted filesystem.
     pub fn root_nfs_fh3(&self) -> nfs_fh3 {
         nfs_fh3 {
             data: self.mount_resok.fhandle.0.clone(),
         }
     }
 
+    /// Unmounts the filesystem and drops the client.
     pub async fn unmount(mut self) -> Result<(), Error> {
         self.mount_client.umnt(self.mount_path).await
     }
 
+    /// Returns the underlying NFSv3 client and drops everything else.
+    /// This is useful for when you want to use the NFSv3 client for a long period of time
+    /// and don't want to keep the connection to Mount service open.
     pub fn into_nfs3_client(self) -> Nfs3Client<IO> {
         self.nfs3_client
     }
@@ -52,6 +58,7 @@ impl<IO> DerefMut for Nfs3Connection<IO> {
     }
 }
 
+/// Builder for the NFSv3 connection.
 pub struct Nfs3ConnectionBuilder<C> {
     host: String,
     connector: C,
@@ -66,6 +73,8 @@ where
     C: crate::net::Connector<Connection = S>,
     S: AsyncRead + AsyncWrite + 'static,
 {
+    /// Creates a new NFSv3 connection builder.
+    /// The `mount_path` is the path to mount on the server.
     pub fn new(connector: C, host: String, mount_path: String) -> Self {
         Self {
             host,
@@ -77,20 +86,24 @@ where
         }
     }
 
+    /// Sets the portmapper port. The default port is 111.
     pub fn portmapper_port(mut self, port: u16) -> Self {
         self.portmapper_port = port;
         self
     }
+    /// Sets the mount port. The default port is resolved from the portmapper.
     pub fn mount_port(mut self, port: u16) -> Self {
         self.mount_port = Some(port);
         self
     }
+    /// Sets the NFSv3 port. The default port is resolved from the portmapper.
     pub fn nfs3_port(mut self, port: u16) -> Self {
         self.nfs3_port = Some(port);
         self
     }
 
-    pub async fn connect(self) -> Result<Nfs3Connection<S>, Error> {
+    /// Mounts the filesystem and returns the connection.
+    pub async fn mount(self) -> Result<Nfs3Connection<S>, Error> {
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
         let io = self.connector.connect(&self.host, mount_port).await?;

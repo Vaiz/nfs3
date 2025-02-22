@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmaper_port)
-        .connect()
+        .mount()
         .await?;
 
     println!("Mount result: {:?}", connection.mount_resok);
