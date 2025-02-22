@@ -1,5 +1,6 @@
 //! RPC client implementation
 
+use std::fmt::Debug;
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
@@ -16,6 +17,12 @@ const EOF_FLAG: u32 = 0x8000_0000;
 pub struct RpcClient<IO> {
     io: IO,
     xid: u32,
+}
+
+impl<IO> Debug for RpcClient<IO> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.debug_struct("RpcClient").finish()
+    }
 }
 
 impl<IO> RpcClient<IO>

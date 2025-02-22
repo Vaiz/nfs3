@@ -1,44 +1,144 @@
+use std::ops::{Deref, DerefMut};
+
 use nfs3_types::mount::{dirpath, mountres3_ok};
+use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
-use crate::{mount, portmapper, Nfs3Client};
+use crate::{mount, portmapper, MountClient, Nfs3Client};
 
-/// Connect to an NFSv3 server
-///
-/// `connect` resolves the port for MOUNT3 and NFSv3 service using the portmapper, then mounts the
-/// filesystem at `mount_path`, and returns a client for the NFSv3 service and the mount result.
-///
-/// NOTE: Currently it doesn't implement unmounting the filesystem when the client is dropped.
-pub async fn connect<C, S>(
+#[derive(Debug)]
+pub struct Nfs3Connection<IO> {
+    pub host: String,
+    pub mount_port: u16,
+    pub mount_path: dirpath<'static>,
+    pub mount_client: MountClient<IO>,
+    pub mount_resok: mountres3_ok<'static>,
+    pub nfs3_port: u16,
+    pub nfs3_client: Nfs3Client<IO>,
+}
+
+impl<IO> Nfs3Connection<IO>
+where
+    IO: AsyncRead + AsyncWrite,
+{
+    pub fn root_nfs_fh3(&self) -> nfs_fh3 {
+        nfs_fh3 {
+            data: self.mount_resok.fhandle.0.clone(),
+        }
+    }
+
+    pub async fn unmount(mut self) -> Result<(), Error> {
+        self.mount_client.umnt(self.mount_path).await
+    }
+
+    pub fn into_nfs3_client(self) -> Nfs3Client<IO> {
+        self.nfs3_client
+    }
+}
+
+impl<IO> Deref for Nfs3Connection<IO> {
+    type Target = Nfs3Client<IO>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.nfs3_client
+    }
+}
+
+impl<IO> DerefMut for Nfs3Connection<IO> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.nfs3_client
+    }
+}
+
+pub struct Nfs3ConnectionBuilder<C> {
+    host: String,
     connector: C,
-    host: &str,
-    mount_path: &str,
-) -> Result<(Nfs3Client<S>, mountres3_ok<'static>), Error>
+    portmapper_port: u16,
+    mount_port: Option<u16>,
+    nfs3_port: Option<u16>,
+    mount_path: dirpath<'static>,
+}
+
+impl<C, S> Nfs3ConnectionBuilder<C>
 where
     C: crate::net::Connector<Connection = S>,
     S: AsyncRead + AsyncWrite + 'static,
 {
-    let rpc = connector
-        .connect(host, nfs3_types::portmap::PMAP_PORT)
-        .await?;
-    let mut portmapper = portmapper::PortmapperClient::new(rpc);
+    pub fn new(connector: C, host: String, mount_path: String) -> Self {
+        Self {
+            host,
+            connector,
+            portmapper_port: nfs3_types::portmap::PMAP_PORT,
+            mount_port: None,
+            nfs3_port: None,
+            mount_path: dirpath(Opaque::owned(mount_path.into_bytes())),
+        }
+    }
 
-    let mount_port = portmapper
-        .getport(nfs3_types::mount::PROGRAM, nfs3_types::mount::VERSION)
-        .await?;
-    let nfs_port = portmapper
-        .getport(nfs3_types::nfs3::PROGRAM, nfs3_types::nfs3::VERSION)
-        .await?;
+    pub fn portmapper_port(mut self, port: u16) -> Self {
+        self.portmapper_port = port;
+        self
+    }
+    pub fn mount_port(mut self, port: u16) -> Self {
+        self.mount_port = Some(port);
+        self
+    }
+    pub fn nfs3_port(mut self, port: u16) -> Self {
+        self.nfs3_port = Some(port);
+        self
+    }
 
-    let mount_rpc = connector.connect(host, mount_port as u16).await?;
-    let mut mount = mount::MountClient::new(mount_rpc);
-    let mount_path = Opaque::borrowed(mount_path.as_bytes());
-    let mount_res = mount.mnt(dirpath(mount_path)).await?;
+    pub async fn connect(self) -> Result<Nfs3Connection<S>, Error> {
+        let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
-    let rpc = connector.connect(host, nfs_port as u16).await?;
-    let nfs3_client = Nfs3Client::new(rpc);
+        let io = self.connector.connect(&self.host, mount_port).await?;
+        let mut mount_client = mount::MountClient::new(io);
+        let borrowed_mount_path = dirpath(Opaque::borrowed(self.mount_path.0.as_ref()));
+        let mount_resok = mount_client.mnt(borrowed_mount_path).await?;
 
-    Ok((nfs3_client, mount_res))
+        let io = self.connector.connect(&self.host, nfs3_port).await?;
+        let nfs3_client = Nfs3Client::new(io);
+
+        Ok(Nfs3Connection {
+            host: self.host,
+            mount_port,
+            mount_path: self.mount_path,
+            mount_client,
+            mount_resok,
+            nfs3_port,
+            nfs3_client,
+        })
+    }
+
+    async fn resolve_ports(&self) -> Result<(u16, u16), Error> {
+        if self.mount_port.is_some() && self.nfs3_port.is_some() {
+            return Ok((self.mount_port.unwrap(), self.nfs3_port.unwrap()));
+        }
+
+        let io = self
+            .connector
+            .connect(&self.host, self.portmapper_port)
+            .await?;
+
+        let mut portmapper = portmapper::PortmapperClient::new(io);
+        let mount_port = if let Some(port) = self.mount_port {
+            port
+        } else {
+            portmapper
+                .getport(nfs3_types::mount::PROGRAM, nfs3_types::mount::VERSION)
+                .await?
+        };
+
+        let nfs3_port = if let Some(port) = self.nfs3_port {
+            port
+        } else {
+            portmapper
+                .getport(nfs3_types::nfs3::PROGRAM, nfs3_types::nfs3::VERSION)
+                .await?
+        };
+
+        Ok((mount_port, nfs3_port))
+    }
 }

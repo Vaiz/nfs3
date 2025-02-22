@@ -116,12 +116,14 @@ impl TryFrom<accept_stat_data> for RpcError {
 #[derive(Debug)]
 pub enum PortmapError {
     ProgramUnavailable,
+    InvalidPortValue(u32),
 }
 
 impl fmt::Display for PortmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PortmapError::ProgramUnavailable => write!(f, "Program unavailable"),
+            PortmapError::InvalidPortValue(value) => write!(f, "Invalid port value: {}", value),
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the NFSv3 service
+#[derive(Debug)]
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
 }

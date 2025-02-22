@@ -7,6 +7,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the portmapper service
+#[derive(Debug)]
 pub struct PortmapperClient<IO> {
     rpc: RpcClient<IO>,
 }
@@ -28,7 +29,7 @@ where
         Ok(())
     }
 
-    pub async fn getport(&mut self, prog: u32, vers: u32) -> Result<u32, crate::error::Error> {
+    pub async fn getport(&mut self, prog: u32, vers: u32) -> Result<u16, crate::error::Error> {
         let args = mapping {
             prog,
             vers,
@@ -40,10 +41,11 @@ where
             .call::<mapping, u32>(PMAP_PROG::PMAPPROC_GETPORT, args)
             .await?;
 
-        if port == 0 {
-            Err(crate::error::PortmapError::ProgramUnavailable.into())
-        } else {
-            Ok(port)
+        let port_u16: Result<u16, _> = port.try_into();
+        match port_u16 {
+            Ok(0) => Err(crate::error::PortmapError::ProgramUnavailable.into()),
+            Ok(port) => Ok(port),
+            Err(_) => Err(crate::error::PortmapError::InvalidPortValue(port).into()),
         }
     }
 
