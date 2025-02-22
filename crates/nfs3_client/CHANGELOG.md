@@ -1,0 +1,17 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0](https://github.com/Vaiz/nfs3/releases/tag/nfs3_client-v0.1.0) - 2025-02-22
+
+### Other
+
+- bump crates versions ([#26](https://github.com/Vaiz/nfs3/pull/26))
+- refactor nfs3 connection and add some docs ([#25](https://github.com/Vaiz/nfs3/pull/25))
+- implement NfsClient ([#24](https://github.com/Vaiz/nfs3/pull/24))
+- Add nfs3_client crate ([#23](https://github.com/Vaiz/nfs3/pull/23))
