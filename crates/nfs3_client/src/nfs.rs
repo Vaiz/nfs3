@@ -1,14 +1,14 @@
 use std::io::Cursor;
 
-use nfs3_types::mount::{dirpath, mountres3_ok};
 use nfs3_types::nfs3::*;
-use nfs3_types::xdr_codec::{Opaque, Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 
 use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
-use crate::{mount, portmapper};
 
+/// Client for the NFSv3 service
+#[derive(Debug)]
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
 }
@@ -17,8 +17,10 @@ impl<IO> Nfs3Client<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
-    pub fn new(rpc: RpcClient<IO>) -> Self {
-        Self { rpc }
+    pub fn new(io: IO) -> Self {
+        Self {
+            rpc: RpcClient::new(io),
+        }
     }
 
     pub async fn null(&mut self) -> Result<(), Error> {
@@ -145,39 +147,4 @@ where
             .call::<C, R>(PROGRAM, VERSION, proc as u32, args)
             .await
     }
-}
-
-pub async fn connect<C, S>(
-    connector: C,
-    host: &str,
-    mount_path: &str,
-) -> Result<(Nfs3Client<S>, mountres3_ok<'static>), Error>
-where
-    C: crate::net::Connector<Connection = S>,
-    S: AsyncRead + AsyncWrite + 'static,
-{
-    let rpc = connector
-        .connect(host, nfs3_types::portmap::PMAP_PORT)
-        .await?;
-    let rpc = RpcClient::new(rpc);
-    let mut portmapper = portmapper::PortmapperClient::new(rpc);
-
-    let mount_port = portmapper
-        .getport(nfs3_types::mount::PROGRAM, nfs3_types::mount::VERSION)
-        .await?;
-    let nfs_port = portmapper
-        .getport(nfs3_types::nfs3::PROGRAM, nfs3_types::nfs3::VERSION)
-        .await?;
-
-    let mount_rpc = connector.connect(host, mount_port as u16).await?;
-    let mount_rpc = RpcClient::new(mount_rpc);
-    let mut mount = mount::MountClient::new(mount_rpc);
-    let mount_path = Opaque::borrowed(mount_path.as_bytes());
-    let mount_res = mount.mnt(dirpath(mount_path)).await?;
-
-    let rpc = connector.connect(host, nfs_port as u16).await?;
-    let rpc = RpcClient::new(rpc);
-    let nfs3_client = Nfs3Client::new(rpc);
-
-    Ok((nfs3_client, mount_res))
 }

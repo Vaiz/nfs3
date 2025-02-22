@@ -8,6 +8,7 @@ repository.workspace = true
 license.workspace = true
 publish = false # there is nothing to publish yet
 description = "Provides an implementation of NFS3 client"
+readme = "README.md"
 
 [features]
 tokio = ["dep:tokio"]
@@ -21,6 +22,10 @@ tokio = { workspace = true, optional = true, default-features = false }
 
 [dev-dependencies]
 tokio = { workspace = true, default-features = false, features = ["net"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
 name = "portmap"

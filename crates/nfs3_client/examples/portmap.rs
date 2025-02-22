@@ -1,9 +1,7 @@
 use std::env;
 
 use nfs3_client::error::{Error, PortmapError};
-use nfs3_client::io::tokio::TokioIo;
-use nfs3_client::portmapper;
-use nfs3_client::rpc::RpcClient;
+use nfs3_client::tokio::TokioIo;
 use tokio::net::TcpStream;
 
 #[tokio::main]
@@ -20,8 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let stream = TcpStream::connect(format!("{ip}:{port}")).await?;
     println!("Connected to portmapper on {ip}:{port}");
-    let rpc = RpcClient::new(TokioIo::new(stream));
-    let mut portmapper = portmapper::PortmapperClient::new(rpc);
+    let rpc = TokioIo::new(stream);
+    let mut portmapper = nfs3_client::PortmapperClient::new(rpc);
 
     portmapper.null().await?;
 

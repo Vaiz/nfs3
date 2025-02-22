@@ -1,3 +1,5 @@
+//! Error types
+
 use std::error::Error as StdError;
 use std::fmt;
 
@@ -59,7 +61,7 @@ pub enum RpcError {
     RpcMismatch,
     WrongLength,
     UnexpectedXid,
-    NotFullyParsed,
+    NotFullyParsed { buf: Vec<u8>, pos: usize },
     ProgUnavail,
     ProgMismatch,
     ProcUnavail,
@@ -75,7 +77,7 @@ impl fmt::Display for RpcError {
             RpcError::RpcMismatch => write!(f, "RPC version mismatch"),
             RpcError::WrongLength => write!(f, "Wrong length in RPC message"),
             RpcError::UnexpectedXid => write!(f, "Unexpected XID in RPC reply"),
-            RpcError::NotFullyParsed => write!(f, "Not fully parsed"),
+            RpcError::NotFullyParsed { .. } => write!(f, "Not fully parsed"),
             RpcError::ProgUnavail => write!(f, "Program unavailable"),
             RpcError::ProgMismatch => write!(f, "Program mismatch"),
             RpcError::ProcUnavail => write!(f, "Procedure unavailable"),
@@ -114,12 +116,14 @@ impl TryFrom<accept_stat_data> for RpcError {
 #[derive(Debug)]
 pub enum PortmapError {
     ProgramUnavailable,
+    InvalidPortValue(u32),
 }
 
 impl fmt::Display for PortmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PortmapError::ProgramUnavailable => write!(f, "Program unavailable"),
+            PortmapError::InvalidPortValue(value) => write!(f, "Invalid port value: {}", value),
         }
     }
 }

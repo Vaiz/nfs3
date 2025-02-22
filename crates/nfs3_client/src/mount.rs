@@ -7,6 +7,8 @@ use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
+/// Client for the mount service
+#[derive(Debug)]
 pub struct MountClient<IO> {
     rpc: RpcClient<IO>,
 }
@@ -15,8 +17,10 @@ impl<IO> MountClient<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
-    pub fn new(rpc: RpcClient<IO>) -> Self {
-        Self { rpc }
+    pub fn new(io: IO) -> Self {
+        Self {
+            rpc: RpcClient::new(io),
+        }
     }
 
     pub async fn null(&mut self) -> Result<(), Error> {

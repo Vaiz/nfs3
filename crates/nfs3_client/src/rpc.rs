@@ -1,3 +1,6 @@
+//! RPC client implementation
+
+use std::fmt::Debug;
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
@@ -10,15 +13,23 @@ use crate::io::{AsyncRead, AsyncWrite};
 
 const EOF_FLAG: u32 = 0x8000_0000;
 
+/// RPC client
 pub struct RpcClient<IO> {
     io: IO,
     xid: u32,
+}
+
+impl<IO> Debug for RpcClient<IO> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.debug_struct("RpcClient").finish()
+    }
 }
 
 impl<IO> RpcClient<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
+    /// Create a new RPC client. XID is initialized to a random value.
     pub fn new(io: IO) -> Self {
         Self {
             io,
@@ -26,6 +37,10 @@ where
         }
     }
 
+    /// Call an RPC procedure
+    ///
+    /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
+    /// the reply.
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,
@@ -107,7 +122,12 @@ where
 
         let (final_value, _) = T::unpack(&mut cursor)?;
         if cursor.position() as usize != total_len as usize {
-            return Err(RpcError::NotFullyParsed.into());
+            let pos = cursor.position() as usize;
+            return Err(RpcError::NotFullyParsed {
+                buf: cursor.into_inner(),
+                pos,
+            }
+            .into());
         }
         Ok(final_value)
     }
