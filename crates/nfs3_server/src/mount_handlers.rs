@@ -148,7 +148,6 @@ pub async fn mountproc3_umnt(
         let _ = chan.send(false).await;
     }
     make_success_reply(xid).pack(output)?;
-    mountstat3::MNT3_OK.pack(output)?;
     Ok(())
 }
 
@@ -163,6 +162,5 @@ pub async fn mountproc3_umnt_all(
         let _ = chan.send(false).await;
     }
     make_success_reply(xid).pack(output)?;
-    mountstat3::MNT3_OK.pack(output)?;
     Ok(())
 }
