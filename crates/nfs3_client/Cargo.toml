@@ -8,6 +8,7 @@ repository.workspace = true
 license.workspace = true
 publish = false # there is nothing to publish yet
 description = "Provides an implementation of NFS3 client"
+readme = "README.md"
 
 [features]
 tokio = ["dep:tokio"]
