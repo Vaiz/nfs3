@@ -10,4 +10,5 @@ This project provides a Rust-based implementation of an NFS3 server. It includes
 
 - `crates/nfs3_macros`: Procedural macros used in the project
 - `crates/nfs3_types`: Types and utilities for NFS operations
-- `crates/nfs3_server`: Main NFS server implementation
+- `crates/nfs3_server`: Async NFS3 server implementation
+- `crates/nfs3_client`: Async NFS3 client implementation
