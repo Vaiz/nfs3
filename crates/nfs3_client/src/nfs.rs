@@ -18,8 +18,10 @@ impl<IO> Nfs3Client<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
-    pub fn new(rpc: RpcClient<IO>) -> Self {
-        Self { rpc }
+    pub fn new(io: IO) -> Self {
+        Self {
+            rpc: RpcClient::new(io),
+        }
     }
 
     pub async fn null(&mut self) -> Result<(), Error> {
@@ -166,7 +168,6 @@ where
     let rpc = connector
         .connect(host, nfs3_types::portmap::PMAP_PORT)
         .await?;
-    let rpc = RpcClient::new(rpc);
     let mut portmapper = portmapper::PortmapperClient::new(rpc);
 
     let mount_port = portmapper
@@ -177,13 +178,11 @@ where
         .await?;
 
     let mount_rpc = connector.connect(host, mount_port as u16).await?;
-    let mount_rpc = RpcClient::new(mount_rpc);
     let mut mount = mount::MountClient::new(mount_rpc);
     let mount_path = Opaque::borrowed(mount_path.as_bytes());
     let mount_res = mount.mnt(dirpath(mount_path)).await?;
 
     let rpc = connector.connect(host, nfs_port as u16).await?;
-    let rpc = RpcClient::new(rpc);
     let nfs3_client = Nfs3Client::new(rpc);
 
     Ok((nfs3_client, mount_res))

@@ -15,8 +15,10 @@ impl<IO> PortmapperClient<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
-    pub fn new(rpc: RpcClient<IO>) -> Self {
-        Self { rpc }
+    pub fn new(io: IO) -> Self {
+        Self {
+            rpc: RpcClient::new(io),
+        }
     }
 
     pub async fn null(&mut self) -> Result<(), crate::error::Error> {
