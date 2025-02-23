@@ -1,12 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 mod context;
-mod rpc;
-mod rpcwire;
-
 mod mount_handlers;
+pub(crate) mod nfs_ext;
 mod nfs_handlers;
 mod portmap_handlers;
+mod rpc;
+mod rpcwire;
 
 pub mod fs_util;
 
