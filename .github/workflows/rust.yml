@@ -24,6 +24,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Update Rust
+      run: rustup update
+
     - uses: Swatinem/rust-cache@v2
 
     - name: Debug build
