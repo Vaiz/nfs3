@@ -1,5 +1,3 @@
-#![allow(clippy::upper_case_acronyms)]
-#![allow(dead_code)]
 use std::io::{Read, Write};
 
 use nfs3_types::nfs3::*;

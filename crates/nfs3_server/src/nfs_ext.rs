@@ -43,7 +43,8 @@ impl BoundedEntryPlusList {
         }
     }
 
-    pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3> {
+    #[allow(clippy::result_large_err)]
+    pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3<'static>> {
         let added_dircount = size_of::<fileid3>() // fileid
             + size_of::<u32>() + entry.name.len() // name
             + size_of::<cookie3>(); // cookie
