@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.0...nfs3_client-v0.1.1) - 2025-02-23
+
+### Fixed
+
+- fix! enable net feature in tokio ([#28](https://github.com/Vaiz/nfs3/pull/28))
+
+### Other
+
+- release v0.1.1 (#20)
+
 ## [0.1.0](https://github.com/Vaiz/nfs3/releases/tag/nfs3_client-v0.1.0) - 2025-02-22
 
 ### Other
