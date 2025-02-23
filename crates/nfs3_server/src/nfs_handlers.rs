@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::*;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
+use nfs3_types::xdr_codec::{BoundedList, List, Opaque, Pack, PackedSize, Unpack};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
@@ -384,10 +384,10 @@ pub async fn nfsproc3_readdirplus(
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
-    let dir_attr = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
+    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
 
-    let dirversion = cookieverf3::from_attr(&dir_attr);
-    debug!(" -- Dir attr {dir_attr:?}");
+    let dirversion = cookieverf3::from_attr(&dir_attributes);
+    debug!(" -- Dir attr {dir_attributes:?}");
     debug!(" -- Dir version {dirversion:?}");
     let has_version = args.cookieverf.is_some();
     // initial call should hve empty cookie verf
@@ -456,8 +456,6 @@ pub async fn nfsproc3_readdirplus(
     // args.dircount is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
     let estimated_max_results = args.dircount / 16;
-    let max_dircount_bytes = args.dircount as usize;
-    let mut ctr = 0;
 
     let result = context
         .vfs
@@ -467,87 +465,60 @@ pub async fn nfsproc3_readdirplus(
     if let Err(stat) = result {
         error!("readdir error {xid} --> {stat:?}");
         make_success_reply(xid).pack(output)?;
-        READDIRPLUS3res::Err((
-            stat,
-            READDIRPLUS3resfail {
-                dir_attributes: dir_attr,
-            },
-        ))
-        .pack(output)?;
+        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes })).pack(output)?;
         return Ok(());
     }
 
     let result = result.unwrap();
-
-    // we count dir_count seperately as it is just a subset of fields
-    let mut accumulated_dircount: usize = 0;
     let mut all_entries_written = true;
 
     // this is a wrapper around a writer that also just counts the number of bytes
     // written
-    let mut counting_output = crate::write_counter::WriteCounter::new(output);
-
-    make_success_reply(xid).pack(&mut counting_output)?;
-    nfsstat3::NFS3_OK.pack(&mut counting_output)?;
-    dir_attr.pack(&mut counting_output)?;
-    dirversion.pack(&mut counting_output)?;
+    let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
     for entry in result.entries {
-        let obj_attr = entry.attr;
         let handle = post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
 
         let entry = entryplus3 {
             fileid: entry.fileid,
             name: entry.name,
             cookie: entry.fileid,
-            name_attributes: post_op_attr::Some(obj_attr),
+            name_attributes: post_op_attr::Some(entry.attr),
             name_handle: handle,
         };
-        // write the entry into a buffer first
-        let mut write_buf: Vec<u8> = Vec::new();
-        let mut write_cursor = std::io::Cursor::new(&mut write_buf);
-        // true flag for the entryplus3* to mark that this contains an entry
-        true.pack(&mut write_cursor)?;
-        entry.pack(&mut write_cursor)?;
-        write_cursor.flush()?;
-        let added_dircount = size_of::<fileid3>()                  // fileid
-                                    + size_of::<u32>() + entry.name.len()  // name
-                                    + size_of::<cookie3>(); // cookie
-        let added_output_bytes = write_buf.len();
-        // check if we can write without hitting the limits
-        if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed
-            && added_dircount + accumulated_dircount < max_dircount_bytes
-        {
-            trace!("  -- dirent {entry:?}");
-            // commit the entry
-            ctr += 1;
-            counting_output.write_all(&write_buf)?;
-            accumulated_dircount += added_dircount;
-            trace!(
-                "  -- lengths: {accumulated_dircount} / {max_dircount_bytes} {} / \
-                 {max_bytes_allowed}",
-                counting_output.bytes_written(),
-            );
-        } else {
+
+        let result = entries_result.try_push(entry);
+        if result.is_err() {
             trace!(" -- insufficient space. truncating");
             all_entries_written = false;
             break;
         }
     }
-    // false flag for the final entryplus* linked list
-    false.pack(&mut counting_output)?;
-    // eof flag is only valid here if we wrote everything
-    if all_entries_written {
-        debug!("  -- readdir eof {}", result.end);
-        result.end.pack(&mut counting_output)?;
-    } else {
-        debug!("  -- readdir eof false");
-        false.pack(&mut counting_output)?;
+
+    let entries = entries_result.into_inner();
+    if entries.0.is_empty() && !all_entries_written {
+        let stat = nfsstat3::NFS3ERR_TOOSMALL;
+        error!("readdir error {xid} --> {stat:?}");
+        make_success_reply(xid).pack(output)?;
+        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes })).pack(output)?;
+        return Ok(());
     }
+
+    let eof = all_entries_written && result.end;
+    debug!("  -- readdir eof {eof}");
     debug!(
-        "readir {dirid}, has_version {has_version}, start at {}, flushing {ctr} entries, complete \
+        "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
          {all_entries_written}",
         args.cookie,
+        entries.0.len()
     );
+
+    make_success_reply(xid).pack(output)?;
+    READDIRPLUS3resok {
+        dir_attributes,
+        cookieverf: dirversion,
+        reply: dirlistplus3 { entries, eof },
+    }
+    .pack(output)?;
 
     Ok(())
 }
@@ -1432,5 +1403,41 @@ impl CookieVerfExt for cookieverf3 {
 
     fn is_some(&self) -> bool {
         !self.is_none()
+    }
+}
+
+struct BoundedEntryPlusList {
+    entries: BoundedList<entryplus3<'static>>,
+    dircount: usize,
+    accumulated_dircount: usize,
+}
+
+impl BoundedEntryPlusList {
+    fn new(dircount: usize, maxcount: usize) -> Self {
+        Self {
+            entries: BoundedList::new(maxcount),
+            dircount,
+            accumulated_dircount: 0,
+        }
+    }
+
+    fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3> {
+        let added_dircount = size_of::<fileid3>() // fileid
+            + size_of::<u32>() + entry.name.len() // name
+            + size_of::<cookie3>(); // cookie
+
+        if self.accumulated_dircount + added_dircount > self.dircount {
+            return Err(entry);
+        }
+
+        let result = self.entries.try_push(entry);
+        if result.is_ok() {
+            self.dircount += added_dircount;
+        }
+        result
+    }
+
+    fn into_inner(self) -> List<entryplus3<'static>> {
+        self.entries.into_inner()
     }
 }
