@@ -1,5 +1,5 @@
 use nfs3_types::nfs3::{cookie3, cookieverf3, entryplus3, fileid3, post_op_attr};
-use nfs3_types::xdr_codec::{BoundedList, List};
+use nfs3_types::xdr_codec::{BoundedList, List, PackedSize};
 
 pub trait CookieVerfExt {
     const NONE_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
@@ -45,9 +45,11 @@ impl BoundedEntryPlusList {
 
     #[allow(clippy::result_large_err)]
     pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3<'static>> {
-        let added_dircount = size_of::<fileid3>() // fileid
-            + size_of::<u32>() + entry.name.len() // name
-            + size_of::<cookie3>(); // cookie
+        // dircount - the maximum number of bytes of directory information returned. This number
+        // should not include the size of the attributes and file handle portions of the result.
+        let added_dircount = fileid3::PACKED_SIZE.unwrap()
+            + 4 + entry.name.packed_size()
+            + cookie3::PACKED_SIZE.unwrap();
 
         if self.accumulated_dircount + added_dircount > self.dircount {
             return Err(entry);
@@ -55,12 +57,60 @@ impl BoundedEntryPlusList {
 
         let result = self.entries.try_push(entry);
         if result.is_ok() {
-            self.dircount += added_dircount;
+            self.accumulated_dircount += added_dircount;
         }
         result
     }
 
     pub fn into_inner(self) -> List<entryplus3<'static>> {
         self.entries.into_inner()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nfs3_types::nfs3::{filename3, post_op_fh3};
+    use nfs3_types::xdr_codec::{Opaque, PackedSize};
+
+    use super::*;
+
+    #[test]
+    fn test_dircount() {
+        let mut list = BoundedEntryPlusList::new(70, 1000);
+        assert!(list.try_push(make_entry("test")).is_ok());
+        assert_eq!(list.accumulated_dircount, 28);
+        assert!(list.try_push(make_entry("test2")).is_ok());
+        assert_eq!(list.accumulated_dircount, 60);
+        assert!(list.try_push(make_entry("test3")).is_err());
+        assert_eq!(list.accumulated_dircount, 60);
+
+        let entries = list.into_inner();
+        assert!(entries.packed_size() < 1000);
+        assert_eq!(entries.0.len(), 2);
+    }
+
+    #[test]
+    fn test_maxcount() {
+        let mut list = BoundedEntryPlusList::new(1000, 100);
+        assert!(list.try_push(make_entry("test")).is_ok());
+        assert_eq!(list.accumulated_dircount, 28);
+        assert!(list.try_push(make_entry("test2")).is_ok());
+        assert_eq!(list.accumulated_dircount, 60);
+        assert!(list.try_push(make_entry("test3")).is_err());
+        assert_eq!(list.accumulated_dircount, 60);
+
+        let entries = list.into_inner();
+        assert_eq!(entries.packed_size(), 80);
+        assert_eq!(entries.0.len(), 2);
+    }
+
+    fn make_entry(name: &str) -> entryplus3<'_> {
+        entryplus3 {
+            fileid: 0,
+            name: filename3(Opaque::borrowed(name.as_bytes())),
+            cookie: 0,
+            name_attributes: post_op_attr::None,
+            name_handle: post_op_fh3::None,
+        }
     }
 }
