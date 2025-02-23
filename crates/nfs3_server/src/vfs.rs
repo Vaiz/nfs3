@@ -254,10 +254,10 @@ pub trait NFSFileSystem: Sync {
         if id.data.len() != 16 {
             return Err(nfsstat3::NFS3ERR_BADHANDLE);
         }
-        let gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
+        let r#gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
         let id = u64::from_le_bytes(id.data[8..16].try_into().unwrap());
         let gennum = get_generation_number();
-        match gen.cmp(&gennum) {
+        match r#gen.cmp(&gennum) {
             Ordering::Less => Err(nfsstat3::NFS3ERR_STALE),
             Ordering::Greater => Err(nfsstat3::NFS3ERR_BADHANDLE),
             Ordering::Equal => Ok(id),

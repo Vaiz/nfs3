@@ -6,7 +6,7 @@ resolver = "2"
 
 [workspace.package]
 authors = ["Vaiz"]
-edition = "2021"
+edition = "2024"
 homepage = "https://github.com/Vaiz/nfs3"
 repository = "https://github.com/Vaiz/nfs3"
 license = "Unlicense"
