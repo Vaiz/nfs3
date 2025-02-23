@@ -14,4 +14,4 @@ normalize_comments = true
 normalize_doc_attributes = true
 format_code_in_doc_comments = true
 
-#format_strings = true
+format_strings = true

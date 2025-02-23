@@ -163,7 +163,7 @@ pub async fn mountproc3_umnt(
         Err(e) => {
             tracing::error!("{xid} --> invalid mount path: {e}");
             garbage_args_reply_message(xid).pack(output)?;
-            return Ok(())
+            return Ok(());
         }
     };
 
