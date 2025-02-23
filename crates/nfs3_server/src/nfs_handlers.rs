@@ -1,5 +1,3 @@
-#![allow(clippy::upper_case_acronyms)]
-#![allow(dead_code)]
 use std::io::{Read, Write};
 
 use nfs3_types::nfs3::*;
@@ -8,6 +6,7 @@ use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
+use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpc::*;
 use crate::vfs::VFSCapabilities;
 
@@ -372,35 +371,35 @@ pub async fn nfsproc3_readdirplus(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     let args = READDIRPLUS3args::unpack(input)?.0;
-    debug!("nfsproc3_readdirplus({:?},{:?}) ", xid, args);
+
+    let result = nfsproc3_readdirplus_impl(xid, args, context).await;
+    make_success_reply(xid).pack(output)?;
+    result.pack(output)?;
+    Ok(())
+}
+
+async fn nfsproc3_readdirplus_impl(
+    xid: u32,
+    args: READDIRPLUS3args,
+    context: &RPCContext,
+) -> READDIRPLUS3res {
+    debug!("nfsproc3_readdirplus({xid},{args:?})");
 
     let dirid = context.vfs.fh_to_id(&args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail::default()));
     }
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
-    let dir_attr = match dir_attr_maybe {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
 
-    let dirversion = if let Nfs3Option::Some(dir_attr) = &dir_attr {
-        let cvf_version =
-            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        cookieverf3(cvf_version.to_be_bytes())
-    } else {
-        cookieverf3::default()
-    };
-    debug!(" -- Dir attr {:?}", dir_attr);
-    debug!(" -- Dir version {:?}", dirversion);
-    let has_version = args.cookieverf != cookieverf3::default();
-    // initial call should hve empty cookie verf
+    let dirversion = cookieverf3::from_attr(&dir_attributes);
+    debug!(" -- Dir attr {dir_attributes:?}");
+    debug!(" -- Dir version {dirversion:?}");
+    let has_version = args.cookieverf.is_some();
+    // initial call should have empty cookie verf
     // subsequent calls should have cvf_version as defined above
     // which is based off the mtime.
     //
@@ -466,93 +465,63 @@ pub async fn nfsproc3_readdirplus(
     // args.dircount is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
     let estimated_max_results = args.dircount / 16;
-    let max_dircount_bytes = args.dircount as usize;
-    let mut ctr = 0;
-    match context
+
+    let result = context
         .vfs
         .readdir(dirid, args.cookie, estimated_max_results as usize)
-        .await
-    {
-        Ok(result) => {
-            // we count dir_count seperately as it is just a subset of fields
-            let mut accumulated_dircount: usize = 0;
-            let mut all_entries_written = true;
+        .await;
 
-            // this is a wrapper around a writer that also just counts the number of bytes
-            // written
-            let mut counting_output = crate::write_counter::WriteCounter::new(output);
+    if let Err(stat) = result {
+        error!("readdir error {xid} --> {stat:?}");
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+    }
 
-            make_success_reply(xid).pack(&mut counting_output)?;
-            nfsstat3::NFS3_OK.pack(&mut counting_output)?;
-            dir_attr.pack(&mut counting_output)?;
-            dirversion.pack(&mut counting_output)?;
-            for entry in result.entries {
-                let obj_attr = entry.attr;
-                let handle = post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
+    let result = result.unwrap();
+    let mut all_entries_written = true;
 
-                let entry = entryplus3 {
-                    fileid: entry.fileid,
-                    name: entry.name,
-                    cookie: entry.fileid,
-                    name_attributes: post_op_attr::Some(obj_attr),
-                    name_handle: handle,
-                };
-                // write the entry into a buffer first
-                let mut write_buf: Vec<u8> = Vec::new();
-                let mut write_cursor = std::io::Cursor::new(&mut write_buf);
-                // true flag for the entryplus3* to mark that this contains an entry
-                true.pack(&mut write_cursor)?;
-                entry.pack(&mut write_cursor)?;
-                write_cursor.flush()?;
-                let added_dircount = size_of::<fileid3>()                  // fileid
-                                    + size_of::<u32>() + entry.name.len()  // name
-                                    + size_of::<cookie3>(); // cookie
-                let added_output_bytes = write_buf.len();
-                // check if we can write without hitting the limits
-                if added_output_bytes + counting_output.bytes_written() < max_bytes_allowed
-                    && added_dircount + accumulated_dircount < max_dircount_bytes
-                {
-                    trace!("  -- dirent {:?}", entry);
-                    // commit the entry
-                    ctr += 1;
-                    counting_output.write_all(&write_buf)?;
-                    accumulated_dircount += added_dircount;
-                    trace!(
-                        "  -- lengths: {:?} / {:?} {:?} / {:?}",
-                        accumulated_dircount,
-                        max_dircount_bytes,
-                        counting_output.bytes_written(),
-                        max_bytes_allowed
-                    );
-                } else {
-                    trace!(" -- insufficient space. truncating");
-                    all_entries_written = false;
-                    break;
-                }
-            }
-            // false flag for the final entryplus* linked list
-            false.pack(&mut counting_output)?;
-            // eof flag is only valid here if we wrote everything
-            if all_entries_written {
-                debug!("  -- readdir eof {:?}", result.end);
-                result.end.pack(&mut counting_output)?;
-            } else {
-                debug!("  -- readdir eof {:?}", false);
-                false.pack(&mut counting_output)?;
-            }
-            debug!(
-                "readir {}, has_version {},  start at {}, flushing {} entries, complete {}",
-                dirid, has_version, args.cookie, ctr, all_entries_written
-            );
+    // this is a wrapper around a writer that also just counts the number of bytes
+    // written
+    let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
+    for entry in result.entries {
+        let handle = post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
+
+        let entry = entryplus3 {
+            fileid: entry.fileid,
+            name: entry.name,
+            cookie: entry.fileid,
+            name_attributes: post_op_attr::Some(entry.attr),
+            name_handle: handle,
+        };
+
+        let result = entries_result.try_push(entry);
+        if result.is_err() {
+            trace!(" -- insufficient space. truncating");
+            all_entries_written = false;
+            break;
         }
-        Err(stat) => {
-            error!("readdir error {:?} --> {:?} ", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            dir_attr.pack(output)?;
-        }
-    };
-    Ok(())
+    }
+
+    let entries = entries_result.into_inner();
+    if entries.0.is_empty() && !all_entries_written {
+        let stat = nfsstat3::NFS3ERR_TOOSMALL;
+        error!("readdir error {xid} --> {stat:?}");
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+    }
+
+    let eof = all_entries_written && result.end;
+    debug!("  -- readdir eof {eof}");
+    debug!(
+        "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
+         {all_entries_written}",
+        args.cookie,
+        entries.0.len()
+    );
+
+    READDIRPLUS3res::Ok(READDIRPLUS3resok {
+        dir_attributes,
+        cookieverf: dirversion,
+        reply: dirlistplus3 { entries, eof },
+    })
 }
 
 pub async fn nfsproc3_readdir(
@@ -574,9 +543,6 @@ async fn readdir_impl(
     readdir3args: READDIR3args,
     context: &RPCContext,
 ) -> anyhow::Result<READDIR3res> {
-    const EMPTY_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
-    const DEFAULT_COOKIE_VERF: cookieverf3 = cookieverf3(0xFFCC_FFCC_FFCC_FFCCu64.to_be_bytes());
-
     let dirid = context.vfs.fh_to_id(&readdir3args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
@@ -585,20 +551,10 @@ async fn readdir_impl(
 
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
-    let dir_attributes = match dir_attr_maybe {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
+    let cookieverf = cookieverf3::from_attr(&dir_attributes);
 
-    let cookieverf = if let Nfs3Option::Some(dir_attr) = &dir_attributes {
-        let cvf_version =
-            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        cookieverf3(cvf_version.to_be_bytes())
-    } else {
-        DEFAULT_COOKIE_VERF
-    };
-
-    if readdir3args.cookieverf == EMPTY_COOKIE_VERF {
+    if readdir3args.cookieverf.is_none() {
         if readdir3args.cookie != 0 {
             warn!(
                 " -- Invalid cookie. Expected 0, got {}",
@@ -623,8 +579,8 @@ async fn readdir_impl(
         debug!(" -- Resuming readdir. Cookie {}", readdir3args.cookie);
     }
 
-    debug!(" -- Dir attr {:?}", dir_attributes);
-    debug!(" -- Dir version {:?}", cookieverf);
+    debug!(" -- Dir attr {dir_attributes:?}");
+    debug!(" -- Dir version {cookieverf:?}");
 
     // readdir3args.count is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16

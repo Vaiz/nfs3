@@ -425,7 +425,7 @@ pub struct READDIRPLUS3args {
     pub maxcount: count3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Default, Debug, XdrCodec)]
 pub struct READDIRPLUS3resfail {
     pub dir_attributes: post_op_attr,
 }
@@ -442,7 +442,7 @@ pub struct READLINK3args {
     pub symlink: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Default, Debug, XdrCodec)]
 pub struct READLINK3resfail {
     pub symlink_attributes: post_op_attr,
 }

@@ -185,7 +185,7 @@ pub trait NFSFileSystem: Sync {
         dirid: fileid3,
         start_after: fileid3,
         max_entries: usize,
-    ) -> Result<ReadDirResult, nfsstat3>;
+    ) -> Result<ReadDirResult<'static>, nfsstat3>;
 
     /// Simple version of readdir.
     /// Only need to return filename and id
