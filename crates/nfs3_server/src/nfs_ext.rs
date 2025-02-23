@@ -48,7 +48,8 @@ impl BoundedEntryPlusList {
         // dircount - the maximum number of bytes of directory information returned. This number
         // should not include the size of the attributes and file handle portions of the result.
         let added_dircount = fileid3::PACKED_SIZE.unwrap()
-            + 4 + entry.name.packed_size()
+            + 4
+            + entry.name.packed_size()
             + cookie3::PACKED_SIZE.unwrap();
 
         if self.accumulated_dircount + added_dircount > self.dircount {

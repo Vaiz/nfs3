@@ -371,14 +371,24 @@ pub async fn nfsproc3_readdirplus(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     let args = READDIRPLUS3args::unpack(input)?.0;
+
+    let result = nfsproc3_readdirplus_impl(xid, args, context).await;
+    make_success_reply(xid).pack(output)?;
+    result.pack(output)?;
+    Ok(())
+}
+
+async fn nfsproc3_readdirplus_impl(
+    xid: u32,
+    args: READDIRPLUS3args,
+    context: &RPCContext,
+) -> READDIRPLUS3res {
     debug!("nfsproc3_readdirplus({xid},{args:?})");
 
     let dirid = context.vfs.fh_to_id(&args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        make_success_reply(xid).pack(output)?;
-        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail::default())).pack(output)?;
-        return Ok(());
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail::default()));
     }
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
@@ -389,7 +399,7 @@ pub async fn nfsproc3_readdirplus(
     debug!(" -- Dir attr {dir_attributes:?}");
     debug!(" -- Dir version {dirversion:?}");
     let has_version = args.cookieverf.is_some();
-    // initial call should hve empty cookie verf
+    // initial call should have empty cookie verf
     // subsequent calls should have cvf_version as defined above
     // which is based off the mtime.
     //
@@ -463,9 +473,7 @@ pub async fn nfsproc3_readdirplus(
 
     if let Err(stat) = result {
         error!("readdir error {xid} --> {stat:?}");
-        make_success_reply(xid).pack(output)?;
-        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes })).pack(output)?;
-        return Ok(());
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
     let result = result.unwrap();
@@ -497,9 +505,7 @@ pub async fn nfsproc3_readdirplus(
     if entries.0.is_empty() && !all_entries_written {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
         error!("readdir error {xid} --> {stat:?}");
-        make_success_reply(xid).pack(output)?;
-        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes })).pack(output)?;
-        return Ok(());
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
     let eof = all_entries_written && result.end;
@@ -511,15 +517,11 @@ pub async fn nfsproc3_readdirplus(
         entries.0.len()
     );
 
-    make_success_reply(xid).pack(output)?;
-    READDIRPLUS3resok {
+    READDIRPLUS3res::Ok(READDIRPLUS3resok {
         dir_attributes,
         cookieverf: dirversion,
         reply: dirlistplus3 { entries, eof },
-    }
-    .pack(output)?;
-
-    Ok(())
+    })
 }
 
 pub async fn nfsproc3_readdir(
