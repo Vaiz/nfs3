@@ -1,8 +1,6 @@
 use std::io::{Read, Write};
 
-use xdr_codec::{Pack, Unpack};
-
-use crate::xdr_codec::PackedSize;
+use crate::xdr_codec::{Pack, PackedSize, Unpack};
 
 /// Represents a sequence of optional values in NFS3.
 ///

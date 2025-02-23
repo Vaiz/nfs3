@@ -4,9 +4,8 @@ use std::io::{Read, Write};
 
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::*;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, PackedSize};
+use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
 use tracing::{debug, error, trace, warn};
-use xdr_codec::{Pack, Unpack};
 
 use crate::context::RPCContext;
 use crate::rpc::*;

@@ -24,7 +24,6 @@ tracing.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 filetime.workspace = true
-xdr-codec.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
