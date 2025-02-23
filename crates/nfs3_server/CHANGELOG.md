@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.2.0...nfs3_server-v0.3.0) - 2025-02-23
+
+### Added
+
+- reimplement readdirplus function (#34)
+- remove xdr_codec dependency (#33)
+
+### Other
+
+- [**breaking**] update to Rust 2024 (#32)
+- update formatting rules (#30)
+
 ## [0.1.0](https://github.com/Vaiz/nfs3/releases/tag/nfs3_server-v0.1.0) - 2025-02-09
 
 ### Other
