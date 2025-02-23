@@ -304,7 +304,7 @@ impl NFSFileSystem for DemoFS {
         dirid: fileid3,
         start_after: fileid3,
         max_entries: usize,
-    ) -> Result<ReadDirResult, nfsstat3> {
+    ) -> Result<ReadDirResult<'static>, nfsstat3> {
         let fs = self.fs.lock().unwrap();
         let entry = fs.get(dirid as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         if let FSContents::File(_) = entry.contents {

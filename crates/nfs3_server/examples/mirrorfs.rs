@@ -440,7 +440,7 @@ impl NFSFileSystem for MirrorFS {
         dirid: fileid3,
         start_after: fileid3,
         max_entries: usize,
-    ) -> Result<ReadDirResult, nfsstat3> {
+    ) -> Result<ReadDirResult<'static>, nfsstat3> {
         let mut fsmap = self.fsmap.lock().await;
         fsmap.refresh_entry(dirid).await?;
         fsmap.refresh_dir_list(dirid).await?;
