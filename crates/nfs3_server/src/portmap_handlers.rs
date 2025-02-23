@@ -50,9 +50,7 @@ pub fn pmapproc_null(
     Ok(())
 }
 
-/*
- * We fake a portmapper here. And always direct back to the same host port
- */
+// We fake a portmapper here. And always direct back to the same host port
 pub fn pmapproc_getport(
     xid: u32,
     read: &mut impl Read,

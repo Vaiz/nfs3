@@ -92,7 +92,6 @@ pub enum VFSCapabilities {
 ///  getattr needs to be fast. NFS uses that a lot
 //
 ///  The 0 fileid is reserved and should not be used
-///
 #[async_trait]
 pub trait NFSFileSystem: Sync {
     /// Returns the set of capabilities supported

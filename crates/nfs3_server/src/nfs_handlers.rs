@@ -59,11 +59,10 @@ pub async fn handle_nfs(
         _ => {
             warn!("Unimplemented message {:?}", proc);
             proc_unavail_reply_message(xid).pack(output)?;
-        } /*
-          NFSPROC3_MKNOD,
-          NFSPROC3_LINK,
-          NFSPROC3_COMMIT,
-          INVALID*/
+        } /* NFSPROC3_MKNOD,
+           * NFSPROC3_LINK,
+           * NFSPROC3_COMMIT,
+           * INVALID */
     }
     Ok(())
 }
@@ -438,12 +437,10 @@ pub async fn nfsproc3_readdirplus(
     //  1. If part way through a directory enumeration we fail with BAD_COOKIE
     //  if the directory contents change, the client listing may fail resulting
     //  in a "no such file or directory" error.
-    //  2. if we cache readdir results. i.e. we think of a readdir as two parts
-    //     a. enumerating everything first
-    //     b. the cookie is then used to paginate the enumeration
-    //     we can run into file time synchronization issues. i.e. while one
-    //     listing occurs and another file is touched, the listing may report
-    //     an outdated file status.
+    //  2. if we cache readdir results. i.e. we think of a readdir as two parts a. enumerating
+    //     everything first b. the cookie is then used to paginate the enumeration we can run into
+    //     file time synchronization issues. i.e. while one listing occurs and another file is
+    //     touched, the listing may report an outdated file status.
     //
     //     This cache also appears to have to be *quite* long lasting
     //     as the client may hold on to a directory enumerator
@@ -458,13 +455,13 @@ pub async fn nfsproc3_readdirplus(
     //  The best solution is simply to really completely avoid sending
     //  BAD_COOKIE all together and to ignore the cookie mechanism.
     //
-    /*if args.cookieverf != cookieverf3::default() && args.cookieverf != dirversion {
-        info!(" -- Dir version mismatch. Received {:?}", args.cookieverf);
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
-        dir_attr.pack(output)?;
-        return Ok(());
-    }*/
+    // if args.cookieverf != cookieverf3::default() && args.cookieverf != dirversion {
+    // info!(" -- Dir version mismatch. Received {:?}", args.cookieverf);
+    // make_success_reply(xid).pack(output)?;
+    // nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
+    // dir_attr.pack(output)?;
+    // return Ok(());
+    // }
     // subtract off the final entryplus* field (which must be false) and the eof
     let max_bytes_allowed = args.maxcount as usize - 128;
     // args.dircount is bytes of just fileid, name, cookie.

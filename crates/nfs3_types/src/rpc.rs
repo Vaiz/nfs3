@@ -64,7 +64,7 @@ pub enum auth_flavor {
     AUTH_UNIX = 1,
     AUTH_SHORT = 2,
     AUTH_DES = 3,
-    /* and more to be defined */
+    // and more to be defined
 }
 
 #[derive(Debug, XdrCodec)]

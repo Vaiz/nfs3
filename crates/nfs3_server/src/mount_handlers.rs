@@ -83,39 +83,37 @@ pub async fn mountproc3_mnt(
     Ok(())
 }
 
-/*
-  exports MOUNTPROC3_EXPORT(void) = 5;
-
-  typedef struct groupnode *groups;
-
-  struct groupnode {
-       name     gr_name;
-       groups   gr_next;
-  };
-
-  typedef struct exportnode *exports;
-
-  struct exportnode {
-       dirpath  ex_dir;
-       groups   ex_groups;
-       exports  ex_next;
-  };
-
-DESCRIPTION
-
-  Procedure EXPORT returns a list of all the exported file
-  systems and which clients are allowed to mount each one.
-  The names in the group list are implementation-specific
-  and cannot be directly interpreted by clients. These names
-  can represent hosts or groups of hosts.
-
-IMPLEMENTATION
-
-  This procedure generally returns the contents of a list of
-  shared or exported file systems. These are the file
-  systems which are made available to NFS version 3 protocol
-  clients.
- */
+// exports MOUNTPROC3_EXPORT(void) = 5;
+//
+// typedef struct groupnode *groups;
+//
+// struct groupnode {
+// name     gr_name;
+// groups   gr_next;
+// };
+//
+// typedef struct exportnode *exports;
+//
+// struct exportnode {
+// dirpath  ex_dir;
+// groups   ex_groups;
+// exports  ex_next;
+// };
+//
+// DESCRIPTION
+//
+// Procedure EXPORT returns a list of all the exported file
+// systems and which clients are allowed to mount each one.
+// The names in the group list are implementation-specific
+// and cannot be directly interpreted by clients. These names
+// can represent hosts or groups of hosts.
+//
+// IMPLEMENTATION
+//
+// This procedure generally returns the contents of a list of
+// shared or exported file systems. These are the file
+// systems which are made available to NFS version 3 protocol
+// clients.
 
 pub fn mountproc3_export(
     xid: u32,
