@@ -37,11 +37,9 @@ pub fn exists_no_traverse(path: &Path) -> bool {
 fn mode_unmask(mode: u32) -> u32 {
     // it is possible to create a file we cannot write to.
     // we force writable always.
-    /*
-    let mode = mode | 0x80;
-    let mode = Permissions::from_mode(mode);
-    mode.mode() & 0x1FF
-     */
+    // let mode = mode | 0x80;
+    // let mode = Permissions::from_mode(mode);
+    // mode.mode() & 0x1FF
 
     (mode | 0x80) & 0x1FF
 }

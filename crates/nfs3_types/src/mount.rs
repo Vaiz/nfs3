@@ -38,27 +38,25 @@ pub enum mountstat3 {
     MNT3ERR_SERVERFAULT = 10006,
 }
 
-/*
-#[derive(Debug, XdrCodec)]
-pub enum rpc_auth_flavor {
-    AUTH_NULL = 0,
-    AUTH_UNIX = 1,
-    AUTH_SHORT = 2,
-    AUTH_DES = 3,
-    AUTH_KRB = 4,
-    AUTH_GSS = 6,
-    AUTH_MAXFLAVOR = 8,
-    AUTH_GSS_KRB5 = 390003,
-    AUTH_GSS_KRB5I = 390004,
-    AUTH_GSS_KRB5P = 390005,
-    AUTH_GSS_LKEY = 390006,
-    AUTH_GSS_LKEYI = 390007,
-    AUTH_GSS_LKEYP = 390008,
-    AUTH_GSS_SPKM = 390009,
-    AUTH_GSS_SPKMI = 390010,
-    AUTH_GSS_SPKMP = 390011,
-}
-*/
+// #[derive(Debug, XdrCodec)]
+// pub enum rpc_auth_flavor {
+// AUTH_NULL = 0,
+// AUTH_UNIX = 1,
+// AUTH_SHORT = 2,
+// AUTH_DES = 3,
+// AUTH_KRB = 4,
+// AUTH_GSS = 6,
+// AUTH_MAXFLAVOR = 8,
+// AUTH_GSS_KRB5 = 390003,
+// AUTH_GSS_KRB5I = 390004,
+// AUTH_GSS_KRB5P = 390005,
+// AUTH_GSS_LKEY = 390006,
+// AUTH_GSS_LKEYI = 390007,
+// AUTH_GSS_LKEYP = 390008,
+// AUTH_GSS_SPKM = 390009,
+// AUTH_GSS_SPKMI = 390010,
+// AUTH_GSS_SPKMP = 390011,
+// }
 
 #[derive(Debug, XdrCodec)]
 pub struct mountres3_ok<'a> {

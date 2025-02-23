@@ -389,13 +389,13 @@ impl NFSFileSystem for MirrorFS {
         let _ = fsmap.refresh_dir_list(dirid).await;
 
         fsmap.find_child(dirid, filename.as_ref()).await
-        //debug!("lookup({:?}, {:?})", dirid, filename);
+        // debug!("lookup({:?}, {:?})", dirid, filename);
 
-        //debug!(" -- lookup result {:?}", res);
+        // debug!(" -- lookup result {:?}", res);
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        //debug!("Stat query {:?}", id);
+        // debug!("Stat query {:?}", id);
         let mut fsmap = self.fsmap.lock().await;
         if let RefreshResult::Delete = fsmap.refresh_entry(id).await? {
             return Err(nfsstat3::NFS3ERR_NOENT);
