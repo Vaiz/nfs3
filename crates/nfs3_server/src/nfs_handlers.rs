@@ -372,34 +372,24 @@ pub async fn nfsproc3_readdirplus(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     let args = READDIRPLUS3args::unpack(input)?.0;
-    debug!("nfsproc3_readdirplus({:?},{:?}) ", xid, args);
+    debug!("nfsproc3_readdirplus({xid},{args:?})");
 
     let dirid = context.vfs.fh_to_id(&args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
         make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
+        READDIRPLUS3res::Err((stat, READDIRPLUS3resfail::default())).pack(output)?;
         return Ok(());
     }
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
-    let dir_attr = match dir_attr_maybe {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let dir_attr = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
 
-    let dirversion = if let Nfs3Option::Some(dir_attr) = &dir_attr {
-        let cvf_version =
-            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        cookieverf3(cvf_version.to_be_bytes())
-    } else {
-        cookieverf3::default()
-    };
-    debug!(" -- Dir attr {:?}", dir_attr);
-    debug!(" -- Dir version {:?}", dirversion);
-    let has_version = args.cookieverf != cookieverf3::default();
+    let dirversion = cookieverf3::from_attr(&dir_attr);
+    debug!(" -- Dir attr {dir_attr:?}");
+    debug!(" -- Dir version {dirversion:?}");
+    let has_version = args.cookieverf.is_some();
     // initial call should hve empty cookie verf
     // subsequent calls should have cvf_version as defined above
     // which is based off the mtime.
@@ -534,22 +524,28 @@ pub async fn nfsproc3_readdirplus(
             false.pack(&mut counting_output)?;
             // eof flag is only valid here if we wrote everything
             if all_entries_written {
-                debug!("  -- readdir eof {:?}", result.end);
+                debug!("  -- readdir eof {}", result.end);
                 result.end.pack(&mut counting_output)?;
             } else {
-                debug!("  -- readdir eof {:?}", false);
+                debug!("  -- readdir eof false");
                 false.pack(&mut counting_output)?;
             }
             debug!(
-                "readir {}, has_version {},  start at {}, flushing {} entries, complete {}",
-                dirid, has_version, args.cookie, ctr, all_entries_written
+                "readir {dirid}, has_version {has_version}, start at {}, flushing {ctr} entries, \
+                 complete {all_entries_written}",
+                args.cookie,
             );
         }
         Err(stat) => {
-            error!("readdir error {:?} --> {:?} ", xid, stat);
+            error!("readdir error {xid} --> {stat:?}");
             make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            dir_attr.pack(output)?;
+            READDIRPLUS3res::Err((
+                stat,
+                READDIRPLUS3resfail {
+                    dir_attributes: dir_attr,
+                },
+            ))
+            .pack(output)?;
         }
     };
     Ok(())
@@ -574,9 +570,6 @@ async fn readdir_impl(
     readdir3args: READDIR3args,
     context: &RPCContext,
 ) -> anyhow::Result<READDIR3res> {
-    const EMPTY_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
-    const DEFAULT_COOKIE_VERF: cookieverf3 = cookieverf3(0xFFCC_FFCC_FFCC_FFCCu64.to_be_bytes());
-
     let dirid = context.vfs.fh_to_id(&readdir3args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
@@ -585,20 +578,10 @@ async fn readdir_impl(
 
     let dirid = dirid.unwrap();
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
-    let dir_attributes = match dir_attr_maybe {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
+    let cookieverf = cookieverf3::from_attr(&dir_attributes);
 
-    let cookieverf = if let Nfs3Option::Some(dir_attr) = &dir_attributes {
-        let cvf_version =
-            ((dir_attr.mtime.seconds as u64) << 32) | (dir_attr.mtime.nseconds as u64);
-        cookieverf3(cvf_version.to_be_bytes())
-    } else {
-        DEFAULT_COOKIE_VERF
-    };
-
-    if readdir3args.cookieverf == EMPTY_COOKIE_VERF {
+    if readdir3args.cookieverf.is_none() {
         if readdir3args.cookie != 0 {
             warn!(
                 " -- Invalid cookie. Expected 0, got {}",
@@ -623,8 +606,8 @@ async fn readdir_impl(
         debug!(" -- Resuming readdir. Cookie {}", readdir3args.cookie);
     }
 
-    debug!(" -- Dir attr {:?}", dir_attributes);
-    debug!(" -- Dir version {:?}", cookieverf);
+    debug!(" -- Dir attr {dir_attributes:?}");
+    debug!(" -- Dir version {cookieverf:?}");
 
     // readdir3args.count is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
@@ -1421,4 +1404,32 @@ pub async fn nfsproc3_readlink(
         }
     }
     Ok(())
+}
+
+trait CookieVerfExt {
+    const NONE_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
+    const SOME_COOKIE_VERF: cookieverf3 = cookieverf3(0xFFCC_FFCC_FFCC_FFCCu64.to_be_bytes());
+
+    fn from_attr(dir_attr: &post_op_attr) -> Self;
+    fn is_none(&self) -> bool;
+    fn is_some(&self) -> bool;
+}
+
+impl CookieVerfExt for cookieverf3 {
+    fn from_attr(dir_attr: &post_op_attr) -> Self {
+        if let post_op_attr::Some(attr) = dir_attr {
+            let cvf_version = ((attr.mtime.seconds as u64) << 32) | (attr.mtime.nseconds as u64);
+            Self(cvf_version.to_be_bytes())
+        } else {
+            Self::SOME_COOKIE_VERF
+        }
+    }
+
+    fn is_none(&self) -> bool {
+        self == &Self::NONE_COOKIE_VERF
+    }
+
+    fn is_some(&self) -> bool {
+        !self.is_none()
+    }
 }
