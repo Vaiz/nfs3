@@ -3,7 +3,6 @@
 mod context;
 mod rpc;
 mod rpcwire;
-mod write_counter;
 
 mod mount_handlers;
 mod nfs_handlers;
