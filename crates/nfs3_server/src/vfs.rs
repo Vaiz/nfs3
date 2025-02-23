@@ -120,7 +120,7 @@ pub trait NFSFileSystem: Sync {
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
     async fn read(&self, id: fileid3, offset: u64, count: u32)
-        -> Result<(Vec<u8>, bool), nfsstat3>;
+    -> Result<(Vec<u8>, bool), nfsstat3>;
 
     /// Writes the contents of a file returning (bytes, EOF)
     /// Note that offset/count may go past the end of the file and that
@@ -254,10 +254,10 @@ pub trait NFSFileSystem: Sync {
         if id.data.len() != 16 {
             return Err(nfsstat3::NFS3ERR_BADHANDLE);
         }
-        let gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
+        let r#gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
         let id = u64::from_le_bytes(id.data[8..16].try_into().unwrap());
         let gennum = get_generation_number();
-        match gen.cmp(&gennum) {
+        match r#gen.cmp(&gennum) {
             Ordering::Less => Err(nfsstat3::NFS3ERR_STALE),
             Ordering::Greater => Err(nfsstat3::NFS3ERR_BADHANDLE),
             Ordering::Equal => Ok(id),

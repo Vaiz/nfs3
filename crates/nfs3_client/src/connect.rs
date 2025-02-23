@@ -6,7 +6,7 @@ use nfs3_types::xdr_codec::Opaque;
 
 use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
-use crate::{mount, portmapper, MountClient, Nfs3Client};
+use crate::{MountClient, Nfs3Client, mount, portmapper};
 
 /// Contains the connection to the NFS server.
 #[derive(Debug)]

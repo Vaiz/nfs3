@@ -89,7 +89,9 @@ fn test_nested_struct_serialization() {
     assert_eq!(len, 12);
     assert_eq!(
         buffer,
-        [0x00, 0x00, 0x07, 0x89, 0x00, 0x00, 0x10, 0x11, 0x00, 0x00, 0x00, 0x01]
+        [
+            0x00, 0x00, 0x07, 0x89, 0x00, 0x00, 0x10, 0x11, 0x00, 0x00, 0x00, 0x01
+        ]
     );
 
     let mut cursor = Cursor::new(buffer);
@@ -307,7 +309,7 @@ fn test_bounded_list() {
 
 #[test]
 fn test_rpc_call_len() {
-    use nfs3_types::rpc::{call_body, msg_body, opaque_auth, rpc_msg, RPC_VERSION_2};
+    use nfs3_types::rpc::{RPC_VERSION_2, call_body, msg_body, opaque_auth, rpc_msg};
 
     let call = call_body {
         rpcvers: RPC_VERSION_2,
