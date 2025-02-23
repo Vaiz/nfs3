@@ -51,36 +51,53 @@ pub async fn mountproc3_mnt(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let path = String::unpack(input)?.0;
-    let utf8path = &path;
+    let path = dirpath::unpack(input)?.0;
+    let result = mountproc3_mount_impl(xid, path, context).await;
+    make_success_reply(xid).pack(output)?;
+    result.pack(output)?;
+    Ok(())
+}
+
+async fn mountproc3_mount_impl(
+    xid: u32,
+    path: dirpath<'_>,
+    context: &RPCContext,
+) -> mountres3<'static> {
+    let path = std::str::from_utf8(&path.0);
+    let utf8path = match path {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::error!("{xid} --> invalid mount path: {e}");
+            return mountres3::Err(mountstat3::MNT3ERR_INVAL);
+        }
+    };
+
     debug!("mountproc3_mnt({:?},{:?}) ", xid, utf8path);
     let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_str()) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export
-        debug!("{:?} --> no matching export", xid);
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3ERR_NOENT.pack(output)?;
-        return Ok(());
+        debug!("{xid} --> no matching export");
+        return mountres3::Err(mountstat3::MNT3ERR_NOENT);
     };
-    if let Ok(fileid) = context.vfs.path_to_id(path).await {
-        let response = mountres3_ok {
-            fhandle: fhandle3(context.vfs.id_to_fh(fileid).data),
-            auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
-        };
-        debug!("{:?} --> {:?}", xid, response);
-        if let Some(ref chan) = context.mount_signal {
-            let _ = chan.send(true).await;
+
+    match context.vfs.path_to_id(path).await {
+        Ok(fileid) => {
+            let response = mountres3_ok {
+                fhandle: fhandle3(context.vfs.id_to_fh(fileid).data),
+                auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
+            };
+            debug!("{xid} --> {response:?}");
+            if let Some(ref chan) = context.mount_signal {
+                let _ = chan.send(true).await;
+            }
+            mountres3::Ok(response)
         }
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3_OK.pack(output)?;
-        response.pack(output)?;
-    } else {
-        debug!("{:?} --> MNT3ERR_NOENT", xid);
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3ERR_NOENT.pack(output)?;
+        Err(e) => {
+            debug!("{xid} --> MNT3ERR_NOENT({e:?})");
+            mountres3::Err(mountstat3::MNT3ERR_NOENT)
+        }
     }
-    Ok(())
 }
 
 // exports MOUNTPROC3_EXPORT(void) = 5;
