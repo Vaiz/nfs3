@@ -157,9 +157,17 @@ pub async fn mountproc3_umnt(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let path = String::unpack(input)?.0;
-    let utf8path = &path;
-    debug!("mountproc3_umnt({:?},{:?}) ", xid, utf8path);
+    let path = dirpath::unpack(input)?.0;
+    let utf8path = match std::str::from_utf8(&path.0) {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::error!("{xid} --> invalid mount path: {e}");
+            garbage_args_reply_message(xid).pack(output)?;
+            return Ok(())
+        }
+    };
+
+    debug!("mountproc3_umnt({xid},{utf8path})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
@@ -173,7 +181,7 @@ pub async fn mountproc3_umnt_all(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_umnt_all({:?}) ", xid);
+    debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
