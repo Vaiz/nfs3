@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use nfs3_types::mount::*;
 use nfs3_types::rpc::*;
 use tracing::debug;
-use xdr_codec::{Pack, Unpack};
+use nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack};
 
 use crate::context::RPCContext;
 use crate::rpc::*;
@@ -139,14 +139,17 @@ pub fn mountproc3_export(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     debug!("mountproc3_export({:?}) ", xid);
+
+    let response: exports = List(vec![
+        export_node {
+            ex_dir: dirpath(Opaque::borrowed(context.export_name.as_bytes())),
+            ex_groups: List::default(),
+        }
+    ]);
+    
     make_success_reply(xid).pack(output)?;
-    true.pack(output)?;
-    // dirpath
-    context.export_name.pack(output)?;
-    // groups
-    false.pack(output)?;
-    // next exports
-    false.pack(output)?;
+    response.pack(output)?;
+
     Ok(())
 }
 
