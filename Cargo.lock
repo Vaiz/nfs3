@@ -206,7 +206,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "xdr-codec",
 ]
 
 [[package]]

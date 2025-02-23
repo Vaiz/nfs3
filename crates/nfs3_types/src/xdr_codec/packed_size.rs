@@ -1,4 +1,4 @@
-use xdr_codec::Opaque;
+use crate::xdr_codec::Opaque;
 
 /// A trait for calculating the packed size of an object.
 ///

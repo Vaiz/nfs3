@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 
 use nfs3_types::mount::*;
 use nfs3_types::rpc::*;
+use nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack};
 use tracing::debug;
-use xdr_codec::{Pack, Unpack};
 
 use crate::context::RPCContext;
 use crate::rpc::*;
@@ -37,10 +37,10 @@ pub fn mountproc3_null(
     _: &mut impl Read,
     output: &mut impl Write,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_null({:?}) ", xid);
+    debug!("mountproc3_null({xid})");
     // build an RPC reply
     let msg = make_success_reply(xid);
-    debug!("\t{:?} --> {:?}", xid, msg);
+    debug!("\t{xid} --> {msg:?}");
     msg.pack(output)?;
     Ok(())
 }
@@ -51,36 +51,53 @@ pub async fn mountproc3_mnt(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let path = String::unpack(input)?.0;
-    let utf8path = &path;
-    debug!("mountproc3_mnt({:?},{:?}) ", xid, utf8path);
+    let path = dirpath::unpack(input)?.0;
+    let result = mountproc3_mount_impl(xid, path, context).await;
+    make_success_reply(xid).pack(output)?;
+    result.pack(output)?;
+    Ok(())
+}
+
+async fn mountproc3_mount_impl(
+    xid: u32,
+    path: dirpath<'_>,
+    context: &RPCContext,
+) -> mountres3<'static> {
+    let path = std::str::from_utf8(&path.0);
+    let utf8path = match path {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::error!("{xid} --> invalid mount path: {e}");
+            return mountres3::Err(mountstat3::MNT3ERR_INVAL);
+        }
+    };
+
+    debug!("mountproc3_mnt({xid},{utf8path})");
     let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_str()) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export
-        debug!("{:?} --> no matching export", xid);
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3ERR_NOENT.pack(output)?;
-        return Ok(());
+        debug!("{xid} --> no matching export");
+        return mountres3::Err(mountstat3::MNT3ERR_NOENT);
     };
-    if let Ok(fileid) = context.vfs.path_to_id(path).await {
-        let response = mountres3_ok {
-            fhandle: fhandle3(context.vfs.id_to_fh(fileid).data),
-            auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
-        };
-        debug!("{:?} --> {:?}", xid, response);
-        if let Some(ref chan) = context.mount_signal {
-            let _ = chan.send(true).await;
+
+    match context.vfs.path_to_id(path).await {
+        Ok(fileid) => {
+            let response = mountres3_ok {
+                fhandle: fhandle3(context.vfs.id_to_fh(fileid).data),
+                auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
+            };
+            debug!("{xid} --> {response:?}");
+            if let Some(ref chan) = context.mount_signal {
+                let _ = chan.send(true).await;
+            }
+            mountres3::Ok(response)
         }
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3_OK.pack(output)?;
-        response.pack(output)?;
-    } else {
-        debug!("{:?} --> MNT3ERR_NOENT", xid);
-        make_success_reply(xid).pack(output)?;
-        mountstat3::MNT3ERR_NOENT.pack(output)?;
+        Err(e) => {
+            debug!("{xid} --> MNT3ERR_NOENT({e:?})");
+            mountres3::Err(mountstat3::MNT3ERR_NOENT)
+        }
     }
-    Ok(())
 }
 
 // exports MOUNTPROC3_EXPORT(void) = 5;
@@ -121,15 +138,16 @@ pub fn mountproc3_export(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_export({:?}) ", xid);
+    debug!("mountproc3_export({xid})");
+
+    let response: exports = List(vec![export_node {
+        ex_dir: dirpath(Opaque::borrowed(context.export_name.as_bytes())),
+        ex_groups: List::default(),
+    }]);
+
     make_success_reply(xid).pack(output)?;
-    true.pack(output)?;
-    // dirpath
-    context.export_name.pack(output)?;
-    // groups
-    false.pack(output)?;
-    // next exports
-    false.pack(output)?;
+    response.pack(output)?;
+
     Ok(())
 }
 
@@ -139,9 +157,17 @@ pub async fn mountproc3_umnt(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    let path = String::unpack(input)?.0;
-    let utf8path = &path;
-    debug!("mountproc3_umnt({:?},{:?}) ", xid, utf8path);
+    let path = dirpath::unpack(input)?.0;
+    let utf8path = match std::str::from_utf8(&path.0) {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::error!("{xid} --> invalid mount path: {e}");
+            garbage_args_reply_message(xid).pack(output)?;
+            return Ok(());
+        }
+    };
+
+    debug!("mountproc3_umnt({xid},{utf8path})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
@@ -155,7 +181,7 @@ pub async fn mountproc3_umnt_all(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_umnt_all({:?}) ", xid);
+    debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
