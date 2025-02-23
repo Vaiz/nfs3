@@ -37,10 +37,10 @@ pub fn mountproc3_null(
     _: &mut impl Read,
     output: &mut impl Write,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_null({:?}) ", xid);
+    debug!("mountproc3_null({xid})");
     // build an RPC reply
     let msg = make_success_reply(xid);
-    debug!("\t{:?} --> {:?}", xid, msg);
+    debug!("\t{xid} --> {msg:?}");
     msg.pack(output)?;
     Ok(())
 }
@@ -72,7 +72,7 @@ async fn mountproc3_mount_impl(
         }
     };
 
-    debug!("mountproc3_mnt({:?},{:?}) ", xid, utf8path);
+    debug!("mountproc3_mnt({xid},{utf8path})");
     let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_str()) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
@@ -138,7 +138,7 @@ pub fn mountproc3_export(
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_export({:?}) ", xid);
+    debug!("mountproc3_export({xid})");
 
     let response: exports = List(vec![export_node {
         ex_dir: dirpath(Opaque::borrowed(context.export_name.as_bytes())),
