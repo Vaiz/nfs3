@@ -1,7 +1,7 @@
 use std::env;
 
-use nfs3_client::tokio::TokioConnector;
 use nfs3_client::Nfs3ConnectionBuilder;
+use nfs3_client::tokio::TokioConnector;
 use nfs3_types::nfs3;
 
 #[tokio::main]

@@ -120,7 +120,7 @@ pub trait NFSFileSystem: Sync {
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
     async fn read(&self, id: fileid3, offset: u64, count: u32)
-        -> Result<(Vec<u8>, bool), nfsstat3>;
+    -> Result<(Vec<u8>, bool), nfsstat3>;
 
     /// Writes the contents of a file returning (bytes, EOF)
     /// Note that offset/count may go past the end of the file and that

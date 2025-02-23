@@ -118,8 +118,7 @@ async fn read_fragment(
     socket.read_exact(&mut append_to[start_offset..]).await?;
     trace!(
         "Finishing Reading fragment length:{}, last:{}",
-        length,
-        is_last
+        length, is_last
     );
     Ok(is_last)
 }

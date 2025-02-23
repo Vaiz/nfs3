@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
-use intaglio::osstr::SymbolTable;
 use intaglio::Symbol;
+use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::*;
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};

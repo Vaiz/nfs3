@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
-    accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg, RPC_VERSION_2,
+    RPC_VERSION_2, accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 
