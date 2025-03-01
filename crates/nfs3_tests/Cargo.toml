@@ -1,0 +1,15 @@
+[package]
+name = "nfs3_tests"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false # this crate contains only tests
+
+[dependencies]
+nfs3_client = { path = "../nfs3_client", version = "0.1.1" }
+nfs3_server = { path = "../nfs3_server", version = "0.2.0" }
+async-trait.workspace = true
+tokio = { workspace = true, default-features = false, features = ["rt"] }

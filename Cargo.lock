@@ -209,6 +209,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nfs3_tests"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nfs3_client",
+ "nfs3_server",
+ "tokio",
+]
+
+[[package]]
 name = "nfs3_types"
 version = "0.2.0"
 dependencies = [
