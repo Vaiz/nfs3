@@ -2,7 +2,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use nfs3_server::test_reexports::{RPCContext, SocketMessageHandler, TransactionTracker};
+use nfs3_server::test_reexports::{
+    write_fragment, RPCContext, SocketMessageHandler, TransactionTracker,
+};
 use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use nfs3_types::nfs3::{
     self as nfs, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3,
@@ -455,7 +457,7 @@ impl Server {
                             return Err(e);
                         }
                         Some(Ok(msg)) => {
-                            if let Err(e) = Self::write_fragment(&mut mock_channel, msg) {
+                            if let Err(e) = write_fragment(&mut mock_channel, &msg).await {
                                 error!("Write error {e}");
                             }
                         }
@@ -466,16 +468,5 @@ impl Server {
                 }
             }
         }
-    }
-
-    fn write_fragment(mock_channel: &mut MockChannel, buf: Vec<u8>) -> Result<(), anyhow::Error> {
-        // TODO: split into many fragments
-        assert!(buf.len() < (1 << 31));
-        // set the last flag
-        let fragment_header = buf.len() as u32 + (1 << 31);
-        let header_buf = u32::to_be_bytes(fragment_header);
-        mock_channel.push_buf(header_buf.to_vec())?;
-        mock_channel.push_buf(buf)?;
-        Ok(())
     }
 }

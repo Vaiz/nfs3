@@ -20,6 +20,6 @@ pub mod vfs;
 #[cfg(feature = "__test_reexports")]
 pub mod test_reexports {
     pub use crate::context::RPCContext;
-    pub use crate::rpcwire::SocketMessageHandler;
+    pub use crate::rpcwire::{write_fragment, SocketMessageHandler};
     pub use crate::transaction_tracker::TransactionTracker;
 }

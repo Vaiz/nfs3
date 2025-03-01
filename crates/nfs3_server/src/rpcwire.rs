@@ -123,8 +123,8 @@ async fn read_fragment(
     Ok(is_last)
 }
 
-pub async fn write_fragment(
-    socket: &mut tokio::net::TcpStream,
+pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
+    socket: &mut IO,
     buf: &[u8],
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
