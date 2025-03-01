@@ -36,6 +36,15 @@ pub enum Nfs3Result<T, E> {
     Err((nfsstat3, E)),
 }
 
+impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
+    pub fn unwrap(self) -> T {
+        match self {
+            Nfs3Result::Ok(val) => val,
+            Nfs3Result::Err((code, res)) => panic!("NFS3 error: {code:?}, result: {res:?}"),
+        }
+    }
+}
+
 impl<Out, T, E> Pack<Out> for Nfs3Result<T, E>
 where
     Out: Write,
@@ -307,7 +316,7 @@ pub struct LOOKUP3args<'a> {
     pub what: diropargs3<'a>,
 }
 
-#[derive(Default, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct LOOKUP3resfail {
     pub dir_attributes: post_op_attr,
 }

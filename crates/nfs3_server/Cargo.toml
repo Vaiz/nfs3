@@ -16,10 +16,13 @@ include = ["src/**/*", "src/*", "Cargo.toml", "LICENSE", "README.md"]
 [lib]
 doctest = false
 
+[features]
+__test_reexports = [] # should not be used outside nfs3_tests crate
+
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.2.0" }
 
-tokio = { workspace = true, features = [ "net", "io-util", "sync", "fs", "rt", "macros" ] }
+tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros"] }
 tracing.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
@@ -28,4 +31,4 @@ filetime.workspace = true
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
 intaglio.workspace = true
-tokio = { workspace = true, features = [ "rt-multi-thread" ], default-features = false }
+tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }

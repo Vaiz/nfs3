@@ -14,3 +14,12 @@ pub mod tcp;
 mod transaction_tracker;
 pub(crate) mod units;
 pub mod vfs;
+
+/// Reexport for test purposes
+#[doc(hidden)]
+#[cfg(feature = "__test_reexports")]
+pub mod test_reexports {
+    pub use crate::context::RPCContext;
+    pub use crate::rpcwire::{SocketMessageHandler, write_fragment};
+    pub use crate::transaction_tracker::TransactionTracker;
+}
