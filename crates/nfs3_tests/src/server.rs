@@ -9,7 +9,7 @@ use nfs3_types::nfs3::{
     specdata3,
 };
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 
 use crate::io::MockChannel;
 use crate::server;
