@@ -18,6 +18,8 @@ mod tests {
 
     #[tokio::test]
     async fn base_test() -> Result<(), anyhow::Error> {
+        init_logging();
+
         let (server, mut client) = create_client_and_server();
         let server_handle = tokio::spawn(async move { server.run().await });
 
@@ -31,11 +33,18 @@ mod tests {
             })
             .await?;
 
-        println!("{lookup:?}");
+        tracing::info!("{lookup:?}");
 
         drop(client);
         let _ = server_handle.await;
 
         Ok(())
+    }
+
+    fn init_logging() {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::stderr)
+            .init();
     }
 }

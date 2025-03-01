@@ -9,7 +9,7 @@ use nfs3_types::nfs3::{
     specdata3,
 };
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::io::MockChannel;
 use crate::server;
@@ -455,7 +455,7 @@ impl Server {
                             return Err(e);
                         }
                         Some(Ok(msg)) => {
-                            if let Err(e) = mock_channel.push_buf(msg) {
+                            if let Err(e) = Self::write_fragment(&mut mock_channel, msg) {
                                 error!("Write error {e}");
                             }
                         }
@@ -466,5 +466,16 @@ impl Server {
                 }
             }
         }
+    }
+
+    fn write_fragment(mock_channel: &mut MockChannel, buf: Vec<u8>) -> Result<(), anyhow::Error> {
+        // TODO: split into many fragments
+        assert!(buf.len() < (1 << 31));
+        // set the last flag
+        let fragment_header = buf.len() as u32 + (1 << 31);
+        let header_buf = u32::to_be_bytes(fragment_header);
+        mock_channel.push_buf(header_buf.to_vec())?;
+        mock_channel.push_buf(buf)?;
+        Ok(())
     }
 }
