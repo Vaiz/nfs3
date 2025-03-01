@@ -70,25 +70,28 @@ pub fn init_logging() {
 
 #[cfg(test)]
 mod tests {
-    use nfs3_types::nfs3::{LOOKUP3args, diropargs3, nfs_fh3};
+    use nfs3_types::nfs3::{diropargs3, LOOKUP3args};
 
     use super::*;
 
     #[tokio::test]
-    async fn base_test() -> Result<(), anyhow::Error> {
+    async fn lookup_root() -> Result<(), anyhow::Error> {
         let mut client = TestContext::setup().await;
+        let root = client.root_dir().clone();
 
         client.null().await?;
         let lookup = client
             .lookup(LOOKUP3args {
                 what: diropargs3 {
-                    dir: nfs_fh3::default(),
-                    name: vec![].into(),
+                    dir: root.clone(),
+                    name: b".".as_slice().into(),
                 },
             })
-            .await?;
+            .await?
+            .unwrap();
 
         tracing::info!("{lookup:?}");
+        assert_eq!(lookup.object, root);
 
         client.shutdown().await
     }
