@@ -307,7 +307,7 @@ pub struct LOOKUP3args<'a> {
     pub what: diropargs3<'a>,
 }
 
-#[derive(Default, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct LOOKUP3resfail {
     pub dir_attributes: post_op_attr,
 }

@@ -10,6 +10,10 @@ publish = false # this crate contains only tests
 
 [dependencies]
 nfs3_client = { path = "../nfs3_client", version = "0.1.1" }
-nfs3_server = { path = "../nfs3_server", version = "0.2.0" }
+nfs3_server = { path = "../nfs3_server", version = "0.2.0", features = ["__test_reexports"] }
+nfs3_types = { path = "../nfs3_types", version = "0.2.0" }
+
+anyhow.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, default-features = false, features = ["rt", "sync"] }
+tracing.workspace = true

@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::io::{Error, ErrorKind, Result};
+use std::mem::swap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -43,6 +44,24 @@ impl MockChannel {
         };
 
         (client, server)
+    }
+
+    pub async fn pop_buf(&mut self) -> Result<Vec<u8>> {
+        if !self.pending.is_empty() {
+            let mut buf = Vec::new();
+            swap(&mut buf, &mut self.pending);
+            return Ok(buf);
+        }
+        self.read_rx
+            .recv()
+            .await
+            .ok_or(Error::new(ErrorKind::Other, "channel closed"))
+    }
+
+    pub fn push_buf(&mut self, buf: Vec<u8>) -> Result<()> {
+        self.write_tx
+            .send(buf)
+            .map_err(|_| Error::new(ErrorKind::Other, "channel closed"))
     }
 }
 
