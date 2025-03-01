@@ -70,7 +70,7 @@ pub fn init_logging() {
 
 #[cfg(test)]
 mod tests {
-    use nfs3_types::nfs3::{diropargs3, LOOKUP3args};
+    use nfs3_types::nfs3::{LOOKUP3args, diropargs3};
 
     use super::*;
 
