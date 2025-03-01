@@ -3,11 +3,11 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use nfs3_server::test_reexports::{
-    write_fragment, RPCContext, SocketMessageHandler, TransactionTracker,
+    RPCContext, SocketMessageHandler, TransactionTracker, write_fragment,
 };
 use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use nfs3_types::nfs3::{
-    self as nfs, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3,
+    self as nfs, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, nfstime3, sattr3,
     specdata3,
 };
 use tokio::io::AsyncWriteExt;
@@ -419,6 +419,10 @@ impl Server {
         }
     }
 
+    pub fn root_dir(&self) -> nfs_fh3 {
+        self.context.vfs.id_to_fh(self.context.vfs.root_dir())
+    }
+
     pub async fn run(self) -> Result<(), anyhow::Error> {
         let (mut message_handler, mut socksend, mut msgrecvchan) =
             SocketMessageHandler::new(&self.context);
@@ -426,7 +430,7 @@ impl Server {
         tokio::spawn(async move {
             loop {
                 if let Err(e) = message_handler.read().await {
-                    debug!("Message loop broken due to {e}");
+                    debug!("Message handling closed: {e}");
                     break;
                 }
             }
@@ -444,8 +448,8 @@ impl Server {
                             continue;
                         }
                         Err(e) => {
-                            debug!("Message handling closed : {e}");
-                            return Err(e.into());
+                            debug!("Message handling closed: {e}");
+                            return Ok(());
                         }
                     }
 
@@ -453,7 +457,7 @@ impl Server {
                 reply = msgrecvchan.recv() => {
                     match reply {
                         Some(Err(e)) => {
-                            debug!("Message handling closed : {e}");
+                            debug!("Message handling closed: {e}");
                             return Err(e);
                         }
                         Some(Ok(msg)) => {

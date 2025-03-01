@@ -1,13 +1,71 @@
 mod io;
 mod server;
 
+use std::ops::{Deref, DerefMut};
+
 pub use io::MockChannel;
+use nfs3_types::nfs3::nfs_fh3;
 pub use server::Server;
 
-pub fn create_client_and_server() -> (Server, nfs3_client::Nfs3Client<MockChannel>) {
-    let (server, client) = MockChannel::pair();
+pub struct TestContext {
+    server_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
+    client: nfs3_client::Nfs3Client<MockChannel>,
+    root_dir: nfs_fh3,
+}
 
-    (Server::new(server), nfs3_client::Nfs3Client::new(client))
+impl TestContext {
+    pub async fn setup() -> Self {
+        init_logging();
+
+        let (server, client) = MockChannel::pair();
+        let server = Server::new(server);
+        let root_dir = server.root_dir();
+        let server_handle = tokio::task::spawn(server.run());
+        let client = nfs3_client::Nfs3Client::new(client);
+
+        Self {
+            server_handle,
+            client,
+            root_dir,
+        }
+    }
+
+    pub fn root_dir(&self) -> &nfs_fh3 {
+        &self.root_dir
+    }
+
+    pub async fn shutdown(self) -> anyhow::Result<()> {
+        let Self {
+            server_handle,
+            client,
+            root_dir: _,
+        } = self;
+
+        drop(client);
+
+        server_handle.await?
+    }
+}
+
+impl Deref for TestContext {
+    type Target = nfs3_client::Nfs3Client<MockChannel>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl DerefMut for TestContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.client
+    }
+}
+
+pub fn init_logging() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 #[cfg(test)]
@@ -18,10 +76,7 @@ mod tests {
 
     #[tokio::test]
     async fn base_test() -> Result<(), anyhow::Error> {
-        init_logging();
-
-        let (server, mut client) = create_client_and_server();
-        let server_handle = tokio::spawn(async move { server.run().await });
+        let mut client = TestContext::setup().await;
 
         client.null().await?;
         let lookup = client
@@ -35,16 +90,6 @@ mod tests {
 
         tracing::info!("{lookup:?}");
 
-        drop(client);
-        let _ = server_handle.await;
-
-        Ok(())
-    }
-
-    fn init_logging() {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .with_writer(std::io::stderr)
-            .init();
+        client.shutdown().await
     }
 }
