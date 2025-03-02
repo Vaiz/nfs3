@@ -15,6 +15,7 @@ nfs3_types = { path = "../nfs3_types", version = "0.2.0" }
 
 anyhow.workspace = true
 async-trait.workspace = true
+intaglio.workspace = true
 tokio = { workspace = true, default-features = false, features = ["rt", "sync", "io-util"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
