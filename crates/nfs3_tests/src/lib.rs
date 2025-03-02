@@ -66,10 +66,10 @@ static LOGGING: std::sync::Once = std::sync::Once::new();
 pub fn init_logging() {
     LOGGING.call_once(|| {
         tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
-    });    
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::stderr)
+            .init();
+    });
 }
 
 pub fn print_hex(data: &[u8]) {
