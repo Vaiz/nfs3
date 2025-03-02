@@ -716,6 +716,7 @@ pub async fn nfsproc3_write(
     Ok(())
 }
 
+#[allow(clippy::collapsible_if)]
 pub async fn nfsproc3_create(
     xid: u32,
     input: &mut impl Read,
@@ -769,6 +770,7 @@ pub async fn nfsproc3_create(
             return Ok(());
         }
     };
+
     if matches!(&createhow, createhow3::GUARDED(_)) {
         if context.vfs.lookup(dirid, &dirops.name).await.is_ok() {
             // file exists. Fail with NFS3ERR_EXIST.
