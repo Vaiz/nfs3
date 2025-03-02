@@ -316,12 +316,7 @@ impl NFSFileSystem for TestFs {
         {
             let mut fs = self.fs.lock().unwrap();
             newid = fs.len() as fileid3;
-            fs.push(make_dir(
-                dirname.clone_to_owned(),
-                newid,
-                dirid,
-                Vec::new(),
-            ));
+            fs.push(make_dir(dirname.clone_to_owned(), newid, dirid, Vec::new()));
             if let FSContents::Directory(dir) = &mut fs[dirid as usize].contents {
                 dir.push(newid);
             }
@@ -401,7 +396,7 @@ impl NFSFileSystem for TestFs {
         _symlink: &nfspath3,
         _attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
         return Err(nfsstat3::NFS3ERR_NOTSUPP);

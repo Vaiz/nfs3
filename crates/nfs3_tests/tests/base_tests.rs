@@ -228,28 +228,39 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
             },
             attributes: Default::default(),
         })
-        .await?.unwrap();
+        .await?
+        .unwrap();
     tracing::info!("{mkdir:?}");
 
     client.shutdown().await
 }
-// #[tokio::test]
-// async fn test_symlink() -> Result<(), anyhow::Error> {
-// let mut client = TestContext::setup().await;
-// let root = client.root_dir().clone();
-//
-// let symlink = client.symlink(SYMLINK3args {
-// where_: diropargs3 {
-// dir: root.clone(),
-// name: b"new_symlink".as_slice().into(),
-// },
-// symlink_data: Default::default(),
-// }).await?;
-// tracing::info!("{symlink:?}");
-//
-// client.shutdown().await
-// }
-//
+#[tokio::test]
+async fn test_symlink() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let symlink = client
+        .symlink(SYMLINK3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_symlink".as_slice().into(),
+            },
+            symlink: symlinkdata3 {
+                symlink_attributes: sattr3::default(),
+                symlink_data: b"target".to_vec().into(),
+            },
+        })
+        .await?;
+
+    tracing::info!("{symlink:?}");
+    if matches!(symlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
+        tracing::info!("not supported by current implementation yet");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");
+    }
+
+    client.shutdown().await
+}
 // #[tokio::test]
 // async fn test_mknod() -> Result<(), anyhow::Error> {
 // let mut client = TestContext::setup().await;
