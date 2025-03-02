@@ -129,6 +129,21 @@ pub enum Nfs3Option<T> {
     None,
 }
 
+impl<T> Nfs3Option<T> {
+    pub fn is_some(&self) -> bool {
+        matches!(self, Nfs3Option::Some(_))
+    }
+    pub fn is_none(&self) -> bool {
+        matches!(self, Nfs3Option::None)
+    }
+    pub fn unwrap(self) -> T {
+        match self {
+            Nfs3Option::Some(val) => val,
+            Nfs3Option::None => panic!("called `Nfs3Option::unwrap()` on a `None` value"),
+        }
+    }
+}
+
 impl<Out, T> Pack<Out> for Nfs3Option<T>
 where
     Out: Write,
