@@ -2,16 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use nfs3_server::test_reexports::{
-    RPCContext, SocketMessageHandler, TransactionTracker, write_fragment,
-};
+use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
 use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use nfs3_types::nfs3::{
     self as nfs, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, nfstime3, sattr3,
     specdata3,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{debug, error};
 
 use crate::server;
 
@@ -409,7 +405,7 @@ pub struct Server<IO> {
 
 impl<IO> Server<IO>
 where
-    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 {
     pub fn new(io: IO) -> Self {
         let test_fs = Arc::new(server::TestFs::default());
@@ -432,56 +428,6 @@ where
     }
 
     pub async fn run(self) -> Result<(), anyhow::Error> {
-        let (mut message_handler, mut socksend, mut msgrecvchan) =
-            SocketMessageHandler::new(&self.context);
-
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = message_handler.read().await {
-                    debug!("Message handling closed: {e}");
-                    break;
-                }
-            }
-        });
-
-        let mut io = self.io;
-        let mut buf = [0; 128000];
-        loop {
-            tokio::select! {
-                result = io.read(&mut buf) => {
-                    match result {
-                        Ok(0) => {
-                            return Ok(());
-                        }
-                        Ok(n) => {
-                            let _ = socksend.write_all(&buf[..n]).await;
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => {
-                            debug!("Message handling closed: {e}");
-                            return Ok(());
-                        }
-                    }
-                },
-                reply = msgrecvchan.recv() => {
-                    match reply {
-                        Some(Err(e)) => {
-                            debug!("Message handling closed: {e}");
-                            return Err(e);
-                        }
-                        Some(Ok(msg)) => {
-                            if let Err(e) = write_fragment(&mut io, &msg).await {
-                                error!("Write error {e}");
-                            }
-                        }
-                        None => {
-                            return Err(anyhow::anyhow!("Unexpected socket context termination"));
-                        }
-                    }
-                }
-            }
-        }
+        nfs3_server::test_reexports::process_socket(self.io, self.context).await
     }
 }

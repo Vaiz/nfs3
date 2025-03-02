@@ -35,7 +35,10 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 }
 
 /// processes an established socket
-async fn process_socket<IO>(mut socket: IO, context: RPCContext) -> Result<(), anyhow::Error>
+pub(crate) async fn process_socket<IO>(
+    mut socket: IO,
+    context: RPCContext,
+) -> Result<(), anyhow::Error>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 {
