@@ -716,6 +716,7 @@ pub async fn nfsproc3_write(
     Ok(())
 }
 
+#[allow(clippy::collapsible_if)]
 pub async fn nfsproc3_create(
     xid: u32,
     input: &mut impl Read,
@@ -769,63 +770,56 @@ pub async fn nfsproc3_create(
             return Ok(());
         }
     };
-    match &createhow {
-        createhow3::UNCHECKED(target_attributes) => {
-            debug!("create unchecked {:?}", target_attributes);
-        }
-        createhow3::GUARDED(target_attributes) => {
-            debug!("create guarded {:?}", target_attributes);
-            if context.vfs.lookup(dirid, &dirops.name).await.is_ok() {
-                // file exists. Fail with NFS3ERR_EXIST.
-                // Re-read dir attributes
-                // for post op attr
-                let post_dir_attr = match context.vfs.getattr(dirid).await {
-                    Ok(v) => post_op_attr::Some(v),
-                    Err(_) => post_op_attr::None,
-                };
 
-                make_success_reply(xid).pack(output)?;
-                nfsstat3::NFS3ERR_EXIST.pack(output)?;
-                wcc_data {
-                    before: pre_dir_attr,
-                    after: post_dir_attr,
-                }
-                .pack(output)?;
-                return Ok(());
+    if matches!(&createhow, createhow3::GUARDED(_)) {
+        if context.vfs.lookup(dirid, &dirops.name).await.is_ok() {
+            // file exists. Fail with NFS3ERR_EXIST.
+            // Re-read dir attributes
+            // for post op attr
+            let post_dir_attr = match context.vfs.getattr(dirid).await {
+                Ok(v) => post_op_attr::Some(v),
+                Err(_) => post_op_attr::None,
+            };
+
+            make_success_reply(xid).pack(output)?;
+            nfsstat3::NFS3ERR_EXIST.pack(output)?;
+            wcc_data {
+                before: pre_dir_attr,
+                after: post_dir_attr,
             }
-        }
-        createhow3::EXCLUSIVE(_verf) => {
-            debug!("create exclusive");
+            .pack(output)?;
+            return Ok(());
         }
     }
 
     let fid: Result<fileid3, nfsstat3>;
     let postopattr: post_op_attr;
     // fill in the fid and post op attr here
-    if matches!(createhow, createhow3::EXCLUSIVE(_)) {
-        // the API for exclusive is very slightly different
-        // We are not returning a post op attribute
-        fid = context.vfs.create_exclusive(dirid, &dirops.name).await;
-        postopattr = post_op_attr::None;
-    } else if let createhow3::UNCHECKED(target_attributes) = createhow {
-        // create!
-        let res = context
-            .vfs
-            .create(dirid, &dirops.name, target_attributes)
-            .await;
+    match createhow {
+        createhow3::EXCLUSIVE(_) => {
+            // the API for exclusive is very slightly different
+            // We are not returning a post op attribute
+            fid = context.vfs.create_exclusive(dirid, &dirops.name).await;
+            postopattr = post_op_attr::None;
+        }
+        createhow3::UNCHECKED(target_attributes) | createhow3::GUARDED(target_attributes) => {
+            // create!
+            let res = context
+                .vfs
+                .create(dirid, &dirops.name, target_attributes)
+                .await;
 
-        match res {
-            Ok((fid_, fattr)) => {
-                fid = Ok(fid_);
-                postopattr = post_op_attr::Some(fattr);
-            }
-            Err(e) => {
-                fid = Err(e);
-                postopattr = post_op_attr::None;
+            match res {
+                Ok((fid_, fattr)) => {
+                    fid = Ok(fid_);
+                    postopattr = post_op_attr::Some(fattr);
+                }
+                Err(e) => {
+                    fid = Err(e);
+                    postopattr = post_op_attr::None;
+                }
             }
         }
-    } else {
-        unreachable!();
     }
 
     // Re-read dir attributes for post op attr

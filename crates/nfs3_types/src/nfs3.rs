@@ -129,6 +129,21 @@ pub enum Nfs3Option<T> {
     None,
 }
 
+impl<T> Nfs3Option<T> {
+    pub fn is_some(&self) -> bool {
+        matches!(self, Nfs3Option::Some(_))
+    }
+    pub fn is_none(&self) -> bool {
+        matches!(self, Nfs3Option::None)
+    }
+    pub fn unwrap(self) -> T {
+        match self {
+            Nfs3Option::Some(val) => val,
+            Nfs3Option::None => panic!("called `Nfs3Option::unwrap()` on a `None` value"),
+        }
+    }
+}
+
 impl<Out, T> Pack<Out> for Nfs3Option<T>
 where
     Out: Write,
@@ -800,7 +815,7 @@ impl TryFrom<std::time::SystemTime> for nfstime3 {
     }
 }
 
-#[derive(Debug, Clone, XdrCodec)]
+#[derive(Default, Debug, Clone, XdrCodec)]
 pub struct sattr3 {
     pub mode: set_mode3,
     pub uid: set_uid3,
@@ -810,16 +825,18 @@ pub struct sattr3 {
     pub mtime: set_mtime,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum set_atime {
-    DONT_CHANGE,                  // = 0,
+    #[default]
+    DONT_CHANGE, // = 0,
     SET_TO_SERVER_TIME,           // = 1,
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum set_mtime {
-    DONT_CHANGE,                  // = 0,
+    #[default]
+    DONT_CHANGE, // = 0,
     SET_TO_SERVER_TIME,           // = 1,
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }

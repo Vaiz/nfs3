@@ -61,38 +61,25 @@ impl DerefMut for TestContext {
     }
 }
 
+static LOGGING: std::sync::Once = std::sync::Once::new();
+
 pub fn init_logging() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
+    LOGGING.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(std::io::stderr)
+            .init();
+    });
 }
 
-#[cfg(test)]
-mod tests {
-    use nfs3_types::nfs3::{LOOKUP3args, diropargs3};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn lookup_root() -> Result<(), anyhow::Error> {
-        let mut client = TestContext::setup().await;
-        let root = client.root_dir().clone();
-
-        client.null().await?;
-        let lookup = client
-            .lookup(LOOKUP3args {
-                what: diropargs3 {
-                    dir: root.clone(),
-                    name: b".".as_slice().into(),
-                },
-            })
-            .await?
-            .unwrap();
-
-        tracing::info!("{lookup:?}");
-        assert_eq!(lookup.object, root);
-
-        client.shutdown().await
+pub fn print_hex(data: &[u8]) {
+    println!("Offset | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F");
+    println!("-------|------------------------------------------------");
+    for (i, chunk) in data.chunks(16).enumerate() {
+        print!("{:06x} | ", i * 16);
+        for byte in chunk {
+            print!("{:02x} ", byte);
+        }
+        println!();
     }
 }
