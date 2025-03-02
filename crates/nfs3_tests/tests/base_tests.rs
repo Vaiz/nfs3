@@ -449,11 +449,12 @@ async fn test_readdir() -> Result<(), anyhow::Error> {
             dir: root.clone(),
             cookie: 0,
             cookieverf: cookieverf3::default(),
-            count: 1024,
+            count: 1024 * 1024,
         })
-        .await?;
-    tracing::info!("{readdir:?}");
+        .await?
+        .unwrap();
 
+    tracing::info!("{readdir:?}");
     client.shutdown().await
 }
 
@@ -467,12 +468,13 @@ async fn test_readdirplus() -> Result<(), anyhow::Error> {
             dir: root.clone(),
             cookie: 0,
             cookieverf: cookieverf3::default(),
-            dircount: 1024,
-            maxcount: 1024,
+            dircount: 1024 * 1024,
+            maxcount: 1024 * 1024,
         })
-        .await?;
-    tracing::info!("{readdirplus:?}");
+        .await?
+        .unwrap();
 
+    tracing::info!("{readdirplus:?}");
     client.shutdown().await
 }
 
@@ -485,9 +487,10 @@ async fn test_fsstat() -> Result<(), anyhow::Error> {
         .fsstat(FSSTAT3args {
             fsroot: root.clone(),
         })
-        .await?;
-    tracing::info!("{fsstat:?}");
+        .await?
+        .unwrap();
 
+    tracing::info!("{fsstat:?}");
     client.shutdown().await
 }
 
@@ -500,9 +503,10 @@ async fn test_fsinfo() -> Result<(), anyhow::Error> {
         .fsinfo(FSINFO3args {
             fsroot: root.clone(),
         })
-        .await?;
-    tracing::info!("{fsinfo:?}");
+        .await?
+        .unwrap();
 
+    tracing::info!("{fsinfo:?}");
     client.shutdown().await
 }
 
@@ -515,9 +519,10 @@ async fn test_pathconf() -> Result<(), anyhow::Error> {
         .pathconf(PATHCONF3args {
             object: root.clone(),
         })
-        .await?;
-    tracing::info!("{pathconf:?}");
+        .await?
+        .unwrap();
 
+    tracing::info!("{pathconf:?}");
     client.shutdown().await
 }
 
