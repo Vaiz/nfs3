@@ -52,10 +52,10 @@ where
             }
         }
     });
-    let mut buf = [0u8; 128 * KIBIBYTE as usize];
+    let mut buf = Box::new([0u8; 128 * KIBIBYTE as usize]);
     loop {
         tokio::select! {
-            result = socket.read(&mut buf) => {
+            result = socket.read(&mut *buf) => {
                 match result {
                     Ok(0) => {
                         return Ok(());
