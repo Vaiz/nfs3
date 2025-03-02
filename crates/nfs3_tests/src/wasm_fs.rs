@@ -1,5 +1,6 @@
 #![allow(unused)] // FIXME: remove this
 
+use std::fs::File;
 use std::path::Path;
 
 use intaglio::Symbol;
@@ -26,7 +27,7 @@ pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
     let root = id_to_path_table
         .intern(Path::new("/"))
         .expect("failed to add root path");
-    
+
     let mut fs = WasmFs {
         fs: wasmer_vfs::mem_fs::FileSystem::default(),
         id_to_path_table,
@@ -49,8 +50,7 @@ impl<FS> WasmFs<FS> {
             return Err(nfsstat3::NFS3ERR_STALE);
         }
         let local_id = Symbol::new((id & 0xFFFF_FFFF) as u32);
-        self
-            .id_to_path_table
+        self.id_to_path_table
             .get(local_id)
             .ok_or(nfsstat3::NFS3ERR_BADHANDLE)
     }
@@ -58,12 +58,58 @@ impl<FS> WasmFs<FS> {
     fn filename_to_utf8<'a>(filename: &'a filename3<'a>) -> Result<&'a str, nfsstat3> {
         const INVALID_SYMBOLS: &[char] = &['/', '\0', '\n', '\r', '\t'];
 
-        let filename = std::str::from_utf8(filename.as_ref()).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+        let filename =
+            std::str::from_utf8(filename.as_ref()).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
         if filename.contains(INVALID_SYMBOLS) {
             Err(nfsstat3::NFS3ERR_INVAL)
         } else {
             Ok(filename)
         }
+    }
+
+    fn make_attr(id: fileid3, metadata: &wasmer_vfs::Metadata) -> Result<fattr3, nfsstat3> {
+        use wasmer_vfs::FileType;
+
+        let file_type = match metadata.file_type() {
+            FileType { symlink: true, .. } => ftype3::NF3LNK,
+            FileType {
+                char_device: true, ..
+            } => ftype3::NF3CHR,
+            FileType {
+                block_device: true, ..
+            } => ftype3::NF3BLK,
+            FileType { socket: true, .. } => ftype3::NF3SOCK,
+            FileType { fifo: true, .. } => ftype3::NF3FIFO,
+            FileType { dir: true, .. } => ftype3::NF3DIR,
+            FileType { file: true, .. } => ftype3::NF3REG,
+            _ => return Err(nfsstat3::NFS3ERR_IO),
+        };
+
+        fn to_nfstime3(wasm_time: u64) -> nfstime3 {
+            const SECOND: u64 = 1_000_000_000;
+            nfstime3 {
+                seconds: (wasm_time / SECOND) as u32,
+                nseconds: (wasm_time % SECOND) as u32,
+            }
+        }
+
+        let fattr = fattr3 {
+            type_: file_type,
+            mode: 0o755,
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: metadata.len(),
+            used: metadata.len(),
+            rdev: specdata3::default(),
+            fsid: 0,
+            fileid: id,
+            atime: to_nfstime3(metadata.accessed()),
+            mtime: to_nfstime3(metadata.modified()),
+            ctime: to_nfstime3(metadata.created()),
+        };
+
+        Ok(fattr)
     }
 }
 
@@ -86,7 +132,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         };
 
         tracing::debug!("lookup: {:?} -> {:?}", path, full_path);
-        
+
         let id = self
             .id_to_path_table
             .check_interned(&full_path)
@@ -96,7 +142,9 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        let path = self.id_to_path(id)?;
+        let metadata = self.fs.metadata(&path).map_err(wasm_error_to_nfsstat3)?;
+        Self::make_attr(id, &metadata)
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
@@ -240,6 +288,37 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     }
 }
 
+fn wasm_error_to_nfsstat3(err: wasmer_vfs::FsError) -> nfsstat3 {
+    use wasmer_vfs::FsError;
+    match err {
+        FsError::BaseNotDirectory => nfsstat3::NFS3ERR_NOTDIR,
+        FsError::NotAFile => nfsstat3::NFS3ERR_INVAL,
+        FsError::InvalidFd => nfsstat3::NFS3ERR_BADHANDLE,
+        FsError::AlreadyExists => nfsstat3::NFS3ERR_EXIST,
+        FsError::Lock => nfsstat3::NFS3ERR_JUKEBOX,
+        FsError::IOError => nfsstat3::NFS3ERR_IO,
+        FsError::AddressInUse => nfsstat3::NFS3ERR_ACCES,
+        FsError::AddressNotAvailable => nfsstat3::NFS3ERR_ACCES,
+        FsError::BrokenPipe => nfsstat3::NFS3ERR_IO,
+        FsError::ConnectionAborted => nfsstat3::NFS3ERR_IO,
+        FsError::ConnectionRefused => nfsstat3::NFS3ERR_IO,
+        FsError::ConnectionReset => nfsstat3::NFS3ERR_IO,
+        FsError::Interrupted => nfsstat3::NFS3ERR_IO,
+        FsError::InvalidData => nfsstat3::NFS3ERR_INVAL,
+        FsError::InvalidInput => nfsstat3::NFS3ERR_INVAL,
+        FsError::NotConnected => nfsstat3::NFS3ERR_IO,
+        FsError::EntityNotFound => nfsstat3::NFS3ERR_NOENT,
+        FsError::NoDevice => nfsstat3::NFS3ERR_NODEV,
+        FsError::PermissionDenied => nfsstat3::NFS3ERR_ACCES,
+        FsError::TimedOut => nfsstat3::NFS3ERR_IO,
+        FsError::UnexpectedEof => nfsstat3::NFS3ERR_IO,
+        FsError::WouldBlock => nfsstat3::NFS3ERR_JUKEBOX,
+        FsError::WriteZero => nfsstat3::NFS3ERR_IO,
+        FsError::DirectoryNotEmpty => nfsstat3::NFS3ERR_NOTEMPTY,
+        FsError::UnknownError => nfsstat3::NFS3ERR_SERVERFAULT,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -251,7 +330,7 @@ mod tests {
     async fn test_file_id() {
         let fs = super::new_mem_fs();
         let root = fs.id_to_fh(fs.root_dir());
-        
+
         let id = fs.fh_to_id(&root).unwrap();
         assert_eq!(id, fs.root_dir());
 
