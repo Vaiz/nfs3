@@ -148,6 +148,50 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+        use wasmer_vfs::OpenOptionsConfig;
+
+        let path = self.id_to_path(id)?;
+        let mut file = None;
+
+        const OPEN_OPTIONS: OpenOptionsConfig = OpenOptionsConfig {
+            read: true,
+            write: false,
+            create_new: false,
+            append: false,
+            truncate: false,
+            create: false,
+        };
+
+        if let Nfs3Option::Some(mode) = setattr.mode {
+            // not supported
+        }
+        if let Nfs3Option::Some(uid) = setattr.uid {
+            // not supported
+        }
+        if let Nfs3Option::Some(gid) = setattr.gid {
+            // not supported
+        }
+        if let Nfs3Option::Some(size) = setattr.size {
+            if file.is_none() {
+                let mut options = OPEN_OPTIONS;
+                options.truncate = true;
+                let opened_file = self
+                    .fs
+                    .new_open_options()
+                    .options(options)
+                    .open(&path)
+                    .map_err(wasm_error_to_nfsstat3)?;
+                file = Some(opened_file);
+            }
+
+            file.as_mut()
+                .unwrap()
+                .set_len(size)
+                .map_err(wasm_error_to_nfsstat3)?;
+        }
+        // if let Nfs3Option::Some(atime) = setattr.atime
+        // if let Nfs3Option::Some(mtime) = setattr.mtime
+
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
