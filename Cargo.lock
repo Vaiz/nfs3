@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_client"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "nfs3_types",
@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "byteorder",
  "proc-macro2",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -224,7 +224,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_types"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "byteorder",
  "nfs3_macros",
