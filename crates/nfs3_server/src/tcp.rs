@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow;
 use async_trait::async_trait;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
@@ -13,6 +13,7 @@ use tracing::{debug, error, info};
 use crate::context::RPCContext;
 use crate::rpcwire::*;
 use crate::transaction_tracker::TransactionTracker;
+use crate::units::KIBIBYTE;
 use crate::vfs::NFSFileSystem;
 
 /// A NFS Tcp Connection Handler
@@ -34,12 +35,14 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 }
 
 /// processes an established socket
-async fn process_socket(
-    mut socket: tokio::net::TcpStream,
+pub(crate) async fn process_socket<IO>(
+    mut socket: IO,
     context: RPCContext,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), anyhow::Error>
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+{
     let (mut message_handler, mut socksend, mut msgrecvchan) = SocketMessageHandler::new(&context);
-    let _ = socket.set_nodelay(true);
 
     tokio::spawn(async move {
         loop {
@@ -49,12 +52,11 @@ async fn process_socket(
             }
         }
     });
+    let mut buf = Box::new([0u8; 128 * KIBIBYTE as usize]);
     loop {
         tokio::select! {
-            _ = socket.readable() => {
-                let mut buf = [0; 128000];
-
-                match socket.try_read(&mut buf) {
+            result = socket.read(&mut *buf) => {
+                match result {
                     Ok(0) => {
                         return Ok(());
                     }
@@ -227,6 +229,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
             info!("Accepting connection from {}", context.client_addr);
             debug!("Accepting socket {:?} {:?}", socket, context);
             tokio::spawn(async move {
+                let _ = socket.set_nodelay(true);
                 let _ = process_socket(socket, context).await;
             });
         }

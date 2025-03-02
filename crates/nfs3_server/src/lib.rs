@@ -20,6 +20,12 @@ pub mod vfs;
 #[cfg(feature = "__test_reexports")]
 pub mod test_reexports {
     pub use crate::context::RPCContext;
-    pub use crate::rpcwire::{SocketMessageHandler, write_fragment};
     pub use crate::transaction_tracker::TransactionTracker;
+
+    pub async fn process_socket<IO>(socket: IO, context: RPCContext) -> Result<(), anyhow::Error>
+    where
+        IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    {
+        crate::tcp::process_socket(socket, context).await
+    }
 }

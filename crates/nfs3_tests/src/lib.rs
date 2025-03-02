@@ -1,26 +1,28 @@
-mod io;
 mod server;
+pub mod wasm_fs;
 
 use std::ops::{Deref, DerefMut};
 
-pub use io::MockChannel;
+use nfs3_client::tokio::TokioIo;
 use nfs3_types::nfs3::nfs_fh3;
 pub use server::Server;
+use tokio::io::{DuplexStream, duplex};
 
-pub struct TestContext {
+pub struct TestContext<IO> {
     server_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
-    client: nfs3_client::Nfs3Client<MockChannel>,
+    client: nfs3_client::Nfs3Client<IO>,
     root_dir: nfs_fh3,
 }
 
-impl TestContext {
+impl TestContext<TokioIo<DuplexStream>> {
     pub async fn setup() -> Self {
         init_logging();
 
-        let (server, client) = MockChannel::pair();
+        let (server, client) = duplex(1024 * 1024);
         let server = Server::new(server);
         let root_dir = server.root_dir();
         let server_handle = tokio::task::spawn(server.run());
+        let client = nfs3_client::tokio::TokioIo::new(client);
         let client = nfs3_client::Nfs3Client::new(client);
 
         Self {
@@ -47,15 +49,15 @@ impl TestContext {
     }
 }
 
-impl Deref for TestContext {
-    type Target = nfs3_client::Nfs3Client<MockChannel>;
+impl<IO> Deref for TestContext<IO> {
+    type Target = nfs3_client::Nfs3Client<IO>;
 
     fn deref(&self) -> &Self::Target {
         &self.client
     }
 }
 
-impl DerefMut for TestContext {
+impl<IO> DerefMut for TestContext<IO> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
     }

@@ -186,9 +186,10 @@ async fn test_write() -> Result<(), anyhow::Error> {
         .await?
         .unwrap();
 
+    let file_handle = create.obj.unwrap();
     let write = client
         .write(WRITE3args {
-            file: create.obj.unwrap(),
+            file: file_handle.clone(),
             offset: 0,
             count: COUNT as u32,
             stable: stable_how::DATA_SYNC,
@@ -199,6 +200,18 @@ async fn test_write() -> Result<(), anyhow::Error> {
 
     tracing::info!("{write:?}");
     assert_eq!(write.count, COUNT as u32);
+
+    // Additional check to verify the file was written correctly
+    let read = client
+        .read(READ3args {
+            file: file_handle.clone(),
+            offset: 0,
+            count: COUNT as u32,
+        })
+        .await?
+        .unwrap();
+    assert_eq!(read.data.len(), COUNT);
+    assert_eq!(read.data.as_ref(), &[0u8; COUNT]);
 
     client.shutdown().await
 }
@@ -220,6 +233,19 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
         .unwrap();
     tracing::info!("{create:?}");
 
+    // Additional check to verify the file was created
+    let lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"new_file.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    assert_eq!(lookup.object, create.obj.unwrap());
+
     client.shutdown().await
 }
 
@@ -240,6 +266,18 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{create:?}");
+
+    // Additional check to verify the file was created
+    let lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"new_file.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+    assert_eq!(lookup.object, create.obj.unwrap());
 
     client.shutdown().await
 }
@@ -286,8 +324,22 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{mkdir:?}");
+
+    // Additional check to verify the directory was created
+    let lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"new_dir".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+    assert_eq!(lookup.object, mkdir.obj.unwrap());
+
     client.shutdown().await
 }
+
 #[tokio::test]
 async fn test_symlink() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
@@ -408,7 +460,13 @@ async fn test_rename() -> Result<(), anyhow::Error> {
             },
         })
         .await?;
+
     tracing::info!("{rename:?}");
+    if matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
+        tracing::info!("not supported by current implementation yet");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");
+    }
 
     client.shutdown().await
 }

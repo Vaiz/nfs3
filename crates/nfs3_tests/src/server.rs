@@ -2,19 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use nfs3_server::test_reexports::{
-    RPCContext, SocketMessageHandler, TransactionTracker, write_fragment,
-};
+use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
 use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use nfs3_types::nfs3::{
     self as nfs, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, nfstime3, sattr3,
     specdata3,
 };
-use tokio::io::AsyncWriteExt;
-use tracing::{debug, error};
-
-use crate::io::MockChannel;
-use crate::server;
 
 #[derive(Debug, Clone)]
 enum FSContents {
@@ -403,14 +396,18 @@ impl NFSFileSystem for TestFs {
     }
 }
 
-pub struct Server {
+pub struct Server<IO> {
     context: RPCContext,
-    mock_channel: MockChannel,
+    io: IO,
 }
 
-impl Server {
-    pub fn new(mock_channel: MockChannel) -> Self {
-        let test_fs = Arc::new(server::TestFs::default());
+impl<IO> Server<IO>
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+{
+    pub fn new(io: IO) -> Self {
+        let test_fs = Arc::new(TestFs::default());
+        // let test_fs = Arc::new(crate::wasm_fs::new_mem_fs());
 
         let context = RPCContext {
             local_port: 2049,
@@ -422,10 +419,7 @@ impl Server {
             transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
         };
 
-        Self {
-            context,
-            mock_channel,
-        }
+        Self { context, io }
     }
 
     pub fn root_dir(&self) -> nfs_fh3 {
@@ -433,53 +427,6 @@ impl Server {
     }
 
     pub async fn run(self) -> Result<(), anyhow::Error> {
-        let (mut message_handler, mut socksend, mut msgrecvchan) =
-            SocketMessageHandler::new(&self.context);
-
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = message_handler.read().await {
-                    debug!("Message handling closed: {e}");
-                    break;
-                }
-            }
-        });
-
-        let mut mock_channel = self.mock_channel;
-        loop {
-            tokio::select! {
-                result = mock_channel.pop_buf() => {
-                    match result {
-                        Ok(buf) => {
-                            let _ = socksend.write_all(&buf[..]).await;
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => {
-                            debug!("Message handling closed: {e}");
-                            return Ok(());
-                        }
-                    }
-
-                },
-                reply = msgrecvchan.recv() => {
-                    match reply {
-                        Some(Err(e)) => {
-                            debug!("Message handling closed: {e}");
-                            return Err(e);
-                        }
-                        Some(Ok(msg)) => {
-                            if let Err(e) = write_fragment(&mut mock_channel, &msg).await {
-                                error!("Write error {e}");
-                            }
-                        }
-                        None => {
-                            return Err(anyhow::anyhow!("Unexpected socket context termination"));
-                        }
-                    }
-                }
-            }
-        }
+        nfs3_server::test_reexports::process_socket(self.io, self.context).await
     }
 }
