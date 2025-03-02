@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let access = connection.access(nfs3::ACCESS3args {
         object: root.clone(),
         access: 0,
-    }).await;
+    }).await?;
     println!("access: {access:?}");
 
     println!("Calling readdir");
