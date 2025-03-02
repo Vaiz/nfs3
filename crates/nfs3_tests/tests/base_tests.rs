@@ -460,7 +460,7 @@ async fn test_rename() -> Result<(), anyhow::Error> {
             },
         })
         .await?;
-    
+
     tracing::info!("{rename:?}");
     if matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
         tracing::info!("not supported by current implementation yet");
