@@ -126,14 +126,15 @@ async fn test_write() -> Result<(), anyhow::Error> {
     let root = client.root_dir().clone();
 
     let create = client
-    .create(CREATE3args {
-        where_: diropargs3 {
-            dir: root.clone(),
-            name: b"new_file.txt".as_slice().into(),
-        },
-        how: createhow3::UNCHECKED(sattr3::default()),
-    })
-    .await?.unwrap();
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_file.txt".as_slice().into(),
+            },
+            how: createhow3::UNCHECKED(sattr3::default()),
+        })
+        .await?
+        .unwrap();
 
     let write = client
         .write(WRITE3args {
@@ -213,23 +214,25 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
 
     client.shutdown().await
 }
-// #[tokio::test]
-// async fn test_mkdir() -> Result<(), anyhow::Error> {
-// let mut client = TestContext::setup().await;
-// let root = client.root_dir().clone();
-//
-// let mkdir = client.mkdir(MKDIR3args {
-// where_: diropargs3 {
-// dir: root.clone(),
-// name: b"new_dir".as_slice().into(),
-// },
-// attributes: Default::default(),
-// }).await?;
-// tracing::info!("{mkdir:?}");
-//
-// client.shutdown().await
-// }
-//
+
+#[tokio::test]
+async fn test_mkdir() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let mkdir = client
+        .mkdir(MKDIR3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_dir".as_slice().into(),
+            },
+            attributes: Default::default(),
+        })
+        .await?.unwrap();
+    tracing::info!("{mkdir:?}");
+
+    client.shutdown().await
+}
 // #[tokio::test]
 // async fn test_symlink() -> Result<(), anyhow::Error> {
 // let mut client = TestContext::setup().await;
