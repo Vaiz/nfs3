@@ -11,31 +11,31 @@ const MEBIBYTE: u32 = 1024 * 1024;
 const GIBIBYTE: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug)]
-struct WasmFs<FS> {
+pub struct WasmFs<FS> {
     fs: FS,
     id_to_path_table: intaglio::path::SymbolTable,
     server_id: u64,
     root: fileid3,
 }
 
+pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
+    let mut fhid_map = intaglio::path::SymbolTable::new();
+    let root = fhid_map
+        .intern(Path::new("/"))
+        .expect("failed to add root path");
+    
+    let mut fs = WasmFs {
+        fs: wasmer_vfs::mem_fs::FileSystem::default(),
+        id_to_path_table: intaglio::path::SymbolTable::new(),
+        server_id: (0xdead_beef << 32), // keep the same server id for testing
+        root: 0,
+    };
+
+    fs.root = fs.symbol_to_id(root);
+    fs
+}
+
 impl<FS> WasmFs<FS> {
-    pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
-        let mut fhid_map = intaglio::path::SymbolTable::new();
-        let root = fhid_map
-            .intern(Path::new("/"))
-            .expect("failed to add root path");
-        
-        let mut fs = WasmFs {
-            fs: wasmer_vfs::mem_fs::FileSystem::default(),
-            id_to_path_table: intaglio::path::SymbolTable::new(),
-            server_id: (0xdead_beef << 32), // keep the same server id for testing
-            root: 0,
-        };
-
-        fs.root = fs.symbol_to_id(root);
-        fs
-    }
-
     fn symbol_to_id(&self, symbol: Symbol) -> fileid3 {
         self.server_id | (symbol.id() as u64)
     }

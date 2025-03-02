@@ -1,5 +1,5 @@
 mod server;
-mod wasm_fs;
+pub mod wasm_fs;
 
 use std::ops::{Deref, DerefMut};
 

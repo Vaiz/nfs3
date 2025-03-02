@@ -9,8 +9,6 @@ use nfs3_types::nfs3::{
     specdata3,
 };
 
-use crate::server;
-
 #[derive(Debug, Clone)]
 enum FSContents {
     File(Vec<u8>),
@@ -408,7 +406,8 @@ where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 {
     pub fn new(io: IO) -> Self {
-        let test_fs = Arc::new(server::TestFs::default());
+        //let test_fs = Arc::new(server::TestFs::default());
+        let test_fs = Arc::new(crate::wasm_fs::new_mem_fs());
 
         let context = RPCContext {
             local_port: 2049,
