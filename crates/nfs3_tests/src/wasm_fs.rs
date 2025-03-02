@@ -6,6 +6,9 @@ use intaglio::Symbol;
 use nfs3_server::vfs::{ReadDirResult, ReadDirSimpleResult, VFSCapabilities};
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
+use tracing_subscriber::field::debug;
+
+use crate::server;
 
 const MEBIBYTE: u32 = 1024 * 1024;
 const GIBIBYTE: u64 = 1024 * 1024 * 1024;
@@ -19,14 +22,14 @@ pub struct WasmFs<FS> {
 }
 
 pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
-    let mut fhid_map = intaglio::path::SymbolTable::new();
-    let root = fhid_map
+    let mut id_to_path_table = intaglio::path::SymbolTable::new();
+    let root = id_to_path_table
         .intern(Path::new("/"))
         .expect("failed to add root path");
     
     let mut fs = WasmFs {
         fs: wasmer_vfs::mem_fs::FileSystem::default(),
-        id_to_path_table: intaglio::path::SymbolTable::new(),
+        id_to_path_table,
         server_id: (0xdead_beef << 32), // keep the same server id for testing
         root: 0,
     };
@@ -40,11 +43,27 @@ impl<FS> WasmFs<FS> {
         self.server_id | (symbol.id() as u64)
     }
 
-    fn id_to_path(&self, id: fileid3) -> Option<&Path> {
+    fn id_to_path(&self, id: fileid3) -> Result<&Path, nfsstat3> {
+        let server_id = id & 0xFFFF_FFFF_0000_0000;
+        if server_id != self.server_id {
+            return Err(nfsstat3::NFS3ERR_STALE);
+        }
         let local_id = Symbol::new((id & 0xFFFF_FFFF) as u32);
         self
             .id_to_path_table
             .get(local_id)
+            .ok_or(nfsstat3::NFS3ERR_BADHANDLE)
+    }
+
+    fn filename_to_utf8<'a>(filename: &'a filename3<'a>) -> Result<&'a str, nfsstat3> {
+        const INVALID_SYMBOLS: &[char] = &['/', '\0', '\n', '\r', '\t'];
+
+        let filename = std::str::from_utf8(filename.as_ref()).map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+        if filename.contains(INVALID_SYMBOLS) {
+            Err(nfsstat3::NFS3ERR_INVAL)
+        } else {
+            Ok(filename)
+        }
     }
 }
 
@@ -57,7 +76,23 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         self.root
     }
     async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        let path = self.id_to_path(dirid)?;
+        let filename = Self::filename_to_utf8(filename)?;
+
+        let full_path = match filename {
+            "." => path.to_path_buf(),
+            ".." => path.parent().ok_or(nfsstat3::NFS3ERR_INVAL)?.to_path_buf(),
+            _ => path.join(filename),
+        };
+
+        tracing::debug!("lookup: {:?} -> {:?}", path, full_path);
+        
+        let id = self
+            .id_to_path_table
+            .check_interned(&full_path)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?;
+
+        Ok(self.symbol_to_id(id))
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
@@ -207,9 +242,25 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
+    use nfs3_server::vfs::NFSFileSystem;
     use wasmer_vfs::{FileSystem, OpenOptionsConfig};
+
+    #[tokio::test]
+    async fn test_file_id() {
+        let fs = super::new_mem_fs();
+        let root = fs.id_to_fh(fs.root_dir());
+        
+        let id = fs.fh_to_id(&root).unwrap();
+        assert_eq!(id, fs.root_dir());
+
+        let id = fs.path_to_id("/").await.unwrap();
+        assert_eq!(id, fs.root_dir());
+
+        let path = fs.id_to_path(fs.root_dir()).unwrap();
+        assert_eq!(path, Path::new("/"));
+    }
 
     #[test]
     fn test_perf() -> anyhow::Result<()> {
