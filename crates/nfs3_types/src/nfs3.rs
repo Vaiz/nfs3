@@ -100,7 +100,7 @@ where
     }
 }
 
-pub type ACCESS3res = Nfs3Result<ACCESS3args, ACCESS3resfail>;
+pub type ACCESS3res = Nfs3Result<ACCESS3resok, ACCESS3resfail>;
 pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
 pub type FSINFO3res = Nfs3Result<FSINFO3resok, FSINFO3resfail>;
