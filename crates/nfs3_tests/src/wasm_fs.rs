@@ -57,15 +57,15 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         self.root
     }
     async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn read(
@@ -74,10 +74,10 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn create(
@@ -86,7 +86,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         filename: &filename3,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn create_exclusive(
@@ -94,7 +94,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         dirid: fileid3,
         filename: &filename3,
     ) -> Result<fileid3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn mkdir(
@@ -102,11 +102,11 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         dirid: fileid3,
         dirname: &filename3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn rename(
@@ -116,7 +116,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         to_dirid: fileid3,
         to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readdir(
@@ -125,7 +125,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         start_after: fileid3,
         max_entries: usize,
     ) -> Result<ReadDirResult<'static>, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readdir_simple(
@@ -133,7 +133,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         dirid: fileid3,
         count: usize,
     ) -> Result<ReadDirSimpleResult, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn symlink(
@@ -143,12 +143,12 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         symlink: &nfspath3,
         attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     /// Reads a symlink
     async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
-        todo!()
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     /// Get static file system Information
