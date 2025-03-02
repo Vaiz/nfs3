@@ -33,22 +33,37 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
 
     client.shutdown().await
 }
-/*
+
 #[tokio::test]
 async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
+    let LOOKUP3resok { object, obj_attributes: _, dir_attributes: _ } = client.lookup(LOOKUP3args {
+        what: diropargs3 {
+            dir: root.clone(),
+            name: b"a.txt".as_slice().into(),
+        },
+    }).await?.unwrap();
+
+    let new_attributes = sattr3 {
+        mode: Nfs3Option::None,
+        uid: Nfs3Option::None,
+        gid: Nfs3Option::None,
+        size: Nfs3Option::None,
+        atime: set_atime::DONT_CHANGE,
+        mtime: set_mtime::DONT_CHANGE,
+    };    
     let setattr = client.setattr(SETATTR3args {
-        object: root.clone(),
-        new_attributes: Default::default(),
-        guard: None,
+        object,
+        new_attributes,
+        guard: Nfs3Option::None,
     }).await?;
     tracing::info!("{setattr:?}");
-
+ 
     client.shutdown().await
 }
-*/
+
 #[tokio::test]
 async fn test_access() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
