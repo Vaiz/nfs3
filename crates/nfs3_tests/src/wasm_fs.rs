@@ -143,7 +143,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
         let path = self.id_to_path(id)?;
-        let metadata = self.fs.metadata(&path).map_err(wasm_error_to_nfsstat3)?;
+        let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
         Self::make_attr(id, &metadata)
     }
 
@@ -179,7 +179,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
                     .fs
                     .new_open_options()
                     .options(options)
-                    .open(&path)
+                    .open(path)
                     .map_err(wasm_error_to_nfsstat3)?;
                 file = Some(opened_file);
             }
