@@ -815,7 +815,7 @@ impl TryFrom<std::time::SystemTime> for nfstime3 {
     }
 }
 
-#[derive(Debug, Clone, XdrCodec)]
+#[derive(Default, Debug, Clone, XdrCodec)]
 pub struct sattr3 {
     pub mode: set_mode3,
     pub uid: set_uid3,
@@ -825,16 +825,18 @@ pub struct sattr3 {
     pub mtime: set_mtime,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum set_atime {
-    DONT_CHANGE,                  // = 0,
+    #[default]
+    DONT_CHANGE, // = 0,
     SET_TO_SERVER_TIME,           // = 1,
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub enum set_mtime {
-    DONT_CHANGE,                  // = 0,
+    #[default]
+    DONT_CHANGE, // = 0,
     SET_TO_SERVER_TIME,           // = 1,
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
