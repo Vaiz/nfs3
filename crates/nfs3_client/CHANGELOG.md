@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.1...nfs3_client-v0.2.0) - 2025-03-02
+
+### Fixed
+
+- ACCESS3res type ([#36](https://github.com/Vaiz/nfs3/pull/36))
+
+### Other
+
+- [**breaking**] update to Rust 2024 ([#32](https://github.com/Vaiz/nfs3/pull/32))
+
 ## [0.1.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.0...nfs3_client-v0.1.1) - 2025-02-23
 
 ### Fixed
