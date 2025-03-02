@@ -33,7 +33,8 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
         .getattr(GETATTR3args {
             object: root.clone(),
         })
-        .await?;
+        .await?
+        .unwrap();
     tracing::info!("{getattr:?}");
 
     client.shutdown().await
@@ -80,7 +81,8 @@ async fn test_access() -> Result<(), anyhow::Error> {
             object: root.clone(),
             access: 0,
         })
-        .await?;
+        .await?
+        .unwrap();
     tracing::info!("{access:?}");
 
     client.shutdown().await
@@ -96,13 +98,19 @@ async fn test_readlink() -> Result<(), anyhow::Error> {
             symlink: root.clone(),
         })
         .await?;
+
     tracing::info!("{readlink:?}");
+    if matches!(readlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
+        tracing::info!("not supported by current implementation");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");        
+    }
 
     client.shutdown().await
 }
 
 #[tokio::test]
-async fn test_read() -> Result<(), anyhow::Error> {
+async fn test_read_dir() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
@@ -113,7 +121,45 @@ async fn test_read() -> Result<(), anyhow::Error> {
             count: 1024,
         })
         .await?;
+
     tracing::info!("{read:?}");
+    if matches!(read, Nfs3Result::Err((nfsstat3::NFS3ERR_ISDIR, _))) {
+        tracing::info!("not supported by current implementation");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");        
+    }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_read_file() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let LOOKUP3resok{ object, obj_attributes, .. } = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"a.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    let read = client
+        .read(READ3args {
+            file: object,
+            offset: 0,
+            count: 1024,
+        })
+        .await?
+        .unwrap();
+
+    tracing::info!("{read:?}");
+    let expected_len = obj_attributes.unwrap().size.min(1024) as usize;
+    assert_eq!(read.data.len(), expected_len);  
+    assert_eq!(read.data.len(), expected_len);  
 
     client.shutdown().await
 }
@@ -261,22 +307,34 @@ async fn test_symlink() -> Result<(), anyhow::Error> {
 
     client.shutdown().await
 }
-// #[tokio::test]
-// async fn test_mknod() -> Result<(), anyhow::Error> {
-// let mut client = TestContext::setup().await;
-// let root = client.root_dir().clone();
-//
-// let mknod = client.mknod(MKNOD3args {
-// where_: diropargs3 {
-// dir: root.clone(),
-// name: b"new_node".as_slice().into(),
-// },
-// what: Default::default(),
-// }).await?;
-// tracing::info!("{mknod:?}");
-//
-// client.shutdown().await
-// }
+
+#[tokio::test]
+async fn test_mknod() -> Result<(), anyhow::Error> {
+    use nfs3_client::error::*;
+
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let mknod = client
+        .mknod(MKNOD3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_node".as_slice().into(),
+            },
+            what: mknoddata3::NF3FIFO(sattr3::default()),
+        })
+        .await;
+
+    tracing::info!("{mknod:?}");
+    if matches!(mknod, Err(Error::Rpc(RpcError::ProcUnavail))) {
+        tracing::info!("not supported by nfs3_server yet");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");
+    }
+
+    client.shutdown().await
+}
+
 #[tokio::test]
 async fn test_remove() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
