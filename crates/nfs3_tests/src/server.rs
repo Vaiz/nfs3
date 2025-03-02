@@ -10,10 +10,9 @@ use nfs3_types::nfs3::{
     self as nfs, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, nfstime3, sattr3,
     specdata3,
 };
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error};
 
-use crate::io::MockChannel;
 use crate::server;
 
 #[derive(Debug, Clone)]
@@ -403,13 +402,16 @@ impl NFSFileSystem for TestFs {
     }
 }
 
-pub struct Server {
+pub struct Server<IO> {
     context: RPCContext,
-    mock_channel: MockChannel,
+    io: IO,
 }
 
-impl Server {
-    pub fn new(mock_channel: MockChannel) -> Self {
+impl<IO> Server<IO>
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    pub fn new(io: IO) -> Self {
         let test_fs = Arc::new(server::TestFs::default());
 
         let context = RPCContext {
@@ -422,10 +424,7 @@ impl Server {
             transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
         };
 
-        Self {
-            context,
-            mock_channel,
-        }
+        Self { context, io }
     }
 
     pub fn root_dir(&self) -> nfs_fh3 {
@@ -445,13 +444,17 @@ impl Server {
             }
         });
 
-        let mut mock_channel = self.mock_channel;
+        let mut io = self.io;
+        let mut buf = [0; 128000];
         loop {
             tokio::select! {
-                result = mock_channel.pop_buf() => {
+                result = io.read(&mut buf) => {
                     match result {
-                        Ok(buf) => {
-                            let _ = socksend.write_all(&buf[..]).await;
+                        Ok(0) => {
+                            return Ok(());
+                        }
+                        Ok(n) => {
+                            let _ = socksend.write_all(&buf[..n]).await;
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             continue;
@@ -461,7 +464,6 @@ impl Server {
                             return Ok(());
                         }
                     }
-
                 },
                 reply = msgrecvchan.recv() => {
                     match reply {
@@ -470,7 +472,7 @@ impl Server {
                             return Err(e);
                         }
                         Some(Ok(msg)) => {
-                            if let Err(e) = write_fragment(&mut mock_channel, &msg).await {
+                            if let Err(e) = write_fragment(&mut io, &msg).await {
                                 error!("Write error {e}");
                             }
                         }
