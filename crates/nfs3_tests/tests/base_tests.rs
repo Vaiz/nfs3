@@ -103,7 +103,7 @@ async fn test_readlink() -> Result<(), anyhow::Error> {
     if matches!(readlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
         tracing::info!("not supported by current implementation");
     } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");        
+        panic!("Expected NFS3ERR_NOTSUPP error");
     }
 
     client.shutdown().await
@@ -126,7 +126,7 @@ async fn test_read_dir() -> Result<(), anyhow::Error> {
     if matches!(read, Nfs3Result::Err((nfsstat3::NFS3ERR_ISDIR, _))) {
         tracing::info!("not supported by current implementation");
     } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");        
+        panic!("Expected NFS3ERR_NOTSUPP error");
     }
 
     client.shutdown().await
@@ -137,7 +137,11 @@ async fn test_read_file() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
-    let LOOKUP3resok{ object, obj_attributes, .. } = client
+    let LOOKUP3resok {
+        object,
+        obj_attributes,
+        ..
+    } = client
         .lookup(LOOKUP3args {
             what: diropargs3 {
                 dir: root.clone(),
@@ -158,8 +162,8 @@ async fn test_read_file() -> Result<(), anyhow::Error> {
 
     tracing::info!("{read:?}");
     let expected_len = obj_attributes.unwrap().size.min(1024) as usize;
-    assert_eq!(read.data.len(), expected_len);  
-    assert_eq!(read.data.len(), expected_len);  
+    assert_eq!(read.data.len(), expected_len);
+    assert_eq!(read.data.len(), expected_len);
 
     client.shutdown().await
 }
@@ -212,7 +216,8 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
             },
             how: createhow3::UNCHECKED(sattr3::default()),
         })
-        .await?;
+        .await?
+        .unwrap();
     tracing::info!("{create:?}");
 
     client.shutdown().await
@@ -231,7 +236,9 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
             },
             how: createhow3::GUARDED(sattr3::default()),
         })
-        .await?;
+        .await?
+        .unwrap();
+
     tracing::info!("{create:?}");
 
     client.shutdown().await
@@ -252,6 +259,7 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
         })
         .await?;
 
+    tracing::info!("{create:?}");
     if matches!(&create, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
         tracing::info!("not supported by current implementation");
     } else {
@@ -276,8 +284,8 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
         })
         .await?
         .unwrap();
-    tracing::info!("{mkdir:?}");
 
+    tracing::info!("{mkdir:?}");
     client.shutdown().await
 }
 #[tokio::test]
@@ -348,7 +356,13 @@ async fn test_remove() -> Result<(), anyhow::Error> {
             },
         })
         .await?;
+
     tracing::info!("{remove:?}");
+    if matches!(remove, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
+        tracing::info!("not supported by current implementation yet");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");
+    }
 
     client.shutdown().await
 }
@@ -366,7 +380,13 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
             },
         })
         .await?;
+
     tracing::info!("{rmdir:?}");
+    if matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
+        tracing::info!("not supported by current implementation yet");
+    } else {
+        panic!("Expected NFS3ERR_NOTSUPP error");
+    }
 
     client.shutdown().await
 }
