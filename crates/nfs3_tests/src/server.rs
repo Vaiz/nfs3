@@ -270,7 +270,7 @@ impl Fs {
             let entry = self.flat_list.get(&dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
             let dir = entry.as_dir()?;
             let id = dir.content.iter().find(|i| {
-                if let Some(f) = self.flat_list.get(&i) {
+                if let Some(f) = self.flat_list.get(i) {
                     f.name() == filename
                 } else {
                     false
@@ -632,6 +632,12 @@ struct FsConfigEntry {
     content: Vec<u8>,
 }
 
+impl Default for FsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FsConfig {
     pub fn new() -> Self {
         let mut config = Self {
@@ -645,7 +651,7 @@ impl FsConfig {
     }
 
     pub fn add_dir(&mut self, path: &str) {
-        let name = path.split('/').last().unwrap().to_string();
+        let name = path.split('/').next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
         self.entries.push(FsConfigEntry {
             parent: path.to_string(),
@@ -656,7 +662,7 @@ impl FsConfig {
     }
 
     pub fn add_file(&mut self, path: &str, content: &[u8]) {
-        let name = path.split('/').last().unwrap().to_string();
+        let name = path.split('/').next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
         self.entries.push(FsConfigEntry {
             parent: path.to_string(),
