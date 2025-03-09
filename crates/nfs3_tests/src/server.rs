@@ -60,7 +60,7 @@ impl Dir {
 #[derive(Debug)]
 struct File {
     name: filename3<'static>,
-    parent: fileid3,
+    _parent: fileid3,
     attr: fattr3,
     content: Vec<u8>,
 }
@@ -85,7 +85,7 @@ impl File {
         };
         Self {
             name,
-            parent,
+            _parent: parent,
             attr,
             content,
         }
@@ -95,6 +95,33 @@ impl File {
         self.content.resize(size as usize, 0);
         self.attr.size = size;
         self.attr.used = size;
+    }
+
+    fn read(&self, offset: u64, count: u32) -> Result<(Vec<u8>, bool), nfsstat3> {
+        let mut start = offset as usize;
+        let mut end = offset as usize + count as usize;
+        let bytes = &self.content;
+        let eof = end >= bytes.len();
+        if start >= bytes.len() {
+            start = bytes.len();
+        }
+        if end > bytes.len() {
+            end = bytes.len();
+        }
+        Ok((bytes[start..end].to_vec(), eof))
+    }
+    fn write(&mut self, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+        if offset > self.content.len() as u64 {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+
+        let offset = offset as usize;
+        let end_offset = offset + data.len();
+        if end_offset > self.content.len() {
+            self.resize(end_offset as u64);
+        }
+        self.content[offset..end_offset].copy_from_slice(data);
+        Ok(self.attr.clone())
     }
 }
 
@@ -123,19 +150,31 @@ impl Entry {
         Self::Dir(Dir::new(name, id, parent))
     }
 
-    fn as_dir(&self) -> Option<&Dir> {
-        if let Self::Dir(dir) = self {
-            Some(dir)
-        } else {
-            None
+    fn as_dir(&self) -> Result<&Dir, nfsstat3> {
+        match self {
+            Self::Dir(dir) => Ok(dir),
+            Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
         }
     }
 
-    fn as_dir_mut(&mut self) -> Option<&mut Dir> {
-        if let Self::Dir(dir) = self {
-            Some(dir)
-        } else {
-            None
+    fn as_dir_mut(&mut self) -> Result<&mut Dir, nfsstat3> {
+        match self {
+            Self::Dir(dir) => Ok(dir),
+            Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
+        }
+    }
+
+    fn as_file(&self) -> Result<&File, nfsstat3> {
+        match self {
+            Self::File(file) => Ok(file),
+            Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
+        }
+    }
+
+    fn as_file_mut(&mut self) -> Result<&mut File, nfsstat3> {
+        match self {
+            Self::File(file) => Ok(file),
+            Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
         }
     }
 
@@ -220,6 +259,29 @@ impl Fs {
                 Ok(())
             }
         }
+    }
+
+    fn remove(&mut self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
+        let object_id = {
+            let entry = self.flat_list.get(&dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+            let dir = entry.as_dir()?;
+            let id = dir.content.iter().find(|i| {
+                if let Some(f) = self.flat_list.get(&i) {
+                    f.name() == filename
+                } else {
+                    false
+                }
+            });
+            id.copied().ok_or(nfsstat3::NFS3ERR_NOENT)?
+        };
+        self.flat_list.remove(&object_id);
+        self.flat_list
+            .get_mut(&dirid)
+            .unwrap()
+            .as_dir_mut()?
+            .content
+            .remove(&object_id);
+        Ok(())
     }
 
     fn get(&self, id: fileid3) -> Option<&Entry> {
@@ -354,40 +416,17 @@ impl NFSFileSystem for TestFs {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let fs = self.fs.lock().unwrap();
-        let entry = fs.get(id as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        if let FSContents::Directory(_) = entry.contents {
-            return Err(nfsstat3::NFS3ERR_ISDIR);
-        } else if let FSContents::File(bytes) = &entry.contents {
-            let mut start = offset as usize;
-            let mut end = offset as usize + count as usize;
-            let eof = end >= bytes.len();
-            if start >= bytes.len() {
-                start = bytes.len();
-            }
-            if end > bytes.len() {
-                end = bytes.len();
-            }
-            return Ok((bytes[start..end].to_vec(), eof));
-        }
-        Err(nfsstat3::NFS3ERR_NOENT)
+        let fs = self.fs.read().unwrap();
+        let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let file = entry.as_file()?;
+        file.read(offset, count)
     }
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        {
-            let mut fs = self.fs.lock().unwrap();
-            let mut fssize = fs[id as usize].attr.size;
-            if let FSContents::File(bytes) = &mut fs[id as usize].contents {
-                let offset = offset as usize;
-                if offset + data.len() > bytes.len() {
-                    bytes.resize(offset + data.len(), 0);
-                    bytes[offset..].copy_from_slice(data);
-                    fssize = bytes.len() as u64;
-                }
-            }
-            fs[id as usize].attr.size = fssize;
-            fs[id as usize].attr.used = fssize;
-        }
-        self.getattr(id).await
+        let mut fs = self.fs.write().unwrap();
+
+        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let file = entry.as_file_mut()?;
+        file.write(offset, data)
     }
     async fn create(
         &self,
@@ -398,19 +437,13 @@ impl NFSFileSystem for TestFs {
         let newid = self
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        {
-            let mut fs = self.fs.lock().unwrap();
-            fs.push(make_file(
-                filename.clone_to_owned(),
-                newid,
-                dirid,
-                "".as_bytes(),
-            ));
-            if let FSContents::Directory(dir) = &mut fs[dirid as usize].contents {
-                dir.push(newid);
-            }
-        }
-        Ok((newid, self.getattr(newid).await.unwrap()))
+
+        let file = Entry::new_file(filename.clone_to_owned(), newid, dirid, Vec::new());
+        let attr = file.attr().clone();
+
+        self.fs.write().unwrap().push(dirid, file)?;
+
+        Ok((newid, attr))
     }
 
     async fn create_exclusive(
@@ -430,26 +463,20 @@ impl NFSFileSystem for TestFs {
         let newid = self
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        {
-            let mut fs = self.fs.lock().unwrap();
-            fs.push(make_dir(dirname.clone_to_owned(), newid, dirid, Vec::new()));
-        }
-        let attr = self.getattr(newid).await?;
-        tracing::info!("mkdir: {:?} {:?}", dirname, attr);
+
+        let dir = Entry::new_dir(dirname.clone_to_owned(), newid, dirid);
+        let attr = dir.attr().clone();
+
+        self.fs.write().unwrap().push(dirid, dir)?;
+
         Ok((newid, attr))
     }
 
-    /// Removes a file.
-    /// If not supported dur to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
     #[allow(unused)]
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        return Err(nfsstat3::NFS3ERR_NOTSUPP);
+        self.fs.write().unwrap().remove(dirid, filename)
     }
 
-    /// Removes a file.
-    /// If not supported dur to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
     #[allow(unused)]
     async fn rename(
         &self,
@@ -467,41 +494,44 @@ impl NFSFileSystem for TestFs {
         start_after: fileid3,
         max_entries: usize,
     ) -> Result<ReadDirResult<'static>, nfsstat3> {
-        let fs = self.fs.lock().unwrap();
-        let entry = fs.get(dirid as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        if let FSContents::File(_) = entry.contents {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        } else if let FSContents::Directory(dir) = &entry.contents {
-            let mut ret = ReadDirResult {
-                entries: Vec::new(),
-                end: false,
-            };
-            let mut start_index = 0;
-            if start_after > 0 {
-                if let Some(pos) = dir.iter().position(|&r| r == start_after) {
-                    start_index = pos + 1;
+        let fs = self.fs.read().unwrap();
+        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let dir = entry.as_dir()?;
+        let mut ret = ReadDirResult {
+            entries: Vec::new(),
+            end: false,
+        };
+        let mut iter = dir.content.iter();
+
+        if start_after != 0 {
+            loop {
+                if let Some(i) = iter.next() {
+                    if *i == start_after {
+                        iter.next();
+                        break;
+                    }
                 } else {
                     return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
                 }
             }
-            let remaining_length = dir.len() - start_index;
-
-            for i in dir[start_index..].iter() {
-                ret.entries.push(DirEntry {
-                    fileid: *i,
-                    name: fs[(*i) as usize].name.clone_to_owned(),
-                    attr: fs[(*i) as usize].attr.clone(),
-                });
-                if ret.entries.len() >= max_entries {
-                    break;
-                }
-            }
-            if ret.entries.len() == remaining_length {
-                ret.end = true;
-            }
-            return Ok(ret);
         }
-        Err(nfsstat3::NFS3ERR_NOENT)
+
+        while ret.entries.len() < max_entries {
+            let next_id = iter.next();
+            if next_id.is_none() {
+                break;
+            }
+            let i = next_id.unwrap();
+            let entry = fs.get(*i).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+
+            ret.entries.push(DirEntry {
+                fileid: *i,
+                name: entry.name().clone_to_owned(),
+                attr: entry.attr().clone(),
+            });
+        }
+        ret.end = iter.next().is_none();
+        Ok(ret)
     }
 
     async fn symlink(
