@@ -404,23 +404,40 @@ async fn test_remove() -> Result<(), anyhow::Error> {
         .remove(REMOVE3args {
             object: diropargs3 {
                 dir: root.clone(),
+                name: b"a.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    tracing::info!("{remove:?}");
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_remove_noent() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let remove = client
+        .remove(REMOVE3args {
+            object: diropargs3 {
+                dir: root.clone(),
                 name: b"file_to_remove".as_slice().into(),
             },
         })
         .await?;
 
     tracing::info!("{remove:?}");
-    if matches!(remove, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
+    if !matches!(remove, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
+        panic!("Expected NFS3ERR_NOENT error");
     }
 
     client.shutdown().await
 }
 
 #[tokio::test]
-async fn test_rmdir() -> Result<(), anyhow::Error> {
+async fn test_rmdir_noent() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
@@ -434,12 +451,62 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{rmdir:?}");
-    if matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
+    if !matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
+        panic!("Expected NFS3ERR_NOENT error");
     }
 
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rmdir_notempty() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let rmdir = client
+        .rmdir(RMDIR3args {
+            object: diropargs3 {
+                dir: root.clone(),
+                name: b"another_dir".as_slice().into(),
+            },
+        })
+        .await?;
+
+    tracing::info!("{rmdir:?}");
+    if !matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTEMPTY, _))) {
+        panic!("Expected NFS3ERR_NOTEMPTY error");
+    }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rmdir() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let _ = client
+        .mkdir(MKDIR3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"test_dir".as_slice().into(),
+            },
+            attributes: Default::default(),
+        })
+        .await?
+        .unwrap();
+
+    let rmdir = client
+        .rmdir(RMDIR3args {
+            object: diropargs3 {
+                dir: root.clone(),
+                name: b"test_dir".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    tracing::info!("{rmdir:?}");
     client.shutdown().await
 }
 

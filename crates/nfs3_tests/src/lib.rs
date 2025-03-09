@@ -18,8 +18,9 @@ impl TestContext<TokioIo<DuplexStream>> {
     pub async fn setup() -> Self {
         init_logging();
 
+        let fs_config = server::FsConfig::new();
         let (server, client) = duplex(1024 * 1024);
-        let server = Server::new(server);
+        let server = Server::new(server, fs_config).await.unwrap();
         let root_dir = server.root_dir();
         let server_handle = tokio::task::spawn(server.run());
         let client = nfs3_client::tokio::TokioIo::new(client);
