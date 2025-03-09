@@ -328,8 +328,6 @@ impl Default for TestFs {
     }
 }
 
-// For this demo file system we let the handle just be the file
-// there is only 1 file. a.txt.
 #[async_trait]
 impl NFSFileSystem for TestFs {
     fn capabilities(&self) -> VFSCapabilities {
@@ -401,26 +399,17 @@ impl NFSFileSystem for TestFs {
                     attr.mtime = current_time();
                 }
             };
-            match setattr.uid {
-                nfs::set_uid3::Some(u) => {
-                    attr.uid = u;
-                }
-                nfs::set_uid3::None => {}
+            if let nfs::set_uid3::Some(u) = setattr.uid {
+                attr.uid = u;
             }
-            match setattr.gid {
-                nfs::set_gid3::Some(u) => {
-                    attr.gid = u;
-                }
-                nfs::set_gid3::None => {}
+            if let nfs::set_gid3::Some(u) = setattr.gid {
+                attr.gid = u;
             }
         }
-        match setattr.size {
-            nfs::set_size3::Some(s) => {
-                if let Entry::File(file) = &mut entry {
-                    file.resize(s);
-                }
+        if let nfs::set_size3::Some(s) = setattr.size {
+            if let Entry::File(file) = &mut entry {
+                file.resize(s);
             }
-            nfs::set_size3::None => {}
         }
         Ok(entry.attr().clone())
     }
@@ -469,7 +458,6 @@ impl NFSFileSystem for TestFs {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    #[allow(unused)]
     async fn mkdir(
         &self,
         dirid: fileid3,
@@ -487,18 +475,16 @@ impl NFSFileSystem for TestFs {
         Ok((newid, attr))
     }
 
-    #[allow(unused)]
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
         self.fs.write().unwrap().remove(dirid, filename)
     }
 
-    #[allow(unused)]
     async fn rename(
         &self,
-        from_dirid: fileid3,
-        from_filename: &filename3,
-        to_dirid: fileid3,
-        to_filename: &filename3,
+        _from_dirid: fileid3,
+        _from_filename: &filename3,
+        _to_dirid: fileid3,
+        _to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
     }
