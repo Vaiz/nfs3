@@ -192,7 +192,8 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         // if let Nfs3Option::Some(atime) = setattr.atime
         // if let Nfs3Option::Some(mtime) = setattr.mtime
 
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
+        Self::make_attr(id, &metadata)
     }
 
     async fn read(
@@ -201,7 +202,38 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        use std::io::SeekFrom;
+
+        use wasmer_vfs::OpenOptionsConfig;
+
+        const OPEN_OPTIONS: OpenOptionsConfig = OpenOptionsConfig {
+            read: true,
+            write: false,
+            create_new: false,
+            append: false,
+            truncate: false,
+            create: false,
+        };
+
+        let path = self.id_to_path(id)?;
+        let mut file = self
+            .fs
+            .new_open_options()
+            .options(OPEN_OPTIONS)
+            .open(path)
+            .map_err(wasm_error_to_nfsstat3)?;
+
+        let mut buf = vec![0; count as usize];
+        file.seek(SeekFrom::Start(offset))
+            .map_err(io_error_to_nfsstat3)?;
+        let read = file.read(&mut buf).map_err(io_error_to_nfsstat3)?;
+        let eof = file
+            .bytes_available_read()
+            .map_err(wasm_error_to_nfsstat3)?
+            .unwrap_or_default()
+            == 0;
+        buf.truncate(read as usize);
+        Ok((buf, eof))
     }
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
@@ -360,6 +392,18 @@ fn wasm_error_to_nfsstat3(err: wasmer_vfs::FsError) -> nfsstat3 {
         FsError::WriteZero => nfsstat3::NFS3ERR_IO,
         FsError::DirectoryNotEmpty => nfsstat3::NFS3ERR_NOTEMPTY,
         FsError::UnknownError => nfsstat3::NFS3ERR_SERVERFAULT,
+    }
+}
+
+fn io_error_to_nfsstat3(err: std::io::Error) -> nfsstat3 {
+    use std::io::ErrorKind;
+    match err.kind() {
+        ErrorKind::NotFound => nfsstat3::NFS3ERR_NOENT,
+        ErrorKind::PermissionDenied => nfsstat3::NFS3ERR_ACCES,
+        ErrorKind::AlreadyExists => nfsstat3::NFS3ERR_EXIST,
+        ErrorKind::InvalidInput => nfsstat3::NFS3ERR_INVAL,
+        ErrorKind::UnexpectedEof => nfsstat3::NFS3ERR_IO,
+        _ => nfsstat3::NFS3ERR_IO,
     }
 }
 
