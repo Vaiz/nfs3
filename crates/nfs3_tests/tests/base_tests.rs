@@ -485,13 +485,16 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
-    let _ = client.mkdir(MKDIR3args {
-        where_: diropargs3 {
-            dir: root.clone(),
-            name: b"test_dir".as_slice().into(),
-        },
-        attributes: Default::default(),
-    }).await?.unwrap();
+    let _ = client
+        .mkdir(MKDIR3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"test_dir".as_slice().into(),
+            },
+            attributes: Default::default(),
+        })
+        .await?
+        .unwrap();
 
     let rmdir = client
         .rmdir(RMDIR3args {

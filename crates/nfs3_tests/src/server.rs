@@ -279,7 +279,10 @@ impl Fs {
             id.copied().ok_or(nfsstat3::NFS3ERR_NOENT)?
         };
 
-        let entry = self.flat_list.get(&object_id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let entry = self
+            .flat_list
+            .get(&object_id)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?;
         if let Entry::Dir(dir) = entry {
             if !dir.content.is_empty() {
                 return Err(nfsstat3::NFS3ERR_NOTEMPTY);
