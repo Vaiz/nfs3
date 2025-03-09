@@ -209,7 +209,7 @@ impl Entry {
 
 #[derive(Debug)]
 struct Fs {
-    flat_list: HashMap<fileid3, Entry>,
+    entries: HashMap<fileid3, Entry>,
     root: fileid3,
 }
 
@@ -220,7 +220,7 @@ impl Fs {
         let mut flat_list = HashMap::new();
         flat_list.insert(fileid, root);
         Self {
-            flat_list,
+            entries: flat_list,
             root: fileid,
         }
     }
@@ -230,7 +230,7 @@ impl Fs {
 
         let id = entry.fileid();
 
-        let map_entry = self.flat_list.entry(id);
+        let map_entry = self.entries.entry(id);
         match map_entry {
             MapEntry::Occupied(_) => {
                 tracing::warn!("object with same id already exists: {id}");
@@ -241,16 +241,16 @@ impl Fs {
             }
         }
 
-        let parent_entry = self.flat_list.get_mut(&parent);
+        let parent_entry = self.entries.get_mut(&parent);
         match parent_entry {
             None => {
                 tracing::warn!("parent not found: {parent}");
-                self.flat_list.remove(&id); // remove the entry we just added
+                self.entries.remove(&id); // remove the entry we just added
                 Err(nfsstat3::NFS3ERR_NOENT)
             }
             Some(Entry::File(_)) => {
                 tracing::warn!("parent is not a directory: {parent}");
-                self.flat_list.remove(&id); // remove the entry we just added
+                self.entries.remove(&id); // remove the entry we just added
                 Err(nfsstat3::NFS3ERR_NOTDIR)
             }
             Some(Entry::Dir(dir)) => {
@@ -267,10 +267,10 @@ impl Fs {
         }
 
         let object_id = {
-            let entry = self.flat_list.get(&dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+            let entry = self.entries.get(&dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
             let dir = entry.as_dir()?;
             let id = dir.content.iter().find(|i| {
-                if let Some(f) = self.flat_list.get(i) {
+                if let Some(f) = self.entries.get(i) {
                     f.name() == filename
                 } else {
                     false
@@ -280,7 +280,7 @@ impl Fs {
         };
 
         let entry = self
-            .flat_list
+            .entries
             .get(&object_id)
             .ok_or(nfsstat3::NFS3ERR_NOENT)?;
         if let Entry::Dir(dir) = entry {
@@ -289,8 +289,8 @@ impl Fs {
             }
         }
 
-        self.flat_list.remove(&object_id);
-        self.flat_list
+        self.entries.remove(&object_id);
+        self.entries
             .get_mut(&dirid)
             .unwrap()
             .as_dir_mut()?
@@ -300,11 +300,11 @@ impl Fs {
     }
 
     fn get(&self, id: fileid3) -> Option<&Entry> {
-        self.flat_list.get(&id)
+        self.entries.get(&id)
     }
 
     fn get_mut(&mut self, id: fileid3) -> Option<&mut Entry> {
-        self.flat_list.get_mut(&id)
+        self.entries.get_mut(&id)
     }
 }
 
