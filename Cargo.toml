@@ -13,7 +13,7 @@ license = "Unlicense"
 
 [workspace.dependencies]
 anyhow = "1.0.97"
-async-trait = "0.1.87"
+async-trait = "0.1.88"
 byteorder = "1.5.0"
 filetime = "0.2.25"
 intaglio = "1.10"
