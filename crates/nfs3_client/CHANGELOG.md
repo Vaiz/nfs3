@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.2.0...nfs3_client-v0.2.1) - 2025-03-15
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.2.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.1...nfs3_client-v0.2.0) - 2025-03-02
 
 ### Fixed
