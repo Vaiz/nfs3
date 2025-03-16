@@ -603,11 +603,11 @@ async fn readdir_impl(
 
     let result = readdir_result.unwrap();
 
-    let mut resok = READDIR3res::Ok(READDIR3resok {
+    let mut resok = READDIR3resok {
         dir_attributes,
         cookieverf,
         reply: dirlist3::default(),
-    });
+    };
 
     let empty_len = xid.packed_size() + resok.packed_size();
     if empty_len > readdir3args.count as usize {
@@ -615,7 +615,7 @@ async fn readdir_impl(
         return Ok(READDIR3res::Err((
             nfsstat3::NFS3ERR_TOOSMALL,
             READDIR3resfail {
-                dir_attributes: resok.unwrap().dir_attributes,
+                dir_attributes: resok.dir_attributes,
             },
         )));
     }
@@ -650,15 +650,10 @@ async fn readdir_impl(
         }
     }
 
-    match &mut resok {
-        READDIR3res::Ok(ok) => {
-            ok.reply.entries = entries.into_inner();
-            ok.reply.eof = eof;
-        }
-        READDIR3res::Err(_) => unreachable!(),
-    }
+    resok.reply.entries = entries.into_inner();
+    resok.reply.eof = eof;
 
-    Ok(resok)
+    Ok(Nfs3Result::Ok(resok))
 }
 
 pub async fn nfsproc3_write(
