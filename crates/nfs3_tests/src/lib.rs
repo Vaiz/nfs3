@@ -23,11 +23,11 @@ impl TestContext<TokioIo<DuplexStream>> {
         config.add_dir("/another_dir");
         config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
 
-        Self::setup_with_config(config).await
+        Self::setup_with_config(config, tracing::Level::DEBUG).await
     }
 
-    pub async fn setup_with_config(fs_config: server::FsConfig) -> Self {
-        init_logging();
+    pub async fn setup_with_config(fs_config: server::FsConfig, log_level: tracing::Level) -> Self {
+        init_logging(log_level);
 
         let (server, client) = duplex(1024 * 1024);
         let server = Server::new(server, fs_config).await.unwrap();
@@ -76,10 +76,10 @@ impl<IO> DerefMut for TestContext<IO> {
 
 static LOGGING: std::sync::Once = std::sync::Once::new();
 
-pub fn init_logging() {
+pub fn init_logging(level: tracing::Level) {
     LOGGING.call_once(|| {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(level)
             .with_writer(std::io::stderr)
             .init();
     });

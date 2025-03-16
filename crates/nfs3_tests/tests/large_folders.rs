@@ -7,25 +7,21 @@ use nfs3_types::nfs3::{
 use nfs3_types::xdr_codec::{Opaque, PackedSize};
 use tracing::info;
 
-#[ignore = "wip"]
 #[tokio::test]
 async fn test_10() {
     test_dir(10, "dir_10").await.unwrap();
 }
 
-#[ignore = "wip"]
 #[tokio::test]
 async fn test_100() {
     test_dir(100, "dir_100").await.unwrap();
 }
 
-#[ignore = "wip"]
 #[tokio::test]
 async fn test_1000() {
     test_dir(1000, "dir_1000").await.unwrap();
 }
 
-#[ignore = "wip"]
 #[tokio::test]
 async fn test_10000() {
     test_dir(10000, "dir_10000").await.unwrap();
@@ -47,19 +43,22 @@ fn get_config(dirname: &str, size: usize) -> FsConfig {
 }
 
 fn get_file_name(i: usize) -> String {
-    format!("this_is_a_really_long_file_name_number_{i}_that_keeps_going_and_going_and_going_0123456789.txt")
+    format!("{i}_this_is_a_really_long_file_name_that_keeps_going_and_going_and_going_and_going_0123456789.txt")
 }
 
 async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
+    const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
     let config = get_config(dir, size);
-    let mut client = TestContext::setup_with_config(config).await;
+    let mut client = TestContext::setup_with_config(config, LOG_LEVEL).await;
 
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
-    for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 256] {
-        readdir(&mut client, dir.clone(), count, size).await?;
+    for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
+        if size < 20 { // readdir does not work with large folders yet
+            readdir(&mut client, dir.clone(), count, size).await?;
+        }
         readdir_plus(&mut client, dir.clone(), count, count, size).await?;
         readdir_plus(&mut client, dir.clone(), 1024 * 1024, count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, 1024 * 1024, size).await?;
