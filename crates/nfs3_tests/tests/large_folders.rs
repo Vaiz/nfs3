@@ -1,11 +1,11 @@
 use nfs3_client::io::{AsyncRead, AsyncWrite};
 use nfs3_tests::{FsConfig, TestContext};
 use nfs3_types::nfs3::{
-    cookieverf3, dirlist3, dirlistplus3, diropargs3, filename3, nfs_fh3, LOOKUP3args, READDIR3args, READDIRPLUS3args
+    LOOKUP3args, READDIR3args, READDIRPLUS3args, cookieverf3, dirlist3, dirlistplus3, diropargs3,
+    filename3, nfs_fh3,
 };
 use nfs3_types::xdr_codec::{Opaque, PackedSize};
 use tracing::info;
-
 
 #[ignore = "wip"]
 #[tokio::test]
@@ -19,13 +19,11 @@ async fn test_100() {
     test_dir(100, "dir_100").await.unwrap();
 }
 
-
 #[ignore = "wip"]
 #[tokio::test]
 async fn test_1000() {
     test_dir(1000, "dir_1000").await.unwrap();
 }
-
 
 #[ignore = "wip"]
 #[tokio::test]
@@ -63,8 +61,8 @@ async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 256] {
         readdir(&mut client, dir.clone(), count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, count, size).await?;
-        readdir_plus(&mut client, dir.clone(), 1024*1024, count, size).await?;
-        readdir_plus(&mut client, dir.clone(), count, 1024*1024, size).await?;
+        readdir_plus(&mut client, dir.clone(), 1024 * 1024, count, size).await?;
+        readdir_plus(&mut client, dir.clone(), count, 1024 * 1024, size).await?;
     }
 
     Ok(())
@@ -89,7 +87,7 @@ async fn lookup<IO: AsyncRead + AsyncWrite>(
 
 // count
 // The maximum size of the READDIR3resok structure, in
-// bytes.  The size must include all XDR overhead. The
+// bytes. The size must include all XDR overhead. The
 // server is free to return less than count bytes of
 // data.
 async fn readdir<IO: AsyncRead + AsyncWrite>(
@@ -145,6 +143,16 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
     Ok(())
 }
 
+// dircount
+// The maximum number of bytes of directory information
+// returned. This number should not include the size of
+// the attributes and file handle portions of the result.
+//
+// maxcount
+// The maximum size of the READDIRPLUS3resok structure, in
+// bytes. The size must include all XDR overhead. The
+// server is free to return fewer than maxcount bytes of
+// data.
 async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
     client: &mut TestContext<IO>,
     dir: nfs_fh3,
