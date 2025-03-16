@@ -508,14 +508,14 @@ async fn nfsproc3_readdirplus_impl(
         }
     }
 
+    let eof = all_entries_written && result.end;
     let entries = entries_result.into_inner();
-    if entries.0.is_empty() && !all_entries_written {
+    if entries.0.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
         error!("readdir error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
-    let eof = all_entries_written && result.end;
     debug!("  -- readdir eof {eof}");
     debug!(
         "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
