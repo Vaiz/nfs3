@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use async_trait::async_trait;
-use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
-use nfs3_server::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
+use nfs3_types::nfs3 as nfs;
 use nfs3_types::nfs3::{
-    self as nfs, cookie3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3,
-    nfstime3, sattr3, specdata3,
+    cookie3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
+
+use crate::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
+
+const DELIMITER: char = '/';
 
 #[derive(Debug)]
 struct Dir {
@@ -110,6 +111,7 @@ impl File {
         }
         Ok((bytes[start..end].to_vec(), eof))
     }
+
     fn write(&mut self, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         if offset > self.content.len() as u64 {
             return Err(nfsstat3::NFS3ERR_INVAL);
@@ -203,6 +205,41 @@ impl Entry {
         match self {
             Self::File(file) => &mut file.attr,
             Self::Dir(dir) => &mut dir.attr,
+        }
+    }
+
+    fn set_attr(&mut self, setattr: sattr3) {
+        {
+            let attr = self.attr_mut();
+            match setattr.atime {
+                nfs::set_atime::DONT_CHANGE => {}
+                nfs::set_atime::SET_TO_CLIENT_TIME(c) => {
+                    attr.atime = c;
+                }
+                nfs::set_atime::SET_TO_SERVER_TIME => {
+                    attr.atime = current_time();
+                }
+            };
+            match setattr.mtime {
+                nfs::set_mtime::DONT_CHANGE => {}
+                nfs::set_mtime::SET_TO_CLIENT_TIME(c) => {
+                    attr.mtime = c;
+                }
+                nfs::set_mtime::SET_TO_SERVER_TIME => {
+                    attr.mtime = current_time();
+                }
+            };
+            if let nfs::set_uid3::Some(u) = setattr.uid {
+                attr.uid = u;
+            }
+            if let nfs::set_gid3::Some(u) = setattr.gid {
+                attr.gid = u;
+            }
+        }
+        if let nfs::set_size3::Some(s) = setattr.size {
+            if let Entry::File(file) = self {
+                file.resize(s);
+            }
         }
     }
 }
@@ -309,13 +346,13 @@ impl Fs {
 }
 
 #[derive(Debug)]
-pub struct TestFs {
+pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
     rootdir: fileid3,
     nextid: AtomicU64,
 }
 
-impl Default for TestFs {
+impl Default for MemFs {
     fn default() -> Self {
         let root = Fs::new();
         let rootdir = root.root;
@@ -328,36 +365,60 @@ impl Default for TestFs {
     }
 }
 
-impl TestFs {
-    fn make_iter(&self, dirid: fileid3, start_after: cookie3) -> Result<TestFsIterator, nfsstat3> {
-        let fs = self.fs.read().unwrap();
-        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let dir = entry.as_dir()?;
+impl MemFs {
+    pub fn new(config: MemFsConfig) -> Result<Self, nfsstat3> {
+        let fs = Self::default();
 
-        let mut iter = dir.content.iter();
-        if start_after != 0 {
-            // skip to the start_after entry
-            let find_result = iter.find(|i| **i == start_after);
-            if find_result.is_none() {
-                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+        for entry in config.entries {
+            let id = fs.path_to_id_impl(&entry.parent)?;
+            let name = filename3(Opaque::owned(entry.name.into_bytes()));
+            if entry.is_dir {
+                fs.add_dir(id, name)?;
+            } else {
+                fs.add_file(id, name, sattr3::default(), entry.content)?;
             }
         }
-        let content: Vec<_> = iter.copied().collect();
-        Ok(TestFsIterator::new(self.fs.clone(), content))
-    }
-}
-
-#[async_trait]
-impl NFSFileSystem for TestFs {
-    fn capabilities(&self) -> VFSCapabilities {
-        VFSCapabilities::ReadWrite
+        Ok(fs)
     }
 
-    fn root_dir(&self) -> fileid3 {
-        self.rootdir
+    fn add_dir(
+        &self,
+        dirid: fileid3,
+        dirname: filename3<'static>,
+    ) -> Result<(fileid3, fattr3), nfsstat3> {
+        let newid = self
+            .nextid
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let dir = Entry::new_dir(dirname.clone_to_owned(), newid, dirid);
+        let attr = dir.attr().clone();
+
+        self.fs.write().unwrap().push(dirid, dir)?;
+
+        Ok((newid, attr))
     }
 
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+    fn add_file(
+        &self,
+        dirid: fileid3,
+        filename: filename3<'static>,
+        attr: sattr3,
+        content: Vec<u8>,
+    ) -> Result<(fileid3, fattr3), nfsstat3> {
+        let newid = self
+            .nextid
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let mut file = Entry::new_file(filename, newid, dirid, content);
+        file.set_attr(attr);
+        let attr = file.attr().clone();
+
+        self.fs.write().unwrap().push(dirid, file)?;
+
+        Ok((newid, attr))
+    }
+
+    fn lookup_impl(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
         let fs = self.fs.read().unwrap();
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
@@ -389,6 +450,50 @@ impl NFSFileSystem for TestFs {
         Err(nfsstat3::NFS3ERR_NOENT)
     }
 
+    fn path_to_id_impl(&self, path: &str) -> Result<fileid3, nfsstat3> {
+        let splits = path.split(DELIMITER);
+        let mut fid = self.root_dir();
+        for component in splits {
+            if component.is_empty() {
+                continue;
+            }
+            fid = self.lookup_impl(fid, &component.as_bytes().into())?;
+        }
+        Ok(fid)
+    }
+
+    fn make_iter(&self, dirid: fileid3, start_after: cookie3) -> Result<MemFsIterator, nfsstat3> {
+        let fs = self.fs.read().unwrap();
+        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let dir = entry.as_dir()?;
+
+        let mut iter = dir.content.iter();
+        if start_after != 0 {
+            // skip to the start_after entry
+            let find_result = iter.find(|i| **i == start_after);
+            if find_result.is_none() {
+                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+            }
+        }
+        let content: Vec<_> = iter.copied().collect();
+        Ok(MemFsIterator::new(self.fs.clone(), content))
+    }
+}
+
+#[async_trait::async_trait]
+impl NFSFileSystem for MemFs {
+    fn capabilities(&self) -> VFSCapabilities {
+        VFSCapabilities::ReadWrite
+    }
+
+    fn root_dir(&self) -> fileid3 {
+        self.rootdir
+    }
+
+    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+        self.lookup_impl(dirid, filename)
+    }
+
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
         let fs = self.fs.read().unwrap();
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
@@ -397,39 +502,8 @@ impl NFSFileSystem for TestFs {
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().unwrap();
-        let mut entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        {
-            let attr = entry.attr_mut();
-            match setattr.atime {
-                nfs::set_atime::DONT_CHANGE => {}
-                nfs::set_atime::SET_TO_CLIENT_TIME(c) => {
-                    attr.atime = c;
-                }
-                nfs::set_atime::SET_TO_SERVER_TIME => {
-                    attr.atime = current_time();
-                }
-            };
-            match setattr.mtime {
-                nfs::set_mtime::DONT_CHANGE => {}
-                nfs::set_mtime::SET_TO_CLIENT_TIME(c) => {
-                    attr.mtime = c;
-                }
-                nfs::set_mtime::SET_TO_SERVER_TIME => {
-                    attr.mtime = current_time();
-                }
-            };
-            if let nfs::set_uid3::Some(u) = setattr.uid {
-                attr.uid = u;
-            }
-            if let nfs::set_gid3::Some(u) = setattr.gid {
-                attr.gid = u;
-            }
-        }
-        if let nfs::set_size3::Some(s) = setattr.size {
-            if let Entry::File(file) = &mut entry {
-                file.resize(s);
-            }
-        }
+        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        entry.set_attr(setattr);
         Ok(entry.attr().clone())
     }
 
@@ -451,22 +525,14 @@ impl NFSFileSystem for TestFs {
         let file = entry.as_file_mut()?;
         file.write(offset, data)
     }
+
     async fn create(
         &self,
         dirid: fileid3,
         filename: &filename3,
-        _attr: sattr3,
+        attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        let newid = self
-            .nextid
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let file = Entry::new_file(filename.clone_to_owned(), newid, dirid, Vec::new());
-        let attr = file.attr().clone();
-
-        self.fs.write().unwrap().push(dirid, file)?;
-
-        Ok((newid, attr))
+        self.add_file(dirid, filename.clone_to_owned(), attr, Vec::new())
     }
 
     async fn create_exclusive(
@@ -482,16 +548,7 @@ impl NFSFileSystem for TestFs {
         dirid: fileid3,
         dirname: &filename3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        let newid = self
-            .nextid
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let dir = Entry::new_dir(dirname.clone_to_owned(), newid, dirid);
-        let attr = dir.attr().clone();
-
-        self.fs.write().unwrap().push(dirid, dir)?;
-
-        Ok((newid, attr))
+        self.add_dir(dirid, dirname.clone_to_owned())
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
@@ -535,18 +592,23 @@ impl NFSFileSystem for TestFs {
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
+
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
     }
+
+    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
+        self.path_to_id_impl(path)
+    }
 }
 
-struct TestFsIterator {
+struct MemFsIterator {
     fs: Arc<RwLock<Fs>>,
     entries: Vec<fileid3>,
     index: usize,
 }
 
-impl TestFsIterator {
+impl MemFsIterator {
     fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
         Self {
             fs,
@@ -556,8 +618,8 @@ impl TestFsIterator {
     }
 }
 
-#[async_trait]
-impl ReadDirPlusIterator for TestFsIterator {
+#[async_trait::async_trait]
+impl ReadDirPlusIterator for MemFsIterator {
     async fn next(&mut self) -> Result<nfs::entryplus3<'static>, nfsstat3> {
         if self.index >= self.entries.len() {
             return Err(nfsstat3::NFS3ERR_NOENT);
@@ -582,57 +644,24 @@ impl ReadDirPlusIterator for TestFsIterator {
     }
 }
 
-pub struct Server<IO> {
-    context: RPCContext,
-    io: IO,
-}
-
-impl<IO> Server<IO>
-where
-    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
-{
-    pub fn new(io: IO, memfs: nfs3_server::memfs::MemFs) -> anyhow::Result<Self> {
-        let context = RPCContext {
-            local_port: 2049,
-            client_addr: "localhost".to_string(),
-            auth: nfs3_types::rpc::auth_unix::default(),
-            vfs: Arc::new(memfs),
-            mount_signal: None,
-            export_name: Arc::new("/mnt".to_string()),
-            transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
-        };
-
-        let this = Self { context, io };
-        Ok(this)
-    }
-
-    pub fn root_dir(&self) -> nfs_fh3 {
-        self.context.vfs.id_to_fh(self.context.vfs.root_dir())
-    }
-
-    pub async fn run(self) -> Result<(), anyhow::Error> {
-        nfs3_server::test_reexports::process_socket(self.io, self.context).await
-    }
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct FsConfig {
-    entries: Vec<FsConfigEntry>,
-}
-
 #[derive(Debug, Clone)]
-struct FsConfigEntry {
+struct MemFsConfigEntry {
     parent: String,
     name: String,
     is_dir: bool,
     content: Vec<u8>,
 }
 
-impl FsConfig {
+#[derive(Default, Debug, Clone)]
+pub struct MemFsConfig {
+    entries: Vec<MemFsConfigEntry>,
+}
+
+impl MemFsConfig {
     pub fn add_dir(&mut self, path: &str) {
-        let name = path.split('/').next_back().unwrap().to_string();
+        let name = path.split(DELIMITER).next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
-        self.entries.push(FsConfigEntry {
+        self.entries.push(MemFsConfigEntry {
             parent: path.to_string(),
             name,
             is_dir: true,
@@ -641,9 +670,9 @@ impl FsConfig {
     }
 
     pub fn add_file(&mut self, path: &str, content: &[u8]) {
-        let name = path.split('/').next_back().unwrap().to_string();
+        let name = path.split(DELIMITER).next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
-        self.entries.push(FsConfigEntry {
+        self.entries.push(MemFsConfigEntry {
             parent: path.to_string(),
             name,
             is_dir: false,
@@ -658,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_fs_config() {
-        let mut config = FsConfig::default();
+        let mut config = MemFsConfig::default();
         config.add_file("/a.txt", "hello world\n".as_bytes());
         config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
         config.add_dir("/another_dir");

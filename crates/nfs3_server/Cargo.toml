@@ -18,6 +18,7 @@ doctest = false
 
 [features]
 __test_reexports = [] # should not be used outside nfs3_tests crate
+memfs = []
 
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.3.0" }

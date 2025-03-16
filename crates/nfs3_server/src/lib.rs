@@ -15,6 +15,9 @@ mod transaction_tracker;
 pub(crate) mod units;
 pub mod vfs;
 
+#[cfg(feature = "memfs")]
+pub mod memfs;
+
 /// Reexport for test purposes
 #[doc(hidden)]
 #[cfg(feature = "__test_reexports")]

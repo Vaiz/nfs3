@@ -27,8 +27,8 @@ async fn test_10000() {
     test_dir(10000, "dir_10000").await.unwrap();
 }
 
-fn get_config(dirname: &str, size: usize) -> FsConfig {
-    let mut config = FsConfig::default();
+fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
+    let mut config = nfs3_server::memfs::MemFsConfig::default();
 
     config.add_file("/a.txt", "hello world\n".as_bytes());
     config.add_file("/b.txt", "Greetings\n".as_bytes());
@@ -49,7 +49,7 @@ fn get_file_name(i: usize) -> String {
 async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
     let config = get_config(dir, size);
-    let mut client = TestContext::setup_with_config(config, LOG_LEVEL).await;
+    let mut client = TestContext::setup_with_config(config, LOG_LEVEL);
 
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;
