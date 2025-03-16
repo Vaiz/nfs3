@@ -56,10 +56,7 @@ async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
-        if size < 20 {
-            // readdir does not work with large folders yet
-            readdir(&mut client, dir.clone(), count, size).await?;
-        }
+        readdir(&mut client, dir.clone(), count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, count, size).await?;
         readdir_plus(&mut client, dir.clone(), 1024 * 1024, count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, 1024 * 1024, size).await?;
