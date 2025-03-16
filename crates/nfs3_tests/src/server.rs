@@ -508,7 +508,6 @@ impl NFSFileSystem for TestFs {
             loop {
                 if let Some(i) = iter.next() {
                     if *i == start_after {
-                        iter.next();
                         break;
                     }
                 } else {
