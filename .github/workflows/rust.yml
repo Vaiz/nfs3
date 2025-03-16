@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  debug_build:
     strategy:
       fail-fast: false
       matrix:
@@ -20,7 +20,7 @@ jobs:
           os: ubuntu-latest
 
     runs-on: ${{ matrix.os }}
-    name: Build ${{ matrix.os }}
+    name: Debug Build ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
@@ -30,14 +30,38 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
 
-    - name: Debug build
+    - name: Build
       run: cargo build --locked --verbose --target ${{ matrix.target }}
-    
-    - name: Release build
+
+    - name: Run tests
+      run: cargo test --locked --verbose --all-features --target ${{ matrix.target }}
+
+  release_build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: x86_64-pc-windows-msvc
+          os: windows-latest
+        - target: x86_64-unknown-linux-gnu
+          os: ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+    name: Release Build ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Update Rust
+      run: rustup update
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Build
       run: cargo build --release --locked --verbose --target ${{ matrix.target }}
 
-    - name: Run tests (Debug)
-      run: cargo test --locked --verbose --all-features --target ${{ matrix.target }}
+    - name: Run tests
+      run: cargo test --release --locked --verbose --all-features --target ${{ matrix.target }}
 
   code_guidelines:
     runs-on: ubuntu-latest
