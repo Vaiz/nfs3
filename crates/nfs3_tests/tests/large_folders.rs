@@ -106,7 +106,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
         let args = READDIR3args {
             dir: dir.clone(),
             cookie,
-            cookieverf: cookieverf.clone(),
+            cookieverf,
             count,
         };
 
@@ -118,7 +118,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
 
         let dirlist3 { entries, eof } = resok.reply;
         let entries = entries.into_inner();
-        assert!(eof || entries.len() > 0, "eof is false but no entries");
+        assert!(eof || !entries.is_empty(), "eof is false but no entries");
 
         cookieverf = resok.cookieverf;
         cookie = entries.last().map_or(0, |e| e.cookie);
@@ -170,7 +170,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
         let args = READDIRPLUS3args {
             dir: dir.clone(),
             cookie,
-            cookieverf: cookieverf.clone(),
+            cookieverf,
             dircount,
             maxcount,
         };
@@ -183,7 +183,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
 
         let dirlistplus3 { entries, eof } = resok.reply;
         let entries = entries.into_inner();
-        assert!(eof || entries.len() > 0, "eof is false but no entries");
+        assert!(eof || !entries.is_empty(), "eof is false but no entries");
 
         cookieverf = resok.cookieverf;
         cookie = entries.last().map_or(0, |e| e.cookie);
