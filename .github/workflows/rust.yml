@@ -66,6 +66,7 @@ jobs:
       run: |
         rustup update
         rustup toolchain install nightly
+        rustup component add --toolchain nightly rustfmt
 
     - name: fmt
       run: cargo +nightly fmt --check
