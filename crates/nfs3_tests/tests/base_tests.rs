@@ -110,7 +110,7 @@ async fn test_readlink() -> Result<(), anyhow::Error> {
 }
 
 #[tokio::test]
-async fn test_read_dir() -> Result<(), anyhow::Error> {
+async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
@@ -584,6 +584,28 @@ async fn test_readdir() -> Result<(), anyhow::Error> {
 }
 
 #[tokio::test]
+async fn test_readdir_too_small() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let readdir = client
+        .readdir(READDIR3args {
+            dir: root.clone(),
+            cookie: 0,
+            cookieverf: cookieverf3::default(),
+            count: 10,
+        })
+        .await?;
+
+    tracing::info!("{readdir:?}");
+    if !matches!(readdir, Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))) {
+        panic!("Expected NFS3ERR_TOOSMALL error");
+    }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
 async fn test_readdirplus() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
@@ -600,6 +622,58 @@ async fn test_readdirplus() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{readdirplus:?}");
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_readdirplus_dircount_too_small() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let readdirplus = client
+        .readdirplus(READDIRPLUS3args {
+            dir: root.clone(),
+            cookie: 0,
+            cookieverf: cookieverf3::default(),
+            dircount: 10,
+            maxcount: 1024 * 1024,
+        })
+        .await?;
+
+    tracing::info!("{readdirplus:?}");
+    if !matches!(
+        readdirplus,
+        Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
+    ) {
+        panic!("Expected NFS3ERR_TOOSMALL error");
+    }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_readdirplus_maxcount_too_small() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup().await;
+    let root = client.root_dir().clone();
+
+    let readdirplus = client
+        .readdirplus(READDIRPLUS3args {
+            dir: root.clone(),
+            cookie: 0,
+            cookieverf: cookieverf3::default(),
+            dircount: 1024 * 1024,
+            maxcount: 10,
+        })
+        .await?;
+
+    tracing::info!("{readdirplus:?}");
+    if !matches!(
+        readdirplus,
+        Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
+    ) {
+        panic!("Expected NFS3ERR_TOOSMALL error");
+    }
+
     client.shutdown().await
 }
 

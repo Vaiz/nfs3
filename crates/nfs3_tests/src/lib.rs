@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 
 use nfs3_client::tokio::TokioIo;
 use nfs3_types::nfs3::nfs_fh3;
-pub use server::Server;
+pub use server::{FsConfig, Server};
 use tokio::io::{DuplexStream, duplex};
 
 pub struct TestContext<IO> {
@@ -16,9 +16,19 @@ pub struct TestContext<IO> {
 
 impl TestContext<TokioIo<DuplexStream>> {
     pub async fn setup() -> Self {
-        init_logging();
+        let mut config = server::FsConfig::default();
 
-        let fs_config = server::FsConfig::new();
+        config.add_file("/a.txt", "hello world\n".as_bytes());
+        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_dir("/another_dir");
+        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+
+        Self::setup_with_config(config, tracing::Level::DEBUG).await
+    }
+
+    pub async fn setup_with_config(fs_config: server::FsConfig, log_level: tracing::Level) -> Self {
+        init_logging(log_level);
+
         let (server, client) = duplex(1024 * 1024);
         let server = Server::new(server, fs_config).await.unwrap();
         let root_dir = server.root_dir();
@@ -66,10 +76,10 @@ impl<IO> DerefMut for TestContext<IO> {
 
 static LOGGING: std::sync::Once = std::sync::Once::new();
 
-pub fn init_logging() {
+pub fn init_logging(level: tracing::Level) {
     LOGGING.call_once(|| {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(level)
             .with_writer(std::io::stderr)
             .init();
     });

@@ -508,7 +508,6 @@ impl NFSFileSystem for TestFs {
             loop {
                 if let Some(i) = iter.next() {
                     if *i == start_after {
-                        iter.next();
                         break;
                     }
                 } else {
@@ -607,10 +606,12 @@ where
     }
 }
 
+#[derive(Default, Debug, Clone)]
 pub struct FsConfig {
     entries: Vec<FsConfigEntry>,
 }
 
+#[derive(Debug, Clone)]
 struct FsConfigEntry {
     parent: String,
     name: String,
@@ -618,24 +619,7 @@ struct FsConfigEntry {
     content: Vec<u8>,
 }
 
-impl Default for FsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl FsConfig {
-    pub fn new() -> Self {
-        let mut config = Self {
-            entries: Vec::new(),
-        };
-        config.add_file("/a.txt", "hello world\n".as_bytes());
-        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
-        config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
-        config
-    }
-
     pub fn add_dir(&mut self, path: &str) {
         let name = path.split('/').next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
@@ -665,7 +649,12 @@ mod tests {
 
     #[test]
     fn test_fs_config() {
-        let config = FsConfig::new();
+        let mut config = FsConfig::default();
+        config.add_file("/a.txt", "hello world\n".as_bytes());
+        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_dir("/another_dir");
+        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+
         assert_eq!(config.entries.len(), 4);
         assert_eq!(config.entries[0].parent, "/");
         assert_eq!(config.entries[1].parent, "/");

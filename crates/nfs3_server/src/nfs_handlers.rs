@@ -460,7 +460,14 @@ async fn nfsproc3_readdirplus_impl(
     // dir_attr.pack(output)?;
     // return Ok(());
     // }
+
     // subtract off the final entryplus* field (which must be false) and the eof
+    if args.maxcount < 128 {
+        // we have no space to write anything
+        let stat = nfsstat3::NFS3ERR_TOOSMALL;
+        error!("readdir error {xid} --> {stat:?}");
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+    }
     let max_bytes_allowed = args.maxcount as usize - 128;
     // args.dircount is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
@@ -501,14 +508,14 @@ async fn nfsproc3_readdirplus_impl(
         }
     }
 
+    let eof = all_entries_written && result.end;
     let entries = entries_result.into_inner();
-    if entries.0.is_empty() && !all_entries_written {
+    if entries.0.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
         error!("readdir error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
-    let eof = all_entries_written && result.end;
     debug!("  -- readdir eof {eof}");
     debug!(
         "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
@@ -596,13 +603,22 @@ async fn readdir_impl(
 
     let result = readdir_result.unwrap();
 
-    let mut resok = READDIR3res::Ok(READDIR3resok {
+    let mut resok = READDIR3resok {
         dir_attributes,
         cookieverf,
         reply: dirlist3::default(),
-    });
+    };
 
     let empty_len = xid.packed_size() + resok.packed_size();
+    if empty_len > readdir3args.count as usize {
+        // we have no space to write anything
+        return Ok(READDIR3res::Err((
+            nfsstat3::NFS3ERR_TOOSMALL,
+            READDIR3resfail {
+                dir_attributes: resok.dir_attributes,
+            },
+        )));
+    }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
     let mut entries = BoundedList::new(max_bytes_allowed);
     let mut eof = result.end;
@@ -634,15 +650,10 @@ async fn readdir_impl(
         }
     }
 
-    match &mut resok {
-        READDIR3res::Ok(ok) => {
-            ok.reply.entries = entries.into_inner();
-            ok.reply.eof = eof;
-        }
-        READDIR3res::Err(_) => unreachable!(),
-    }
+    resok.reply.entries = entries.into_inner();
+    resok.reply.eof = eof;
 
-    Ok(resok)
+    Ok(Nfs3Result::Ok(resok))
 }
 
 pub async fn nfsproc3_write(
