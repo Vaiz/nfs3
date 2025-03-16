@@ -11,7 +11,7 @@ use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::*;
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
-use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
+use nfs3_server::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
 use nfs3_types::nfs3::*;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -439,57 +439,73 @@ impl NFSFileSystem for MirrorFS {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-        max_entries: usize,
-    ) -> Result<ReadDirResult<'static>, nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
-        fsmap.refresh_entry(dirid).await?;
-        fsmap.refresh_dir_list(dirid).await?;
-
-        let entry = fsmap.find_entry(dirid)?;
-        if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        }
-        debug!("readdir({:?}, {:?})", entry, start_after);
-        // we must have children here
-        let children = entry.children.ok_or(nfsstat3::NFS3ERR_IO)?;
-
-        let mut ret = ReadDirResult {
-            entries: Vec::new(),
-            end: false,
-        };
-
-        let range_start = if start_after > 0 {
-            Bound::Excluded(start_after)
-        } else {
-            Bound::Unbounded
-        };
-
-        let remaining_length = children.range((range_start, Bound::Unbounded)).count();
-        let path = fsmap.sym_to_path(&entry.name).await;
-        debug!("path: {:?}", path);
-        debug!("children len: {:?}", children.len());
-        debug!("remaining_len : {:?}", remaining_length);
-        for i in children.range((range_start, Bound::Unbounded)) {
-            let fileid = *i;
-            let fileent = fsmap.find_entry(fileid)?;
-            let name = fsmap.sym_to_fname(&fileent.name).await;
-            debug!("\t --- {:?} {:?}", fileid, name);
-            ret.entries.push(DirEntry {
-                fileid,
-                name: filename3::from_os_string(name),
-                attr: fileent.fsmeta,
-            });
-            if ret.entries.len() >= max_entries {
-                break;
-            }
-        }
-        if ret.entries.len() == remaining_length {
-            ret.end = true;
-        }
-        debug!("readdir_result:{:?}", ret);
-
-        Ok(ret)
+    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
+
+    async fn readdirplus(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    // async fn readdir(
+    // &self,
+    // dirid: fileid3,
+    // start_after: fileid3,
+    // max_entries: usize,
+    // ) -> Result<ReadDirResult<'static>, nfsstat3> {
+    // let mut fsmap = self.fsmap.lock().await;
+    // fsmap.refresh_entry(dirid).await?;
+    // fsmap.refresh_dir_list(dirid).await?;
+    //
+    // let entry = fsmap.find_entry(dirid)?;
+    // if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
+    // return Err(nfsstat3::NFS3ERR_NOTDIR);
+    // }
+    // debug!("readdir({:?}, {:?})", entry, start_after);
+    // we must have children here
+    // let children = entry.children.ok_or(nfsstat3::NFS3ERR_IO)?;
+    //
+    // let mut ret = ReadDirResult {
+    // entries: Vec::new(),
+    // end: false,
+    // };
+    //
+    // let range_start = if start_after > 0 {
+    // Bound::Excluded(start_after)
+    // } else {
+    // Bound::Unbounded
+    // };
+    //
+    // let remaining_length = children.range((range_start, Bound::Unbounded)).count();
+    // let path = fsmap.sym_to_path(&entry.name).await;
+    // debug!("path: {:?}", path);
+    // debug!("children len: {:?}", children.len());
+    // debug!("remaining_len : {:?}", remaining_length);
+    // for i in children.range((range_start, Bound::Unbounded)) {
+    // let fileid = *i;
+    // let fileent = fsmap.find_entry(fileid)?;
+    // let name = fsmap.sym_to_fname(&fileent.name).await;
+    // debug!("\t --- {:?} {:?}", fileid, name);
+    // ret.entries.push(DirEntry {
+    // fileid,
+    // name: filename3::from_os_string(name),
+    // attr: fileent.fsmeta,
+    // });
+    // if ret.entries.len() >= max_entries {
+    // break;
+    // }
+    // }
+    // if ret.entries.len() == remaining_length {
+    // ret.end = true;
+    // }
+    // debug!("readdir_result:{:?}", ret);
+    //
+    // Ok(ret)
+    // }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fsmap = self.fsmap.lock().await;

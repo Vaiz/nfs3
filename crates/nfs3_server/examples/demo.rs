@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use nfs3_server::tcp::*;
-use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
+use nfs3_server::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
 use nfs3_types::nfs3::{
     self as nfs, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3,
     specdata3,
@@ -298,49 +298,63 @@ impl NFSFileSystem for DemoFS {
         }
         Err(nfsstat3::NFS3ERR_NOENT)
     }
-
     async fn readdir(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-        max_entries: usize,
-    ) -> Result<ReadDirResult<'static>, nfsstat3> {
-        let fs = self.fs.lock().unwrap();
-        let entry = fs.get(dirid as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        if let FSContents::File(_) = entry.contents {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        } else if let FSContents::Directory(dir) = &entry.contents {
-            let mut ret = ReadDirResult {
-                entries: Vec::new(),
-                end: false,
-            };
-            let mut start_index = 0;
-            if start_after > 0 {
-                if let Some(pos) = dir.iter().position(|&r| r == start_after) {
-                    start_index = pos + 1;
-                } else {
-                    return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
-                }
-            }
-            let remaining_length = dir.len() - start_index;
-
-            for i in dir[start_index..].iter() {
-                ret.entries.push(DirEntry {
-                    fileid: *i,
-                    name: fs[(*i) as usize].name.clone_to_owned(),
-                    attr: fs[(*i) as usize].attr.clone(),
-                });
-                if ret.entries.len() >= max_entries {
-                    break;
-                }
-            }
-            if ret.entries.len() == remaining_length {
-                ret.end = true;
-            }
-            return Ok(ret);
-        }
-        Err(nfsstat3::NFS3ERR_NOENT)
+    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
+
+    async fn readdirplus(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+    // async fn readdir(
+    // &self,
+    // dirid: fileid3,
+    // start_after: fileid3,
+    // max_entries: usize,
+    // ) -> Result<ReadDirResult<'static>, nfsstat3> {
+    // let fs = self.fs.lock().unwrap();
+    // let entry = fs.get(dirid as usize).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+    // if let FSContents::File(_) = entry.contents {
+    // return Err(nfsstat3::NFS3ERR_NOTDIR);
+    // } else if let FSContents::Directory(dir) = &entry.contents {
+    // let mut ret = ReadDirResult {
+    // entries: Vec::new(),
+    // end: false,
+    // };
+    // let mut start_index = 0;
+    // if start_after > 0 {
+    // if let Some(pos) = dir.iter().position(|&r| r == start_after) {
+    // start_index = pos + 1;
+    // } else {
+    // return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+    // }
+    // }
+    // let remaining_length = dir.len() - start_index;
+    //
+    // for i in dir[start_index..].iter() {
+    // ret.entries.push(DirEntry {
+    // fileid: *i,
+    // name: fs[(*i) as usize].name.clone_to_owned(),
+    // attr: fs[(*i) as usize].attr.clone(),
+    // });
+    // if ret.entries.len() >= max_entries {
+    // break;
+    // }
+    // }
+    // if ret.entries.len() == remaining_length {
+    // ret.end = true;
+    // }
+    // return Ok(ret);
+    // }
+    // Err(nfsstat3::NFS3ERR_NOENT)
+    // }
 
     /// Removes a file.
     /// If not supported dur to readonly file system

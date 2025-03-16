@@ -335,9 +335,12 @@ impl TestFs {
         let dir = entry.as_dir()?;
 
         let mut iter = dir.content.iter();
-        let find_result = iter.find(|i| **i == start_after);
-        if find_result.is_none() {
-            return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+        if start_after != 0 {
+            // skip to the start_after entry
+            let find_result = iter.find(|i| **i == start_after);
+            if find_result.is_none() {
+                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+            }
         }
         let content: Vec<_> = iter.copied().collect();
         Ok(TestFsIterator::new(self.fs.clone(), content))
