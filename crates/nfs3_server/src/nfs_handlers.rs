@@ -460,7 +460,14 @@ async fn nfsproc3_readdirplus_impl(
     // dir_attr.pack(output)?;
     // return Ok(());
     // }
+
     // subtract off the final entryplus* field (which must be false) and the eof
+    if args.maxcount < 128 {
+        // we have no space to write anything
+        let stat = nfsstat3::NFS3ERR_TOOSMALL;
+        error!("readdir error {xid} --> {stat:?}");
+        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+    }
     let max_bytes_allowed = args.maxcount as usize - 128;
     // args.dircount is bytes of just fileid, name, cookie.
     // This is hard to ballpark, so we just divide it by 16
@@ -603,6 +610,15 @@ async fn readdir_impl(
     });
 
     let empty_len = xid.packed_size() + resok.packed_size();
+    if empty_len > readdir3args.count as usize {
+        // we have no space to write anything
+        return Ok(READDIR3res::Err((
+            nfsstat3::NFS3ERR_TOOSMALL,
+            READDIR3resfail {
+                dir_attributes: resok.unwrap().dir_attributes,
+            },
+        )));
+    }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
     let mut entries = BoundedList::new(max_bytes_allowed);
     let mut eof = result.end;
