@@ -1,52 +1,15 @@
+mod iterator;
+
 use std::cmp::Ordering;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+pub use iterator::{ReadDirIterator, ReadDirPlusIterator, entry3, entryplus3};
 use nfs3_types::nfs3::{FSINFO3resok as fsinfo3, *};
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
-
-#[derive(Debug)]
-pub struct DirEntrySimple<'a> {
-    pub fileid: fileid3,
-    pub name: filename3<'a>,
-}
-#[derive(Default, Debug)]
-pub struct ReadDirSimpleResult<'a> {
-    pub entries: Vec<DirEntrySimple<'a>>,
-    pub end: bool,
-}
-
-#[derive(Debug)]
-pub struct DirEntry<'a> {
-    pub fileid: fileid3,
-    pub name: filename3<'a>,
-    pub attr: fattr3,
-}
-#[derive(Default, Debug)]
-pub struct ReadDirResult<'a> {
-    pub entries: Vec<DirEntry<'a>>,
-    pub end: bool,
-}
-
-impl<'a> ReadDirSimpleResult<'a> {
-    fn from_readdir_result(result: ReadDirResult<'a>) -> Self {
-        let entries: Vec<DirEntrySimple> = result
-            .entries
-            .into_iter()
-            .map(|e| DirEntrySimple {
-                fileid: e.fileid,
-                name: e.name,
-            })
-            .collect();
-        Self {
-            entries,
-            end: result.end,
-        }
-    }
-}
 
 static GENERATION_NUMBER: LazyLock<u64> = LazyLock::new(|| {
     SystemTime::now()
@@ -172,6 +135,14 @@ pub trait NFSFileSystem: Sync {
         to_filename: &filename3,
     ) -> Result<(), nfsstat3>;
 
+    /// Simple version of readdir.
+    /// Only need to return filename and id
+    async fn readdir(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3>;
+
     /// Returns the contents of a directory with pagination.
     /// Directory listing should be deterministic.
     /// Up to max_entries may be returned, and start_after is used
@@ -179,25 +150,11 @@ pub trait NFSFileSystem: Sync {
     ///
     /// For instance if the directory has entry with ids `[1,6,2,11,8,9]`
     /// and start_after=6, readdir should returning 2,11,8,...
-    //
-    async fn readdir(
+    async fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-        max_entries: usize,
-    ) -> Result<ReadDirResult<'static>, nfsstat3>;
-
-    /// Simple version of readdir.
-    /// Only need to return filename and id
-    async fn readdir_simple(
-        &self,
-        dirid: fileid3,
-        count: usize,
-    ) -> Result<ReadDirSimpleResult, nfsstat3> {
-        Ok(ReadDirSimpleResult::from_readdir_result(
-            self.readdir(dirid, 0, count).await?,
-        ))
-    }
+    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3>;
 
     /// Makes a symlink with the following attributes.
     /// If not supported due to readonly file system

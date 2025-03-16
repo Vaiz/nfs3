@@ -5,10 +5,10 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
-use nfs3_server::vfs::{DirEntry, NFSFileSystem, ReadDirResult, VFSCapabilities};
+use nfs3_server::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
 use nfs3_types::nfs3::{
-    self as nfs, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, nfstime3, sattr3,
-    specdata3,
+    self as nfs, cookie3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3,
+    nfstime3, sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
@@ -328,6 +328,22 @@ impl Default for TestFs {
     }
 }
 
+impl TestFs {
+    fn make_iter(&self, dirid: fileid3, start_after: cookie3) -> Result<TestFsIterator, nfsstat3> {
+        let fs = self.fs.read().unwrap();
+        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let dir = entry.as_dir()?;
+
+        let mut iter = dir.content.iter();
+        let find_result = iter.find(|i| **i == start_after);
+        if find_result.is_none() {
+            return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+        }
+        let content: Vec<_> = iter.copied().collect();
+        Ok(TestFsIterator::new(self.fs.clone(), content))
+    }
+}
+
 #[async_trait]
 impl NFSFileSystem for TestFs {
     fn capabilities(&self) -> VFSCapabilities {
@@ -493,45 +509,18 @@ impl NFSFileSystem for TestFs {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-        max_entries: usize,
-    ) -> Result<ReadDirResult<'static>, nfsstat3> {
-        let fs = self.fs.read().unwrap();
-        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let dir = entry.as_dir()?;
-        let mut ret = ReadDirResult {
-            entries: Vec::new(),
-            end: false,
-        };
-        let mut iter = dir.content.iter();
+    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+        let iter = Self::make_iter(self, dirid, start_after)?;
+        Ok(Box::new(iter))
+    }
 
-        if start_after != 0 {
-            loop {
-                if let Some(i) = iter.next() {
-                    if *i == start_after {
-                        break;
-                    }
-                } else {
-                    return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
-                }
-            }
-        }
-
-        while ret.entries.len() < max_entries {
-            let next_id = iter.next();
-            if next_id.is_none() {
-                break;
-            }
-            let i = next_id.unwrap();
-            let entry = fs.get(*i).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
-
-            ret.entries.push(DirEntry {
-                fileid: *i,
-                name: entry.name().clone_to_owned(),
-                attr: entry.attr().clone(),
-            });
-        }
-        ret.end = iter.next().is_none();
-        Ok(ret)
+    async fn readdirplus(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+        let iter = Self::make_iter(self, dirid, start_after)?;
+        Ok(Box::new(iter))
     }
 
     async fn symlink(
@@ -545,6 +534,48 @@ impl NFSFileSystem for TestFs {
     }
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
+    }
+}
+
+struct TestFsIterator {
+    fs: Arc<RwLock<Fs>>,
+    entries: Vec<fileid3>,
+    index: usize,
+}
+
+impl TestFsIterator {
+    fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
+        Self {
+            fs,
+            entries,
+            index: 0,
+        }
+    }
+}
+
+#[async_trait]
+impl ReadDirPlusIterator for TestFsIterator {
+    async fn next(&mut self) -> Result<nfs::entryplus3<'static>, nfsstat3> {
+        if self.index >= self.entries.len() {
+            return Err(nfsstat3::NFS3ERR_NOENT);
+        }
+        let id = self.entries[self.index];
+        self.index += 1;
+
+        let fs = self.fs.read().unwrap();
+        let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let attr = entry.attr().clone();
+        Ok(nfs::entryplus3 {
+            fileid: id,
+            name: entry.name().clone_to_owned(),
+            cookie: id,
+            name_attributes: nfs::post_op_attr::Some(attr),
+            name_handle: nfs::post_op_fh3::None,
+        })
+    }
+
+    fn eof(&self) -> bool {
+        self.index >= self.entries.len()
     }
 }
 

@@ -469,46 +469,40 @@ async fn nfsproc3_readdirplus_impl(
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
     let max_bytes_allowed = args.maxcount as usize - 128;
-    // args.dircount is bytes of just fileid, name, cookie.
-    // This is hard to ballpark, so we just divide it by 16
-    let estimated_max_results = args.dircount / 16;
 
-    let result = context
-        .vfs
-        .readdir(dirid, args.cookie, estimated_max_results as usize)
-        .await;
+    let iter = context.vfs.readdirplus(dirid, args.cookie).await;
 
-    if let Err(stat) = result {
+    if let Err(stat) = iter {
         error!("readdir error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
-    let result = result.unwrap();
-    let mut all_entries_written = true;
+    let mut iter = iter.unwrap();
+    let mut eof = true;
 
     // this is a wrapper around a writer that also just counts the number of bytes
     // written
     let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
-    for entry in result.entries {
-        let handle = post_op_fh3::Some(context.vfs.id_to_fh(entry.fileid));
-
-        let entry = entryplus3 {
-            fileid: entry.fileid,
-            name: entry.name,
-            cookie: entry.fileid,
-            name_attributes: post_op_attr::Some(entry.attr),
-            name_handle: handle,
-        };
-
-        let result = entries_result.try_push(entry);
-        if result.is_err() {
-            trace!(" -- insufficient space. truncating");
-            all_entries_written = false;
-            break;
+    while !iter.eof() {
+        match iter.next().await {
+            Ok(mut entry) => {
+                if entry.name_handle.is_none() {
+                    entry.name_handle = post_op_fh3::Some(context.vfs.id_to_fh(dirid));
+                }
+                let result = entries_result.try_push(entry);
+                if result.is_err() {
+                    trace!(" -- insufficient space. truncating");
+                    eof = false;
+                    break;
+                }
+            }
+            Err(stat) => {
+                error!("readdir error {xid} --> {stat:?}");
+                return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+            }
         }
     }
 
-    let eof = all_entries_written && result.end;
     let entries = entries_result.into_inner();
     if entries.0.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
@@ -519,7 +513,7 @@ async fn nfsproc3_readdirplus_impl(
     debug!("  -- readdir eof {eof}");
     debug!(
         "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
-         {all_entries_written}",
+         {eof}",
         args.cookie,
         entries.0.len()
     );
@@ -589,20 +583,6 @@ async fn readdir_impl(
     debug!(" -- Dir attr {dir_attributes:?}");
     debug!(" -- Dir version {cookieverf:?}");
 
-    // readdir3args.count is bytes of just fileid, name, cookie.
-    // This is hard to ballpark, so we just divide it by 16
-    let estimated_max_results = readdir3args.count / 16;
-    let readdir_result = context
-        .vfs
-        .readdir_simple(dirid, estimated_max_results as usize)
-        .await;
-
-    if let Err(stat) = readdir_result {
-        return Ok(READDIR3res::Err((stat, READDIR3resfail { dir_attributes })));
-    }
-
-    let result = readdir_result.unwrap();
-
     let mut resok = READDIR3resok {
         dir_attributes,
         cookieverf,
@@ -620,39 +600,56 @@ async fn readdir_impl(
         )));
     }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
+
+    let iter = context.vfs.readdir(dirid, readdir3args.cookie).await;
+    if let Err(stat) = iter {
+        return Ok(READDIR3res::Err((
+            stat,
+            READDIR3resfail {
+                dir_attributes: resok.dir_attributes,
+            },
+        )));
+    }
+
+    let mut iter = iter.unwrap();
     let mut entries = BoundedList::new(max_bytes_allowed);
-    let mut eof = result.end;
-
-    let start_index = if readdir3args.cookie == 0 {
-        0
-    } else {
-        let mut start = result.entries.len();
-        for (index, item) in result.entries.iter().enumerate() {
-            if item.fileid == readdir3args.cookie {
-                start = index + 1;
-                break;
+    let mut eof = true;
+    while !iter.eof() {
+        match iter.next().await {
+            Ok(entry) => {
+                let result = entries.try_push(entry);
+                if result.is_err() {
+                    trace!(" -- insufficient space. truncating");
+                    eof = false;
+                    break;
+                }
             }
-        }
-        start
-    };
-
-    for item in result.entries.into_iter().skip(start_index) {
-        let entry = entry3 {
-            fileid: item.fileid,
-            name: item.name,
-            cookie: item.fileid,
-        };
-        let result = entries.try_push(entry);
-        if result.is_err() {
-            trace!(" -- insufficient space. truncating");
-            eof = false;
-            break;
+            Err(stat) => {
+                error!("readdir error {xid} --> {stat:?}");
+                return Ok(READDIR3res::Err((
+                    stat,
+                    READDIR3resfail {
+                        dir_attributes: resok.dir_attributes,
+                    },
+                )));
+            }
         }
     }
 
-    resok.reply.entries = entries.into_inner();
-    resok.reply.eof = eof;
+    let entries = entries.into_inner();
+    if entries.is_empty() && !eof {
+        let stat = nfsstat3::NFS3ERR_TOOSMALL;
+        error!("readdir error {xid} --> {stat:?}");
+        return Ok(READDIR3res::Err((
+            stat,
+            READDIR3resfail {
+                dir_attributes: resok.dir_attributes,
+            },
+        )));
+    }
 
+    resok.reply.entries = entries;
+    resok.reply.eof = eof;
     Ok(Nfs3Result::Ok(resok))
 }
 
