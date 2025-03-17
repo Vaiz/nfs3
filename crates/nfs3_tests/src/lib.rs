@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_types::nfs3::nfs_fh3;
-pub use server::{FsConfig, Server};
+pub use server::{Server};
 use tokio::io::{DuplexStream, duplex};
 
 pub struct TestContext<IO> {
