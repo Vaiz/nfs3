@@ -33,3 +33,7 @@ filetime.workspace = true
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
 intaglio.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
+
+[[example]]
+name = "demo"
+required-features = ["memfs"]

@@ -465,7 +465,7 @@ async fn nfsproc3_readdirplus_impl(
     if args.maxcount < 128 {
         // we have no space to write anything
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
-        error!("readdir error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
     let max_bytes_allowed = args.maxcount as usize - 128;
@@ -473,7 +473,7 @@ async fn nfsproc3_readdirplus_impl(
     let iter = context.vfs.readdirplus(dirid, args.cookie).await;
 
     if let Err(stat) = iter {
-        error!("readdir error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
@@ -497,7 +497,7 @@ async fn nfsproc3_readdirplus_impl(
                 }
             }
             Err(stat) => {
-                error!("readdir error {xid} --> {stat:?}");
+                error!("readdirplus error {xid} --> {stat:?}");
                 return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
             }
         }
@@ -506,14 +506,14 @@ async fn nfsproc3_readdirplus_impl(
     let entries = entries_result.into_inner();
     if entries.0.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
-        error!("readdir error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat:?}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
-    debug!("  -- readdir eof {eof}");
+    debug!("  -- readdirplus eof {eof}");
     debug!(
-        "readir {dirid}, has_version {has_version}, start at {}, flushing {} entries, complete \
-         {eof}",
+        "readdirplus {dirid}, has_version {has_version}, start at {}, flushing {} entries, \
+         complete {eof}",
         args.cookie,
         entries.0.len()
     );

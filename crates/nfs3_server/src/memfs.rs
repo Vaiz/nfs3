@@ -367,6 +367,7 @@ impl Default for MemFs {
 
 impl MemFs {
     pub fn new(config: MemFsConfig) -> Result<Self, nfsstat3> {
+        tracing::info!("creating memfs. Entries count: {}", config.entries.len());
         let fs = Self::default();
 
         for entry in config.entries {
@@ -378,6 +379,7 @@ impl MemFs {
                 fs.add_file(id, name, sattr3::default(), entry.content)?;
             }
         }
+
         Ok(fs)
     }
 
@@ -540,6 +542,7 @@ impl NFSFileSystem for MemFs {
         _dirid: fileid3,
         _filename: &filename3,
     ) -> Result<fileid3, nfsstat3> {
+        tracing::warn!("create_exclusive not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
@@ -562,6 +565,7 @@ impl NFSFileSystem for MemFs {
         _to_dirid: fileid3,
         _to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
+        tracing::warn!("rename not implemented");
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
     }
 
@@ -590,10 +594,12 @@ impl NFSFileSystem for MemFs {
         _symlink: &nfspath3,
         _attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
+        tracing::warn!("symlink not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
+        tracing::warn!("readlink not implemented");
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
     }
 
