@@ -18,7 +18,10 @@ nfs3_types = { path = "../nfs3_types", version = "0.3.0" }
 
 async-trait.workspace = true
 rand.workspace = true
-tokio = { workspace = true, optional = true, default-features = false, features = ["net"] }
+tokio = { workspace = true, optional = true, default-features = false, features = ["net", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, default-features = false, features = ["rt", "macros", "net", "io-util"] }
 
 [package.metadata.docs.rs]
 all-features = true
