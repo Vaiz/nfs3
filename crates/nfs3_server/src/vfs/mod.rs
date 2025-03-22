@@ -1,6 +1,5 @@
 mod iterator;
 
-use std::cmp::Ordering;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 

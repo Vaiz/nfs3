@@ -3,13 +3,15 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
-use nfs3_types::nfs3 as nfs;
 use nfs3_types::nfs3::{
-    cookie3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, sattr3, specdata3,
+    self as nfs, cookie3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3,
+    nfstime3, sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
-use crate::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
+use crate::vfs::{
+    DEFAULT_FH_CONVERTER, NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+};
 
 const DELIMITER: char = '/';
 
@@ -598,6 +600,15 @@ impl NFSFileSystem for MemFs {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
+    /// Converts the fileid to an opaque NFS file handle.
+    fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
+        DEFAULT_FH_CONVERTER.id_to_fh(id)
+    }
+    /// Converts an opaque NFS file handle to a fileid.
+    fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
+        DEFAULT_FH_CONVERTER.fh_to_id(id)
+    }
+
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
         tracing::warn!("readlink not implemented");
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
@@ -636,12 +647,13 @@ impl ReadDirPlusIterator for MemFsIterator {
         let fs = self.fs.read().unwrap();
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let attr = entry.attr().clone();
+        let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
         Ok(nfs::entryplus3 {
             fileid: id,
             name: entry.name().clone_to_owned(),
             cookie: id,
             name_attributes: nfs::post_op_attr::Some(attr),
-            name_handle: nfs::post_op_fh3::None,
+            name_handle: nfs::post_op_fh3::Some(fh),
         })
     }
 
