@@ -33,7 +33,7 @@ pub trait ReadDirPlusIterator: Send + Sync {
 #[async_trait::async_trait]
 impl<T: ReadDirPlusIterator> ReadDirIterator for T {
     async fn next(&mut self) -> NextResult<entry3<'static>> {
-        match self.next().await {
+        match ReadDirPlusIterator::next(self).await {
             NextResult::Ok(entry) => NextResult::Ok(entry3 {
                 fileid: entry.fileid,
                 name: entry.name,
