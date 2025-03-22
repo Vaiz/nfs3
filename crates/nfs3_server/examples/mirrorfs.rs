@@ -234,7 +234,8 @@ impl FSMap {
     }
 
     async fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: Metadata) -> fileid3 {
-        let next_id = if let Some(chid) = self.path_to_id.get(fullpath) {
+        
+        if let Some(chid) = self.path_to_id.get(fullpath) {
             if let Some(chent) = self.id_to_path.get_mut(chid) {
                 chent.fsmeta = metadata_to_fattr3(*chid, &meta);
             }
@@ -253,8 +254,7 @@ impl FSMap {
             self.id_to_path.insert(next_id, new_entry);
             self.path_to_id.insert(fullpath.clone(), next_id);
             next_id
-        };
-        next_id
+        }
     }
 }
 #[derive(Debug)]
