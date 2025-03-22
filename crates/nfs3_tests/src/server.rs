@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
-use nfs3_server::vfs::NFSFileSystem;
 use nfs3_types::nfs3::nfs_fh3;
 
 pub struct Server<IO> {
