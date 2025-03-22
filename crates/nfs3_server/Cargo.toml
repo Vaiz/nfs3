@@ -35,5 +35,5 @@ intaglio.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
 
 [[example]]
-name = "demo"
+name = "memfs"
 required-features = ["memfs"]
