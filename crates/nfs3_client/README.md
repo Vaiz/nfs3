@@ -9,7 +9,7 @@ use nfs3_client::tokio::TokioConnector;
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_types::nfs3;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ip = "127.0.0.1".to_string();
     let mount_path = "/".to_string();
