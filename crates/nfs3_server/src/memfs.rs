@@ -4,13 +4,14 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use nfs3_types::nfs3::{
-    self as nfs, cookie3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3,
-    nfstime3, sattr3, specdata3,
+    self as nfs, cookie3, entryplus3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3,
+    nfsstat3, nfstime3, sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
-    DEFAULT_FH_CONVERTER, NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+    DEFAULT_FH_CONVERTER, NFSFileSystem, NextResult, ReadDirIterator, ReadDirPlusIterator,
+    VFSCapabilities,
 };
 
 const DELIMITER: char = '/';
@@ -637,28 +638,32 @@ impl MemFsIterator {
 
 #[async_trait::async_trait]
 impl ReadDirPlusIterator for MemFsIterator {
-    async fn next(&mut self) -> Result<nfs::entryplus3<'static>, nfsstat3> {
-        if self.index >= self.entries.len() {
-            return Err(nfsstat3::NFS3ERR_NOENT);
+    async fn next(&mut self) -> NextResult<entryplus3<'static>> {
+        loop {
+            if self.index >= self.entries.len() {
+                return NextResult::Eof;
+            }
+            let id = self.entries[self.index];
+            self.index += 1;
+
+            let fs = self.fs.read().unwrap();
+            let entry = fs.get(id);
+            if entry.is_none() {
+                // skip missing entries
+                tracing::warn!("entry not found: {id}");
+                continue;
+            }
+            let entry = entry.unwrap();
+            let attr = entry.attr().clone();
+            let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
+            return NextResult::Ok(entryplus3 {
+                fileid: id,
+                name: entry.name().clone_to_owned(),
+                cookie: id,
+                name_attributes: nfs::post_op_attr::Some(attr),
+                name_handle: nfs::post_op_fh3::Some(fh),
+            });
         }
-        let id = self.entries[self.index];
-        self.index += 1;
-
-        let fs = self.fs.read().unwrap();
-        let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let attr = entry.attr().clone();
-        let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
-        Ok(nfs::entryplus3 {
-            fileid: id,
-            name: entry.name().clone_to_owned(),
-            cookie: id,
-            name_attributes: nfs::post_op_attr::Some(attr),
-            name_handle: nfs::post_op_fh3::Some(fh),
-        })
-    }
-
-    fn eof(&self) -> bool {
-        self.index >= self.entries.len()
     }
 }
 

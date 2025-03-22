@@ -8,7 +8,7 @@ use tracing::{debug, error, trace, warn};
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpc::*;
-use crate::vfs::VFSCapabilities;
+use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
     xid: u32,
@@ -478,14 +478,14 @@ async fn nfsproc3_readdirplus_impl(
     }
 
     let mut iter = iter.unwrap();
-    let mut eof = true;
+    let eof;
 
     // this is a wrapper around a writer that also just counts the number of bytes
     // written
     let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
-    while !iter.eof() {
+    loop {
         match iter.next().await {
-            Ok(mut entry) => {
+            NextResult::Ok(mut entry) => {
                 if entry.name_handle.is_none() {
                     entry.name_handle = post_op_fh3::Some(context.vfs.id_to_fh(dirid));
                 }
@@ -496,7 +496,11 @@ async fn nfsproc3_readdirplus_impl(
                     break;
                 }
             }
-            Err(stat) => {
+            NextResult::Eof => {
+                eof = true;
+                break;
+            }
+            NextResult::Err(stat) => {
                 error!("readdirplus error {xid} --> {stat:?}");
                 return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
             }
@@ -613,10 +617,10 @@ async fn readdir_impl(
 
     let mut iter = iter.unwrap();
     let mut entries = BoundedList::new(max_bytes_allowed);
-    let mut eof = true;
-    while !iter.eof() {
+    let eof;
+    loop {
         match iter.next().await {
-            Ok(entry) => {
+            NextResult::Ok(entry) => {
                 let result = entries.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
@@ -624,7 +628,11 @@ async fn readdir_impl(
                     break;
                 }
             }
-            Err(stat) => {
+            NextResult::Eof => {
+                eof = true;
+                break;
+            }
+            NextResult::Err(stat) => {
                 error!("readdir error {xid} --> {stat:?}");
                 return Ok(READDIR3res::Err((
                     stat,

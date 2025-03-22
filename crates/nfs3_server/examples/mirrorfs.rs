@@ -11,7 +11,9 @@ use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::*;
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
-use nfs3_server::vfs::{NFSFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
+use nfs3_server::vfs::{
+    NFSFileSystem, NextResult, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+};
 use nfs3_types::nfs3::*;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -39,9 +41,7 @@ async fn main() {
         .init();
 
     let args = std::env::args().collect::<Vec<_>>();
-    let path = args
-        .get(1)
-        .expect("must supply directory to mirror");
+    let path = args.get(1).expect("must supply directory to mirror");
     let bind_ip = args.get(2).map(|s| s.as_str()).unwrap_or("0.0.0.0");
     let bind_port = args
         .get(3)
@@ -758,32 +758,42 @@ impl MirrorFsIterator {
 
 #[async_trait]
 impl ReadDirPlusIterator for MirrorFsIterator {
-    async fn next(&mut self) -> Result<entryplus3<'static>, nfsstat3> {
-        if self.index >= self.entries.len() {
-            return Err(nfsstat3::NFS3ERR_NOENT);
+    async fn next(&mut self) -> NextResult<entryplus3<'static>> {
+        loop {
+            if self.index >= self.entries.len() {
+                return NextResult::Eof;
+            }
+
+            let fileid = self.entries[self.index];
+            self.index += 1;
+
+            let fsmap = self.fsmap.read().await;
+            let fs_entry = match fsmap.find_entry(fileid) {
+                Ok(entry) => entry,
+                Err(nfsstat3::NFS3ERR_NOENT) => {
+                    // skip missing entries
+                    debug!("missing entry {fileid}");
+                    continue;
+                }
+                Err(e) => {
+                    return NextResult::Err(e);
+                }
+            };
+
+            let name = fsmap.sym_to_fname(&fs_entry.name).await;
+            debug!("\t --- {fileid} {name:?}");
+            let attr = fs_entry.fsmeta.clone();
+
+            let entryplus = entryplus3 {
+                fileid,
+                name: filename3::from_os_string(name),
+                cookie: fileid,
+                name_attributes: post_op_attr::Some(attr),
+                name_handle: post_op_fh3::None,
+            };
+
+            return NextResult::Ok(entryplus);
         }
-        let fileid = self.entries[self.index];
-        self.index += 1;
-
-        let fsmap = self.fsmap.read().await;
-        let fileent = fsmap.find_entry(fileid)?;
-        let name = fsmap.sym_to_fname(&fileent.name).await;
-        debug!("\t --- {fileid} {name:?}");
-        let attr = fileent.fsmeta.clone();
-
-        let entryplus = entryplus3 {
-            fileid,
-            name: filename3::from_os_string(name),
-            cookie: fileid,
-            name_attributes: post_op_attr::Some(attr),
-            name_handle: post_op_fh3::None,
-        };
-
-        Ok(entryplus)
-    }
-
-    fn eof(&self) -> bool {
-        self.index >= self.entries.len()
     }
 }
 
