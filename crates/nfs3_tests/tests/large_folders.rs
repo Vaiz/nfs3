@@ -1,5 +1,5 @@
 use nfs3_client::io::{AsyncRead, AsyncWrite};
-use nfs3_tests::{FsConfig, TestContext};
+use nfs3_tests::TestContext;
 use nfs3_types::nfs3::{
     LOOKUP3args, READDIR3args, READDIRPLUS3args, cookieverf3, dirlist3, dirlistplus3, diropargs3,
     filename3, nfs_fh3,
@@ -27,8 +27,8 @@ async fn test_10000() {
     test_dir(10000, "dir_10000").await.unwrap();
 }
 
-fn get_config(dirname: &str, size: usize) -> FsConfig {
-    let mut config = FsConfig::default();
+fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
+    let mut config = nfs3_server::memfs::MemFsConfig::default();
 
     config.add_file("/a.txt", "hello world\n".as_bytes());
     config.add_file("/b.txt", "Greetings\n".as_bytes());
@@ -49,17 +49,14 @@ fn get_file_name(i: usize) -> String {
 async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
     let config = get_config(dir, size);
-    let mut client = TestContext::setup_with_config(config, LOG_LEVEL).await;
+    let mut client = TestContext::setup_with_config(config, LOG_LEVEL);
 
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
-        if size < 20 {
-            // readdir does not work with large folders yet
-            readdir(&mut client, dir.clone(), count, size).await?;
-        }
+        readdir(&mut client, dir.clone(), count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, count, size).await?;
         readdir_plus(&mut client, dir.clone(), 1024 * 1024, count, size).await?;
         readdir_plus(&mut client, dir.clone(), count, 1024 * 1024, size).await?;

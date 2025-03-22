@@ -18,6 +18,7 @@ doctest = false
 
 [features]
 __test_reexports = [] # should not be used outside nfs3_tests crate
+memfs = []
 
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.3.0" }
@@ -32,3 +33,11 @@ filetime.workspace = true
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
 intaglio.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "memfs"
+required-features = ["memfs"]

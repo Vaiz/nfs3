@@ -4,7 +4,7 @@ use nfs3_client::error::{Error, PortmapError};
 use nfs3_client::tokio::TokioIo;
 use tokio::net::TcpStream;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().collect::<Vec<_>>();
     let ip = match args.get(1) {

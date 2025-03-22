@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use intaglio::Symbol;
-use nfs3_server::vfs::{ReadDirResult, ReadDirSimpleResult, VFSCapabilities};
+use nfs3_server::vfs::{ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
 use tracing_subscriber::field::debug;
@@ -282,16 +282,15 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         &self,
         dirid: fileid3,
         start_after: fileid3,
-        max_entries: usize,
-    ) -> Result<ReadDirResult<'static>, nfsstat3> {
+    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn readdir_simple(
+    async fn readdirplus(
         &self,
         dirid: fileid3,
-        count: usize,
-    ) -> Result<ReadDirSimpleResult, nfsstat3> {
+        start_after: fileid3,
+    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 

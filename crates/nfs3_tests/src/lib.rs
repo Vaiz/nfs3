@@ -4,8 +4,9 @@ pub mod wasm_fs;
 use std::ops::{Deref, DerefMut};
 
 use nfs3_client::tokio::TokioIo;
+use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_types::nfs3::nfs_fh3;
-pub use server::{FsConfig, Server};
+pub use server::Server;
 use tokio::io::{DuplexStream, duplex};
 
 pub struct TestContext<IO> {
@@ -15,22 +16,23 @@ pub struct TestContext<IO> {
 }
 
 impl TestContext<TokioIo<DuplexStream>> {
-    pub async fn setup() -> Self {
-        let mut config = server::FsConfig::default();
+    pub fn setup() -> Self {
+        let mut config = MemFsConfig::default();
 
         config.add_file("/a.txt", "hello world\n".as_bytes());
         config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
         config.add_dir("/another_dir");
         config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
 
-        Self::setup_with_config(config, tracing::Level::DEBUG).await
+        Self::setup_with_config(config, tracing::Level::DEBUG)
     }
 
-    pub async fn setup_with_config(fs_config: server::FsConfig, log_level: tracing::Level) -> Self {
+    pub fn setup_with_config(fs_config: MemFsConfig, log_level: tracing::Level) -> Self {
         init_logging(log_level);
 
+        let memfs = MemFs::new(fs_config).unwrap();
         let (server, client) = duplex(1024 * 1024);
-        let server = Server::new(server, fs_config).await.unwrap();
+        let server = Server::new(server, memfs).unwrap();
         let root_dir = server.root_dir();
         let server_handle = tokio::task::spawn(server.run());
         let client = nfs3_client::tokio::TokioIo::new(client);
