@@ -234,7 +234,6 @@ impl FSMap {
     }
 
     async fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: Metadata) -> fileid3 {
-        
         if let Some(chid) = self.path_to_id.get(fullpath) {
             if let Some(chent) = self.id_to_path.get_mut(chid) {
                 chent.fsmeta = metadata_to_fattr3(*chid, &meta);
@@ -259,7 +258,7 @@ impl FSMap {
 }
 #[derive(Debug)]
 pub struct MirrorFS {
-    fsmap: Arc<tokio::sync::Mutex<FSMap>>,
+    fsmap: Arc<tokio::sync::RwLock<FSMap>>,
 }
 
 /// Enumeration for the create_fs_object method
@@ -276,7 +275,7 @@ enum CreateFSObject<'a> {
 impl MirrorFS {
     pub fn new(root: PathBuf) -> MirrorFS {
         MirrorFS {
-            fsmap: Arc::new(tokio::sync::Mutex::new(FSMap::new(root))),
+            fsmap: Arc::new(tokio::sync::RwLock::new(FSMap::new(root))),
         }
     }
 
@@ -288,7 +287,7 @@ impl MirrorFS {
         objectname: &filename3<'_>,
         object: &CreateFSObject<'_>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
         let mut path = fsmap.sym_to_path(&ent.name).await;
         let objectname_osstr = objectname.as_os_str().to_os_string();
@@ -372,7 +371,7 @@ impl NFSFileSystem for MirrorFS {
     }
 
     async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
         if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()).await {
             if fsmap.id_to_path.contains_key(&id) {
                 return Ok(id);
@@ -404,7 +403,7 @@ impl NFSFileSystem for MirrorFS {
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
         // debug!("Stat query {:?}", id);
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
         if let RefreshResult::Delete = fsmap.refresh_entry(id).await? {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
@@ -420,7 +419,7 @@ impl NFSFileSystem for MirrorFS {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let fsmap = self.fsmap.lock().await;
+        let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&ent.name).await;
         drop(fsmap);
@@ -464,7 +463,7 @@ impl NFSFileSystem for MirrorFS {
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&entry.name).await;
         path_setattr(&path, &setattr).await?;
@@ -477,7 +476,7 @@ impl NFSFileSystem for MirrorFS {
         Ok(metadata_to_fattr3(id, &metadata))
     }
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        let fsmap = self.fsmap.lock().await;
+        let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&ent.name).await;
         drop(fsmap);
@@ -529,7 +528,7 @@ impl NFSFileSystem for MirrorFS {
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
         let mut path = fsmap.sym_to_path(&ent.name).await;
         path.push(filename.as_os_str());
@@ -582,7 +581,7 @@ impl NFSFileSystem for MirrorFS {
         to_dirid: fileid3,
         to_filename: &filename3,
     ) -> Result<(), nfsstat3> {
-        let mut fsmap = self.fsmap.lock().await;
+        let mut fsmap = self.fsmap.write().await;
 
         let from_dirent = fsmap.find_entry(from_dirid)?;
         let mut from_path = fsmap.sym_to_path(&from_dirent.name).await;
@@ -679,7 +678,7 @@ impl NFSFileSystem for MirrorFS {
         .await
     }
     async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
-        let fsmap = self.fsmap.lock().await;
+        let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&ent.name).await;
         drop(fsmap);
@@ -696,19 +695,19 @@ impl NFSFileSystem for MirrorFS {
 }
 
 struct MirrorFsIterator {
-    fsmap: Arc<tokio::sync::Mutex<FSMap>>,
+    fsmap: Arc<tokio::sync::RwLock<FSMap>>,
     entries: Vec<fileid3>,
     index: usize,
 }
 
 impl MirrorFsIterator {
     async fn new(
-        fsmap: Arc<tokio::sync::Mutex<FSMap>>,
+        fsmap: Arc<tokio::sync::RwLock<FSMap>>,
         dirid: fileid3,
         start_after: fileid3,
     ) -> Result<Self, nfsstat3> {
         let fsmap_clone = Arc::clone(&fsmap);
-        let mut fsmap = fsmap.lock().await;
+        let mut fsmap = fsmap.write().await;
         fsmap.refresh_entry(dirid).await?;
         fsmap.refresh_dir_list(dirid).await?;
 
@@ -752,7 +751,7 @@ impl ReadDirPlusIterator for MirrorFsIterator {
         let fileid = self.entries[self.index];
         self.index += 1;
 
-        let fsmap = self.fsmap.lock().await;
+        let fsmap = self.fsmap.read().await;
         let fileent = fsmap.find_entry(fileid)?;
         let name = fsmap.sym_to_fname(&fileent.name).await;
         debug!("\t --- {fileid} {name:?}");
