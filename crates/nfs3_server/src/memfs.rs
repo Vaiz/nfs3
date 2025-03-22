@@ -1,20 +1,20 @@
 //! In-memory file system for NFSv3.
-//! 
+//!
 //! It is a simple implementation of a file system that stores files and directories in memory.
 //! This file system is used for testing purposes and is not intended for production use.
 //!
 //! # Examples
-//! 
+//!
 //! ```no_run
+//! use nfs3_server::memfs::{MemFs, MemFsConfig};
 //! use nfs3_server::tcp::NFSTcpListener;
-//! use nfs3_server::memfs::{MemFsConfig, MemFs};
-//! 
+//!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
 //!     config.add_file("/a.txt", "hello world\n".as_bytes());
 //!     config.add_file("/b.txt", "Greetings\n".as_bytes());
 //!     config.add_dir("/a directory");
-//! 
+//!
 //!     let memfs = MemFs::new(config).unwrap();
 //!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs).await?;
 //!     listener.handle_forever().await?;
@@ -373,7 +373,7 @@ impl Fs {
 }
 
 /// In-memory file system for NFSv3.
-/// 
+///
 /// MemFs implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
 #[derive(Debug)]
 pub struct MemFs {
@@ -704,7 +704,7 @@ struct MemFsConfigEntry {
 }
 
 /// Initial configuration for the in-memory file system.
-/// 
+///
 /// It allows to specify the initial files and directories in the file system.
 #[derive(Default, Debug, Clone)]
 pub struct MemFsConfig {
