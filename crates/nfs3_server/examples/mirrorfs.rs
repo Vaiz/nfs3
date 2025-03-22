@@ -19,10 +19,17 @@ use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
 
-const HOSTPORT: u32 = 11111;
+const HOSTPORT: u16 = 11111;
 
-// Test with
-// mount -t nfs -o nolock,vers=3,tcp,port=12000,mountport=11111,soft 127.0.0.1:/ mnt/
+// This example implements a simple NFS server that mirrors a directory from the host filesystem.
+// Usage:
+// cargo run --example mirrorfs -- <directory> [bind_ip] [bind_port]
+// <directory> is the directory to mirror
+// [bind_ip] is the IP address to bind to (default: 0.0.0.0)
+// [bind_port] is the port to bind to (default: 11111)
+//
+// To mount the NFS server on Linux, use the following command:
+// mount -t nfs -o nolock,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ mnt/
 
 #[tokio::main]
 async fn main() {
@@ -31,13 +38,20 @@ async fn main() {
         .with_writer(std::io::stderr)
         .init();
 
-    let path = std::env::args()
-        .nth(1)
+    let args = std::env::args().collect::<Vec<_>>();
+    let path = args
+        .get(1)
         .expect("must supply directory to mirror");
+    let bind_ip = args.get(2).map(|s| s.as_str()).unwrap_or("0.0.0.0");
+    let bind_port = args
+        .get(3)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(HOSTPORT);
+
     let path = PathBuf::from(path);
 
     let fs = MirrorFS::new(path);
-    let listener = NFSTcpListener::bind(&format!("0.0.0.0:{HOSTPORT}"), fs)
+    let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), fs)
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();
