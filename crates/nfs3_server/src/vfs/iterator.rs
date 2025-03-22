@@ -4,7 +4,9 @@ pub use nfs3_types::nfs3::{entry3, entryplus3, nfsstat3};
 pub enum NextResult<T> {
     /// The next entry in the directory. It's either [`entry3`] or [`entryplus3`].
     Ok(T),
+    /// The end of the directory has been reached. It is not an error.
     Eof,
+    /// An error occurred while reading the directory.
     Err(nfsstat3),
 }
 

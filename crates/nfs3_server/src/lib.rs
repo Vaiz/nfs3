@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
 mod context;
@@ -16,6 +17,7 @@ pub(crate) mod units;
 pub mod vfs;
 
 #[cfg(feature = "memfs")]
+#[cfg_attr(docsrs, doc(cfg(feature = "memfs")))]
 pub mod memfs;
 
 /// Reexport for test purposes

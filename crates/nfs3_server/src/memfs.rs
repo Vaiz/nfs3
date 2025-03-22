@@ -1,3 +1,27 @@
+//! In-memory file system for NFSv3.
+//! 
+//! It is a simple implementation of a file system that stores files and directories in memory.
+//! This file system is used for testing purposes and is not intended for production use.
+//!
+//! # Examples
+//! 
+//! ```no_run
+//! use nfs3_server::tcp::NFSTcpListener;
+//! use nfs3_server::memfs::{MemFsConfig, MemFs};
+//! 
+//! async fn run() -> anyhow::Result<()> {
+//!     let mut config = MemFsConfig::default();
+//!     config.add_file("/a.txt", "hello world\n".as_bytes());
+//!     config.add_file("/b.txt", "Greetings\n".as_bytes());
+//!     config.add_dir("/a directory");
+//! 
+//!     let memfs = MemFs::new(config).unwrap();
+//!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs).await?;
+//!     listener.handle_forever().await?;
+//!     Ok(())
+//! }
+//! ```
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
@@ -348,6 +372,9 @@ impl Fs {
     }
 }
 
+/// In-memory file system for NFSv3.
+/// 
+/// MemFs implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
 #[derive(Debug)]
 pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
@@ -369,6 +396,7 @@ impl Default for MemFs {
 }
 
 impl MemFs {
+    /// Creates a new in-memory file system with the given configuration.
     pub fn new(config: MemFsConfig) -> Result<Self, nfsstat3> {
         tracing::info!("creating memfs. Entries count: {}", config.entries.len());
         let fs = Self::default();
@@ -675,12 +703,16 @@ struct MemFsConfigEntry {
     content: Vec<u8>,
 }
 
+/// Initial configuration for the in-memory file system.
+/// 
+/// It allows to specify the initial files and directories in the file system.
 #[derive(Default, Debug, Clone)]
 pub struct MemFsConfig {
     entries: Vec<MemFsConfigEntry>,
 }
 
 impl MemFsConfig {
+    /// Adds a directory to the file system configuration.
     pub fn add_dir(&mut self, path: &str) {
         let name = path.split(DELIMITER).next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
@@ -692,14 +724,16 @@ impl MemFsConfig {
         });
     }
 
-    pub fn add_file(&mut self, path: &str, content: &[u8]) {
+    /// Adds a file to the file system configuration.
+    pub fn add_file(&mut self, path: &str, content: impl Into<Vec<u8>>) {
         let name = path.split(DELIMITER).next_back().unwrap().to_string();
         let path = path.trim_end_matches(&name);
+
         self.entries.push(MemFsConfigEntry {
             parent: path.to_string(),
             name,
             is_dir: false,
-            content: content.to_vec(),
+            content: content.into(),
         });
     }
 }
