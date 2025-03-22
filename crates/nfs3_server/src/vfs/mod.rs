@@ -11,15 +11,58 @@ use nfs3_types::xdr_codec::Opaque;
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
 
-static GENERATION_NUMBER: LazyLock<u64> = LazyLock::new(|| {
-    SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-});
+pub(crate) static DEFAULT_FH_CONVERTER: LazyLock<DefaultNfsFhConverter> =
+    LazyLock::new(DefaultNfsFhConverter::new);
 
-fn get_generation_number() -> u64 {
-    *GENERATION_NUMBER
+pub(crate) struct DefaultNfsFhConverter {
+    generation_number: u64,
+    generation_number_le: [u8; 8],
+}
+
+impl DefaultNfsFhConverter {
+    const HANDLE_LENGTH: usize = 16;
+
+    pub(crate) fn new() -> Self {
+        let generation_number = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        DefaultNfsFhConverter {
+            generation_number,
+            generation_number_le: generation_number.to_le_bytes(),
+        }
+    }
+
+    /// Converts the fileid to an opaque NFS file handle. Optional.
+    pub(crate) fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
+        let mut ret: Vec<u8> = Vec::with_capacity(Self::HANDLE_LENGTH);
+        ret.extend_from_slice(&self.generation_number_le);
+        ret.extend_from_slice(&id.to_le_bytes());
+        nfs_fh3 {
+            data: Opaque::owned(ret),
+        }
+    }
+    /// Converts an opaque NFS file handle to a fileid.  Optional.
+    pub(crate) fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
+        if id.data.len() != Self::HANDLE_LENGTH {
+            return Err(nfsstat3::NFS3ERR_BADHANDLE);
+        }
+
+        if id.data[0..8] == self.generation_number_le {
+            Ok(u64::from_le_bytes(id.data[8..16].try_into().unwrap()))
+        } else {
+            let id_gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
+            if id_gen < self.generation_number {
+                Err(nfsstat3::NFS3ERR_STALE)
+            } else {
+                Err(nfsstat3::NFS3ERR_BADHANDLE)
+            }
+        }
+    }
+    pub(crate) fn generation_number_le(&self) -> [u8; 8] {
+        self.generation_number_le
+    }
 }
 
 /// What capabilities are supported
@@ -198,27 +241,11 @@ pub trait NFSFileSystem: Sync {
 
     /// Converts the fileid to an opaque NFS file handle. Optional.
     fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
-        let gennum = get_generation_number();
-        let mut ret: Vec<u8> = Vec::new();
-        ret.extend_from_slice(&gennum.to_le_bytes());
-        ret.extend_from_slice(&id.to_le_bytes());
-        nfs_fh3 {
-            data: Opaque::owned(ret),
-        }
+        DEFAULT_FH_CONVERTER.id_to_fh(id)
     }
     /// Converts an opaque NFS file handle to a fileid.  Optional.
     fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
-        if id.data.len() != 16 {
-            return Err(nfsstat3::NFS3ERR_BADHANDLE);
-        }
-        let r#gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
-        let id = u64::from_le_bytes(id.data[8..16].try_into().unwrap());
-        let gennum = get_generation_number();
-        match r#gen.cmp(&gennum) {
-            Ordering::Less => Err(nfsstat3::NFS3ERR_STALE),
-            Ordering::Greater => Err(nfsstat3::NFS3ERR_BADHANDLE),
-            Ordering::Equal => Ok(id),
-        }
+        DEFAULT_FH_CONVERTER.fh_to_id(id)
     }
     /// Converts a complete path to a fileid.  Optional.
     /// The default implementation walks the directory structure with lookup()
@@ -235,7 +262,6 @@ pub trait NFSFileSystem: Sync {
     }
 
     fn serverid(&self) -> cookieverf3 {
-        let gennum = get_generation_number();
-        cookieverf3(gennum.to_le_bytes())
+        cookieverf3(DEFAULT_FH_CONVERTER.generation_number_le())
     }
 }
