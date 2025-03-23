@@ -1,7 +1,10 @@
 use std::ops::{Deref, DerefMut};
+use std::sync::LazyLock;
+use std::sync::atomic::AtomicU16;
 
 use nfs3_types::mount::{dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
+use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::error::Error;
@@ -62,10 +65,13 @@ impl<IO> DerefMut for Nfs3Connection<IO> {
 pub struct Nfs3ConnectionBuilder<C> {
     host: String,
     connector: C,
+    connect_from_privileged_port: bool,
     portmapper_port: u16,
     mount_port: Option<u16>,
     nfs3_port: Option<u16>,
     mount_path: dirpath<'static>,
+    credential: opaque_auth<'static>,
+    verifier: opaque_auth<'static>,
 }
 
 impl<C, S> Nfs3ConnectionBuilder<C>
@@ -79,11 +85,21 @@ where
         Self {
             host,
             connector,
+            connect_from_privileged_port: true,
             portmapper_port: nfs3_types::portmap::PMAP_PORT,
             mount_port: None,
             nfs3_port: None,
             mount_path: dirpath(Opaque::owned(mount_path.into_bytes())),
+            credential: opaque_auth::default(),
+            verifier: opaque_auth::default(),
         }
+    }
+
+    /// Sets whether to connect from a privileged port (0-1023).
+    /// The default is `true`.
+    pub fn connect_from_privileged_port(mut self, connect: bool) -> Self {
+        self.connect_from_privileged_port = connect;
+        self
     }
 
     /// Sets the portmapper port. The default port is 111.
@@ -102,17 +118,30 @@ where
         self
     }
 
+    /// Sets the credential for the RPC calls. The default is `opaque_auth::default()`.
+    pub fn credential(mut self, credential: opaque_auth<'static>) -> Self {
+        self.credential = credential;
+        self
+    }
+
+    /// Sets the verifier for the RPC calls. The default is `opaque_auth::default()`.
+    pub fn verifier(mut self, verifier: opaque_auth<'static>) -> Self {
+        self.verifier = verifier;
+        self
+    }
+
     /// Mounts the filesystem and returns the connection.
     pub async fn mount(self) -> Result<Nfs3Connection<S>, Error> {
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
-        let io = self.connector.connect(&self.host, mount_port).await?;
-        let mut mount_client = mount::MountClient::new(io);
+        let io = self.connect(mount_port).await?;
+        let mut mount_client =
+            mount::MountClient::new_with_auth(io, self.credential.clone(), self.verifier.clone());
         let borrowed_mount_path = dirpath(Opaque::borrowed(self.mount_path.0.as_ref()));
         let mount_resok = mount_client.mnt(borrowed_mount_path).await?;
 
-        let io = self.connector.connect(&self.host, nfs3_port).await?;
-        let nfs3_client = Nfs3Client::new(io);
+        let io = self.connect(nfs3_port).await?;
+        let nfs3_client = Nfs3Client::new_with_auth(io, self.credential, self.verifier);
 
         Ok(Nfs3Connection {
             host: self.host,
@@ -154,4 +183,50 @@ where
 
         Ok((mount_port, nfs3_port))
     }
+
+    async fn connect(&self, port: u16) -> std::io::Result<S> {
+        if self.connect_from_privileged_port {
+            connect_from_privileged_port(&self.connector, &self.host, port).await
+        } else {
+            self.connector.connect(&self.host, port).await
+        }
+    }
+}
+
+async fn connect_from_privileged_port<C, S>(
+    connector: &C,
+    host: &str,
+    port: u16,
+) -> std::io::Result<S>
+where
+    C: crate::net::Connector<Connection = S>,
+    S: AsyncRead + AsyncWrite,
+{
+    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+    const MIN_PORT: u16 = 300;
+    const MAX_PORT: u16 = 1023;
+    /// a hack to reduce the chance of port collision
+    static PORT_INDEX: LazyLock<AtomicU16> =
+        LazyLock::new(|| AtomicU16::new(rand::random::<u16>()));
+
+    for _ in MIN_PORT..=MAX_PORT {
+        let index = PORT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let local_port = MIN_PORT + (index % (MAX_PORT - MIN_PORT));
+
+        let result = connector.connect_with_port(host, port, local_port).await;
+
+        match &result {
+            Err(e) if e.kind() == IoErrorKind::AddrInUse => {
+                // Ignore this error and try the next port
+                continue;
+            }
+            Ok(_) | Err(_) => {
+                return result;
+            }
+        }
+    }
+
+    Err(IoError::other(format!(
+        "Failed to connect to mount service from privileged port range ({MIN_PORT}-{MAX_PORT})"
+    )))
 }

@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 use nfs3_types::nfs3::*;
+use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 
 use crate::error::Error;
@@ -17,9 +18,21 @@ impl<IO> Nfs3Client<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
+    /// Create a new NFSv3 client.
     pub fn new(io: IO) -> Self {
         Self {
             rpc: RpcClient::new(io),
+        }
+    }
+
+    /// Create a new NFSv3 client with custom credential and verifier.
+    pub fn new_with_auth(
+        io: IO,
+        credential: opaque_auth<'static>,
+        verifier: opaque_auth<'static>,
+    ) -> Self {
+        Self {
+            rpc: RpcClient::new_with_auth(io, credential, verifier),
         }
     }
 

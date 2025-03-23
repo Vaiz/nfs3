@@ -67,7 +67,7 @@ pub enum auth_flavor {
     // and more to be defined
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct opaque_auth<'a> {
     pub flavor: auth_flavor,
     pub body: Opaque<'a>,
@@ -78,6 +78,24 @@ impl Default for opaque_auth<'static> {
         Self {
             flavor: auth_flavor::AUTH_NULL,
             body: Opaque::borrowed(&[]),
+        }
+    }
+}
+
+impl opaque_auth<'static> {
+    pub fn auth_unix(auth: auth_unix) -> Self {
+        let mut out = Vec::with_capacity(auth.packed_size());
+        auth.pack(&mut out).expect("failed to pack auth_unix");
+        Self {
+            flavor: auth_flavor::AUTH_UNIX,
+            body: Opaque::owned(out),
+        }
+    }
+
+    pub fn borrow(&self) -> opaque_auth<'_> {
+        opaque_auth {
+            flavor: self.flavor,
+            body: Opaque::borrowed(self.body.as_ref()),
         }
     }
 }
@@ -95,7 +113,7 @@ impl Default for auth_unix {
     fn default() -> Self {
         Self {
             stamp: 0,
-            machinename: Opaque::owned(vec![]),
+            machinename: Opaque::borrowed(b""),
             uid: 0,
             gid: 0,
             gids: vec![],
