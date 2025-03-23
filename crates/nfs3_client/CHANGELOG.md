@@ -7,31 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.2.0...nfs3_client-v0.3.0) - 2025-03-23
+
+### Changes
+
+- connect to nfs share from privileged ports by default ([#55](https://github.com/Vaiz/nfs3/pull/55))
+- allow to set credentials and verifier for RPC connection
+- fix tokio features
+- add new examples: download_folder and ls ([#57](https://github.com/Vaiz/nfs3/pull/57))
+
 ## [0.2.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.1...nfs3_client-v0.2.0) - 2025-03-02
 
-### Fixed
+### Changes
 
-- ACCESS3res type ([#36](https://github.com/Vaiz/nfs3/pull/36))
-
-### Other
-
+- fix ACCESS3res type ([#36](https://github.com/Vaiz/nfs3/pull/36))
 - [**breaking**] update to Rust 2024 ([#32](https://github.com/Vaiz/nfs3/pull/32))
 
 ## [0.1.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.0...nfs3_client-v0.1.1) - 2025-02-23
 
-### Fixed
+### Changes
 
-- fix! enable net feature in tokio ([#28](https://github.com/Vaiz/nfs3/pull/28))
-
-### Other
-
-- release v0.1.1 (#20)
+- enable net feature in tokio ([#28](https://github.com/Vaiz/nfs3/pull/28))
 
 ## [0.1.0](https://github.com/Vaiz/nfs3/releases/tag/nfs3_client-v0.1.0) - 2025-02-22
 
-### Other
+### Changes
 
-- bump crates versions ([#26](https://github.com/Vaiz/nfs3/pull/26))
-- refactor nfs3 connection and add some docs ([#25](https://github.com/Vaiz/nfs3/pull/25))
-- implement NfsClient ([#24](https://github.com/Vaiz/nfs3/pull/24))
 - Add nfs3_client crate ([#23](https://github.com/Vaiz/nfs3/pull/23))

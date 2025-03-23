@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_server"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -21,7 +21,7 @@ __test_reexports = [] # should not be used outside nfs3_tests crate
 memfs = []
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.3.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.3.1" }
 
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros"] }
 tracing.workspace = true
