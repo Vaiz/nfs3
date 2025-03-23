@@ -79,9 +79,7 @@ async fn download_folder(
     fs::create_dir_all(local_path)?;
 
     let mut queue = vec![(PathBuf::from(local_path), folder_fh)];
-    while !queue.is_empty() {
-        let (local_path, folder_fh) = queue.pop().unwrap();
-
+    while let Some((local_path, folder_fh)) = queue.pop() {
         let mut cookie = nfs3::cookie3::default();
         let mut cookieverf = nfs3::cookieverf3::default();
         loop {
