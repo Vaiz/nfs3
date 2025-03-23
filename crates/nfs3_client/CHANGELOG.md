@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.2.0...nfs3_client-v0.3.0) - 2025-03-23
+
+### Added
+
+- add download_folder example ([#57](https://github.com/Vaiz/nfs3/pull/57))
+- connect to nfs share from privileged ports ([#55](https://github.com/Vaiz/nfs3/pull/55))
+- feat! add iterator traits ([#54](https://github.com/Vaiz/nfs3/pull/54))
+
+### Other
+
+- update docs ([#56](https://github.com/Vaiz/nfs3/pull/56))
+
 ## [0.2.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.1.1...nfs3_client-v0.2.0) - 2025-03-02
 
 ### Fixed

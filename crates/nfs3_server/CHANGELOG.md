@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.3.0...nfs3_server-v0.4.0) - 2025-03-23
+
+### Added
+
+- feat! add iterator traits ([#54](https://github.com/Vaiz/nfs3/pull/54))
+
+### Other
+
+- update docs ([#56](https://github.com/Vaiz/nfs3/pull/56))
+- add tests for readdir and readdirplus ([#52](https://github.com/Vaiz/nfs3/pull/52))
+
 ## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.2.0...nfs3_server-v0.3.0) - 2025-03-02
 
 ### Added
