@@ -61,7 +61,10 @@ impl<IO> DerefMut for Nfs3Connection<IO> {
     }
 }
 
-/// Builder for the NFSv3 connection.
+/// Builder for establishing an NFSv3 connection.
+///
+/// By default, the builder attempts to use a privileged port (300-1023) for outgoing connections.
+/// This behavior can be modified by calling `connect_from_privileged_port(false)`.
 pub struct Nfs3ConnectionBuilder<C> {
     host: String,
     connector: C,

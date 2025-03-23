@@ -33,11 +33,11 @@ anywhere.
 
 This is a blogpost explaining our rationale: [link](https://about.xethub.com/blog/nfs-fuse-why-we-built-nfs-server-rust).
 
-Run the Demo
-============
+Run the MemFS Demo
+==================
 To run the demofs, this will host an NFS server on localhost:11111
 ```bash
-cargo run --example demo
+cargo run --example memfs --features memfs
 ```
 
 To mount. On Linux (sudo may be required):
@@ -75,18 +75,6 @@ Relevant RFCs
  - NFS is at [RFC 1813](https://datatracker.ietf.org/doc/html/rfc1813).
  - NFS Mount Protocol is at [RFC 1813 Appendix I](https://datatracker.ietf.org/doc/html/rfc1813#appendix-I).
  - PortMapper is at [RFC 1057 Appendix A](https://datatracker.ietf.org/doc/html/rfc1057#appendix-A).
-
-Basic Source Layout
-===================
- - context.rs: A connection context object that is passed around containing
-   connection information, VFS information, etc.
- - tcp.rs: Main TCP handling entry point
- - rpcwire.rs: Reads and write RPC messages from a TCP socket and performs outer 
-   most RPC message decoding, redirecting to NFS/Mount/Portmapper implementations as needed.
- - rpc.rs: The structure of a RPC call and reply. All XDR encoded.
- - portmap.rs/portmap\_handlers.rs: The XDR structures required by the Portmapper protocol and the Portmapper RPC handlers.
- - mount.rs/mount\_handlers.rs: The XDR structures required by the Mount protocol and the Mount RPC handlers.
- - nfs.rs/nfs\_handlers.rs: The XDR structures required by the NFS protocol and the NFS RPC handlers.
 
 
 More More Details Than Necessary

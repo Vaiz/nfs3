@@ -6,7 +6,7 @@ const HOSTPORT: u32 = 11111;
 // mount -t nfs -o nolocks,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ mnt/
 //
 // Usage:
-// cargo run --example demo [bind_ip] [bind_port]
+// cargo run --example memfs --features memfs -- [bind_ip] [bind_port]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
