@@ -1,11 +1,11 @@
 use std::env;
+use std::time::{Duration, UNIX_EPOCH};
 
+use chrono::{DateTime, Utc};
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::tokio::TokioConnector;
 use nfs3_types::nfs3::{self, Nfs3Option};
 use nfs3_types::xdr_codec::Opaque;
-use chrono::{DateTime, Utc};
-use std::time::{UNIX_EPOCH, Duration};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,9 +91,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (is_dir, size, mtime) = if let Nfs3Option::Some(attrs) = attrs {
                 let is_dir = matches!(attrs.type_, nfs3::ftype3::NF3DIR);
                 let mtime = &attrs.mtime;
-                    let duration = Duration::new(mtime.seconds as u64, mtime.nseconds);
-                    let systime = UNIX_EPOCH.checked_add(duration).unwrap_or(UNIX_EPOCH);
-                    (is_dir, attrs.size, systime)
+                let duration = Duration::new(mtime.seconds as u64, mtime.nseconds);
+                let systime = UNIX_EPOCH.checked_add(duration).unwrap_or(UNIX_EPOCH);
+                (is_dir, attrs.size, systime)
             } else {
                 (false, 0, UNIX_EPOCH)
             };
@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_dir {
                 let dirname = format!("[{name}]");
                 println!("{dirname:<60} {:>10} {mtime}", " ");
-            } else {               
+            } else {
                 println!("{name:<60} {size:>10} {mtime}");
             };
         }
