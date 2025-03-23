@@ -3,6 +3,12 @@
 //! It is a simple implementation of a file system that stores files and directories in memory.
 //! This file system is used for testing purposes and is not intended for production use.
 //!
+//! # Limitations
+//!
+//! - It's a very naive implementation and does not guarantee the best performance.
+//! - Methods `create_exclusive`, `rename`, `symlink`, and `readlink` are not implemented and return
+//!   NFS3ERR_NOTSUPP.
+//!
 //! # Examples
 //!
 //! ```no_run
