@@ -35,3 +35,11 @@ required-features = ["tokio"]
 [[example]]
 name = "nfs"
 required-features = ["tokio"]
+
+[[example]]
+name = "ls"
+required-features = ["tokio"]
+
+[[example]]
+name = "download_folder"
+required-features = ["tokio"]
