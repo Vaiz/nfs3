@@ -12,7 +12,7 @@ use nfs3_types::xdr_codec::Opaque;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().collect::<Vec<_>>();
-    if args.len() < 4 {
+    if args.len() < 5 {
         eprintln!(
             "Usage: download_folder <server_ip> <mount_path> <remote_folder> <local_folder> \
              [portmapper_port]"
