@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use nfs3_types::mount::{dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
+use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::error::Error;
@@ -66,6 +67,8 @@ pub struct Nfs3ConnectionBuilder<C> {
     mount_port: Option<u16>,
     nfs3_port: Option<u16>,
     mount_path: dirpath<'static>,
+    credential: opaque_auth<'static>,
+    verifier: opaque_auth<'static>,
 }
 
 impl<C, S> Nfs3ConnectionBuilder<C>
@@ -83,6 +86,8 @@ where
             mount_port: None,
             nfs3_port: None,
             mount_path: dirpath(Opaque::owned(mount_path.into_bytes())),
+            credential: opaque_auth::default(),
+            verifier: opaque_auth::default(),
         }
     }
 
@@ -102,17 +107,28 @@ where
         self
     }
 
+    /// Sets the credential for the RPC calls. The default is `opaque_auth::default()`.
+    pub fn credential(mut self, credential: opaque_auth<'static>) -> Self {
+        self.credential = credential;
+        self
+    }
+
+    /// Sets the verifier for the RPC calls. The default is `opaque_auth::default()`.
+    pub fn verifier(mut self, verifier: opaque_auth<'static>) -> Self {
+        self.verifier = verifier;
+        self
+    }
+
     /// Mounts the filesystem and returns the connection.
     pub async fn mount(self) -> Result<Nfs3Connection<S>, Error> {
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
-        let io = self.connector.connect(&self.host, mount_port).await?;
-        let mut mount_client = mount::MountClient::new(io);
+        let mut mount_client = self.connect_to_mount(mount_port).await?;
         let borrowed_mount_path = dirpath(Opaque::borrowed(self.mount_path.0.as_ref()));
         let mount_resok = mount_client.mnt(borrowed_mount_path).await?;
 
         let io = self.connector.connect(&self.host, nfs3_port).await?;
-        let nfs3_client = Nfs3Client::new(io);
+        let nfs3_client = Nfs3Client::new_with_auth(io, self.credential, self.verifier);
 
         Ok(Nfs3Connection {
             host: self.host,
@@ -123,6 +139,37 @@ where
             nfs3_port,
             nfs3_client,
         })
+    }
+
+    async fn connect_to_mount(&self, mount_port: u16) -> Result<mount::MountClient<S>, Error> {
+        const MIN_PORT: u16 = 300;
+        const MAX_PORT: u16 = 1023;
+        use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+
+        for local_port in MIN_PORT..=MAX_PORT {
+            let io = self
+                .connector
+                .connect_with_port(&self.host, mount_port, local_port)
+                .await;
+            match io {
+                Ok(io) => {
+                    return Ok(mount::MountClient::new_with_auth(
+                        io,
+                        self.credential.clone(),
+                        self.verifier.clone(),
+                    ));
+                }
+                Err(e) if e.kind() == IoErrorKind::AddrInUse => {
+                    // Ignore this error and try the next port
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Err(Error::Io(IoError::other(format!(
+            "Failed to connect to mount service from privileged port range ({MIN_PORT}-{MAX_PORT})"
+        ))))
     }
 
     async fn resolve_ports(&self) -> Result<(u16, u16), Error> {

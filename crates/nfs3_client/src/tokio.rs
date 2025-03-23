@@ -1,7 +1,7 @@
 //! Provides wrappers for tokio's types
 
 use tokio::io::{AsyncRead as TokioAsyncRead, AsyncWrite as TokioAsyncWrite};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::net::Connector;
@@ -50,6 +50,20 @@ impl Connector for TokioConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection> {
         let addr = format!("{}:{}", host, port);
         let stream = tokio::net::TcpStream::connect(&addr).await?;
+        Ok(TokioIo::new(stream))
+    }
+
+    async fn connect_with_port(
+        &self,
+        host: &str,
+        port: u16,
+        local_port: u16,
+    ) -> std::io::Result<Self::Connection> {
+        let socket = TcpSocket::new_v4()?;
+        socket.bind(format!("0.0.0.0:{local_port}").parse().unwrap())?;
+
+        let addr = format!("{}:{}", host, port).parse().unwrap();
+        let stream = socket.connect(addr).await?;
         Ok(TokioIo::new(stream))
     }
 }

@@ -17,6 +17,8 @@ const EOF_FLAG: u32 = 0x8000_0000;
 pub struct RpcClient<IO> {
     io: IO,
     xid: u32,
+    credential: opaque_auth<'static>,
+    verifier: opaque_auth<'static>,
 }
 
 impl<IO> Debug for RpcClient<IO> {
@@ -31,9 +33,20 @@ where
 {
     /// Create a new RPC client. XID is initialized to a random value.
     pub fn new(io: IO) -> Self {
+        Self::new_with_auth(io, opaque_auth::default(), opaque_auth::default())
+    }
+
+    /// Create a new RPC client with custom credential and verifier.
+    pub fn new_with_auth(
+        io: IO,
+        credential: opaque_auth<'static>,
+        verifier: opaque_auth<'static>,
+    ) -> Self {
         Self {
             io,
             xid: rand::random(),
+            credential,
+            verifier,
         }
     }
 
@@ -51,8 +64,8 @@ where
             prog,
             vers,
             proc,
-            cred: opaque_auth::default(),
-            verf: opaque_auth::default(),
+            cred: self.credential.borrow(),
+            verf: self.verifier.borrow(),
         };
         let msg = rpc_msg {
             xid: self.xid,
@@ -60,11 +73,11 @@ where
         };
         self.xid = self.xid.wrapping_add(1);
 
-        self.send_call(&msg, args).await?;
-        self.recv_reply::<R>(msg.xid).await
+        Self::send_call(&mut self.io, &msg, args).await?;
+        Self::recv_reply::<R>(&mut self.io, msg.xid).await
     }
 
-    async fn send_call<T>(&mut self, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error>
+    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error>
     where
         T: Pack<Vec<u8>> + PackedSize,
     {
@@ -81,16 +94,16 @@ where
         if buf.len() - 4 != total_len {
             return Err(RpcError::WrongLength.into());
         }
-        self.io.async_write_all(&buf).await?;
+        io.async_write_all(&buf).await?;
         Ok(())
     }
 
-    async fn recv_reply<T>(&mut self, xid: u32) -> Result<T, Error>
+    async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, Error>
     where
         T: Unpack<Cursor<Vec<u8>>>,
     {
         let mut buf = [0u8; 4];
-        self.io.async_read_exact(&mut buf).await?;
+        io.async_read_exact(&mut buf).await?;
         let fragment_header = u32::from_be_bytes(buf);
         if fragment_header & EOF_FLAG == 0 {
             panic!("Fragment header does not have EOF flag");
@@ -98,7 +111,7 @@ where
 
         let total_len = fragment_header & !EOF_FLAG;
         let mut buf = vec![0u8; total_len as usize];
-        self.io.async_read_exact(&mut buf).await?;
+        io.async_read_exact(&mut buf).await?;
 
         let mut cursor = std::io::Cursor::new(buf);
         let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;
