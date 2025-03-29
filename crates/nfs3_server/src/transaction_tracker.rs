@@ -24,7 +24,6 @@ impl TransactionTracker {
         }
     }
 
-    #[must_use]
     pub(crate) fn start_transaction(
         &self,
         client_addr: &str,
