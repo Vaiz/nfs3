@@ -129,9 +129,7 @@ impl ClientTransactions {
             last_active: now,
         }
     }
-    // Finds a transaction by its xid
-    // First, it checks last transaction in the list
-    // If first transaction has different xid, it does a binary search to find the transaction
+    // Finds a transaction by its xid taking into account that the list is sorted
     fn find_transaction(&self, xid: u32) -> Result<usize, usize> {
         use std::cmp::Ordering;
         if let Some(last_tx) = self.transactions.back() {
@@ -300,6 +298,24 @@ mod tests {
 
         client_transactions.remove_old_transactions(now + Duration::new(2, 0), Duration::new(1, 0));
         assert_eq!(client_transactions.transactions.len(), 0);
+    }
+
+    #[test]
+    fn out_of_order_transactions() {
+        let now = Instant::now();
+        let mut client_transactions = ClientTransactions::new(now);
+
+        client_transactions.add_transaction(9, now).unwrap();        
+        client_transactions.add_transaction(1, now).unwrap();        
+        assert_eq!(collect_xids(&client_transactions)[..], [1, 9]);        
+        client_transactions.add_transaction(5, now).unwrap();
+        assert_eq!(collect_xids(&client_transactions)[..], [1, 5, 9]);
+        client_transactions.add_transaction(2, now).unwrap();
+        assert_eq!(collect_xids(&client_transactions)[..], [1, 2, 5, 9]);
+    }
+
+    fn collect_xids(client: &ClientTransactions) -> Vec<u32> {
+        client.transactions.iter().map(|t| t.xid).collect()
     }
 
     #[test]
