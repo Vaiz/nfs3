@@ -305,9 +305,9 @@ mod tests {
         let now = Instant::now();
         let mut client_transactions = ClientTransactions::new(now);
 
-        client_transactions.add_transaction(9, now).unwrap();        
-        client_transactions.add_transaction(1, now).unwrap();        
-        assert_eq!(collect_xids(&client_transactions)[..], [1, 9]);        
+        client_transactions.add_transaction(9, now).unwrap();
+        client_transactions.add_transaction(1, now).unwrap();
+        assert_eq!(collect_xids(&client_transactions)[..], [1, 9]);
         client_transactions.add_transaction(5, now).unwrap();
         assert_eq!(collect_xids(&client_transactions)[..], [1, 5, 9]);
         client_transactions.add_transaction(2, now).unwrap();

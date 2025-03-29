@@ -53,7 +53,6 @@ async fn handle_rpc(
             return Ok(false);
         }
 
-        
         {
             if call.prog == nfs::PROGRAM {
                 nfs_handlers::handle_nfs(xid, call, input, output, &context).await
