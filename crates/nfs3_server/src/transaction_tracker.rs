@@ -415,6 +415,45 @@ mod tests {
     }
 
     #[test]
+    fn too_many_transactions() {
+        let now = Instant::now();
+        let mut client_transactions = ClientTransactions::new(now, 2, 1000);
+
+        assert!(client_transactions.add_transaction(1, now).is_ok());
+        assert!(client_transactions.add_transaction(2, now).is_ok());
+        assert_eq!(client_transactions.add_transaction(3, now).unwrap_err(), TransactionError::TooManyRequests);
+    }
+
+    #[test]
+    fn already_exists() {
+        let now = Instant::now();
+        let mut client_transactions = ClientTransactions::new(now, 100, 1000);
+
+        assert!(client_transactions.add_transaction(1, now).is_ok());
+        assert_eq!(client_transactions.add_transaction(1, now).unwrap_err(), TransactionError::AlreadyExists);
+    }
+
+    #[test]
+    fn trim_limit() {
+        let now = Instant::now();
+        let mut client_transactions = ClientTransactions::new(now, 1, 2);
+
+        assert!(client_transactions.add_transaction(1, now).is_ok());
+        client_transactions.complete_transaction(1, now);
+
+        assert!(client_transactions.add_transaction(2, now).is_ok());
+        client_transactions.complete_transaction(2, now);
+        assert_eq!(collect_xids(&client_transactions)[..], [1, 2]);
+
+        assert!(client_transactions.add_transaction(3, now).is_ok());
+        assert_eq!(collect_xids(&client_transactions)[..], [2, 3]);
+        client_transactions.complete_transaction(3, now);
+        
+        assert!(client_transactions.add_transaction(4, now).is_ok());
+        assert_eq!(collect_xids(&client_transactions)[..], [3, 4]);
+    }
+
+    #[test]
     fn test_transaction_tracker() -> anyhow::Result<()> {
         let tracker = TransactionTracker::new(Duration::new(1, 0), 100, 1000);
         let now = Instant::now();
