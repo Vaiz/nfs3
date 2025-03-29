@@ -4,6 +4,6 @@
 # - Install samply
 #   cargo install --locked samply
 
-# Elapsed time: 1.8837782s
+
 cargo b --example perf_test --release
 samply record ./target/release/examples/perf_test.exe --output perf_test.samply
