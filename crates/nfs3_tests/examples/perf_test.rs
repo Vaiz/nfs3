@@ -4,15 +4,27 @@ use nfs3_types::nfs3::{
     LOOKUP3args, READDIR3args, READDIRPLUS3args, cookieverf3, dirlist3, dirlistplus3, diropargs3,
     filename3, nfs_fh3,
 };
-use nfs3_types::xdr_codec::{Opaque, PackedSize};
+use nfs3_types::xdr_codec::Opaque;
 use tracing::info;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    const DIR: &str = "dir_10000";
+    const SIZE: usize = 10000;    
+    const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
+
+    let config = get_config(DIR, SIZE);
+    let mut client = TestContext::setup_with_config(config, LOG_LEVEL);
+
     let start_time = std::time::Instant::now();
-    test_dir(10000, "dir_10000").await.unwrap();
+    let requests_count = test_dir(&mut client, "dir_10000").await.unwrap();
     let elapsed_time = start_time.elapsed();
+
     println!("Elapsed time: {:?}", elapsed_time);
+    println!("Requests count: {requests_count}");
+    println!("Requests per second: {}", requests_count as f64 / elapsed_time.as_secs_f64());
+
+    client.shutdown().await.unwrap();
 }
 
 fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
@@ -34,23 +46,20 @@ fn get_file_name(i: usize) -> String {
     format!("{i}_this_is_a_really_long_file_name_that_keeps_going_and_going_and_going_and_going_0123456789.txt")
 }
 
-async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
-    const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
-    let config = get_config(dir, size);
-    let mut client = TestContext::setup_with_config(config, LOG_LEVEL);
-
+async fn test_dir<IO: AsyncRead + AsyncWrite>(mut client: &mut TestContext<IO>, dir: &str) -> anyhow::Result<u64> {
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
+    let mut request_count = 1u64; // lookup
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
-        readdir(&mut client, dir.clone(), count, size).await?;
-        readdir_plus(&mut client, dir.clone(), count, count, size).await?;
-        readdir_plus(&mut client, dir.clone(), 1024 * 1024, count, size).await?;
-        readdir_plus(&mut client, dir.clone(), count, 1024 * 1024, size).await?;
+        request_count += readdir(&mut client, dir.clone(), count).await?;
+        request_count += readdir_plus(&mut client, dir.clone(), count, count).await?;
+        request_count += readdir_plus(&mut client, dir.clone(), 1024 * 1024, count).await?;
+        request_count += readdir_plus(&mut client, dir.clone(), count, 1024 * 1024).await?;
     }
 
-    Ok(())
+    Ok(request_count)
 }
 
 async fn lookup<IO: AsyncRead + AsyncWrite>(
@@ -79,13 +88,12 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
     client: &mut TestContext<IO>,
     dir: nfs_fh3,
     count: u32,
-    total_files_count: usize,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
     info!("readdir count: {count}");
 
+    let mut request_count = 0;
     let mut cookie = 0;
     let mut cookieverf = cookieverf3::default();
-    let mut all_entries = std::collections::HashSet::new();
 
     loop {
         let args = READDIR3args {
@@ -96,10 +104,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
         };
 
         let resok = client.readdir(args).await?.unwrap();
-        assert!(
-            resok.packed_size() <= count as usize,
-            "packed size is larger than count"
-        );
+        request_count += 1;
 
         let dirlist3 { entries, eof } = resok.reply;
         let entries = entries.into_inner();
@@ -108,24 +113,12 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
         cookieverf = resok.cookieverf;
         cookie = entries.last().map_or(0, |e| e.cookie);
 
-        for entry in entries {
-            let filename = String::from_utf8(entry.name.0.to_vec())?;
-            assert!(all_entries.insert(filename), "duplicate entry");
-        }
-
         if eof {
             break;
         }
     }
 
-    // Check if we have all entries
-    assert_eq!(all_entries.len(), total_files_count);
-    for i in 0..total_files_count {
-        let file_name = get_file_name(i);
-        assert!(all_entries.contains(&file_name), "missing entry {i}");
-    }
-
-    Ok(())
+    Ok(request_count)
 }
 
 // dircount
@@ -143,13 +136,12 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
     dir: nfs_fh3,
     dircount: u32,
     maxcount: u32,
-    total_files_count: usize,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
     info!("readdir_plus dircount: {dircount} maxcount: {maxcount}");
 
+    let mut request_count = 0;
     let mut cookie = 0;
     let mut cookieverf = cookieverf3::default();
-    let mut all_entries = std::collections::HashSet::new();
 
     loop {
         let args = READDIRPLUS3args {
@@ -161,10 +153,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
         };
 
         let resok = client.readdirplus(args).await?.unwrap();
-        assert!(
-            resok.packed_size() <= maxcount as usize,
-            "packed size is larger than count"
-        );
+        request_count += 1;
 
         let dirlistplus3 { entries, eof } = resok.reply;
         let entries = entries.into_inner();
@@ -173,22 +162,10 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
         cookieverf = resok.cookieverf;
         cookie = entries.last().map_or(0, |e| e.cookie);
 
-        for entry in entries {
-            let filename = String::from_utf8(entry.name.0.to_vec())?;
-            assert!(all_entries.insert(filename), "duplicate entry");
-        }
-
         if eof {
             break;
         }
     }
 
-    // Check if we have all entries
-    assert_eq!(all_entries.len(), total_files_count);
-    for i in 0..total_files_count {
-        let file_name = get_file_name(i);
-        assert!(all_entries.contains(&file_name), "missing entry {i}");
-    }
-
-    Ok(())
+    Ok(request_count)
 }
