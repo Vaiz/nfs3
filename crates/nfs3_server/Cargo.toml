@@ -23,7 +23,7 @@ memfs = []
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.3.1" }
 
-tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros"] }
+tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true

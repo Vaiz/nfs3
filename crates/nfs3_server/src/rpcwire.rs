@@ -1,4 +1,5 @@
 use std::io::{Cursor, Read, Write};
+use std::time::Instant;
 
 use anyhow::anyhow;
 use nfs3_types::rpc::*;
@@ -37,20 +38,22 @@ async fn handle_rpc(
             return Ok(true);
         }
 
-        if context
-            .transaction_tracker
-            .is_retransmission(xid, &context.client_addr)
-        {
+        let transaction = context.transaction_tracker.start_transaction(
+            &context.client_addr,
+            xid,
+            Instant::now(),
+        );
+        if transaction.is_none() {
             // This is a retransmission
             // Drop the message and return
             debug!(
-                "Retransmission detected, xid: {}, client_addr: {}, call: {:?}",
-                xid, context.client_addr, call
+                "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
+                context.client_addr
             );
             return Ok(false);
         }
 
-        let res = {
+        {
             if call.prog == nfs::PROGRAM {
                 nfs_handlers::handle_nfs(xid, call, input, output, &context).await
             } else if call.prog == portmap::PROGRAM {
@@ -74,11 +77,7 @@ async fn handle_rpc(
                 Ok(())
             }
         }
-        .map(|_| true);
-        context
-            .transaction_tracker
-            .mark_processed(xid, &context.client_addr);
-        res
+        .map(|_| true)
     } else {
         error!("Unexpectedly received a Reply instead of a Call");
         Err(anyhow!("Bad RPC Call format"))

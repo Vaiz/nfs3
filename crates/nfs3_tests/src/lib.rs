@@ -44,7 +44,9 @@ impl TestContext<TokioIo<DuplexStream>> {
             root_dir,
         }
     }
+}
 
+impl<IO> TestContext<IO> {
     pub fn root_dir(&self) -> &nfs_fh3 {
         &self.root_dir
     }

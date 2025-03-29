@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 
 use crate::context::RPCContext;
 use crate::rpcwire::*;
-use crate::transaction_tracker::TransactionTracker;
+use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::NFSFileSystem;
 
@@ -24,6 +24,13 @@ pub struct NFSTcpListener<T: NFSFileSystem + Send + Sync + 'static> {
     mount_signal: Option<mpsc::Sender<bool>>,
     export_name: Arc<String>,
     transaction_tracker: Arc<TransactionTracker>,
+    stop_notify: Arc<tokio::sync::Notify>,
+}
+
+impl<T: NFSFileSystem + Send + Sync + 'static> Drop for NFSTcpListener<T> {
+    fn drop(&mut self) {
+        self.stop_notify.notify_waiters();
+    }
 }
 
 pub fn generate_host_ip(hostnum: u16) -> String {
@@ -174,6 +181,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             mount_signal: None,
             export_name: Arc::from("/".to_string()),
             transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
+            stop_notify: Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -215,6 +223,14 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
 
     /// Loops forever and never returns handling all incoming connections.
     async fn handle_forever(&self) -> io::Result<()> {
+        let cleaner_future = Cleaner::new(
+            self.transaction_tracker.clone(),
+            Duration::from_secs(10),
+            Arc::clone(&self.stop_notify),
+        )
+        .run();
+        tokio::spawn(cleaner_future);
+
         loop {
             let (socket, _) = self.listener.accept().await?;
             let context = RPCContext {

@@ -11,3 +11,6 @@ target/
 
 # RustRover
 .idea/
+
+# performance profiling files
+profile.json.gz
