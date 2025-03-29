@@ -50,19 +50,19 @@ fn get_file_name(i: usize) -> String {
 }
 
 async fn test_dir<IO: AsyncRead + AsyncWrite>(
-    mut client: &mut TestContext<IO>,
+    client: &mut TestContext<IO>,
     dir: &str,
 ) -> anyhow::Result<u64> {
     let root_dir = client.root_dir().clone();
-    let dir = lookup(&mut client, root_dir.clone(), dir).await?;
+    let dir = lookup(client, root_dir.clone(), dir).await?;
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
     let mut request_count = 1u64; // lookup
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
-        request_count += readdir(&mut client, dir.clone(), count).await?;
-        request_count += readdir_plus(&mut client, dir.clone(), count, count).await?;
-        request_count += readdir_plus(&mut client, dir.clone(), 1024 * 1024, count).await?;
-        request_count += readdir_plus(&mut client, dir.clone(), count, 1024 * 1024).await?;
+        request_count += readdir(client, dir.clone(), count).await?;
+        request_count += readdir_plus(client, dir.clone(), count, count).await?;
+        request_count += readdir_plus(client, dir.clone(), 1024 * 1024, count).await?;
+        request_count += readdir_plus(client, dir.clone(), count, 1024 * 1024).await?;
     }
 
     Ok(request_count)
