@@ -180,9 +180,21 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             arcfs,
             mount_signal: None,
             export_name: Arc::from("/".to_string()),
-            transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
+            transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
         })
+    }
+
+    fn new_transaction_tracker() -> Arc<TransactionTracker> {
+        const TRANSACTION_LIFETIME: Duration = Duration::from_secs(60);
+        const MAX_ACTIVE_TRANSACTIONS: u16 = 256;
+        const TRANSACTION_TRIM_THRESHOLD: usize = 2048;
+
+        Arc::new(TransactionTracker::new(
+            TRANSACTION_LIFETIME,
+            MAX_ACTIVE_TRANSACTIONS,
+            TRANSACTION_TRIM_THRESHOLD,
+        ))
     }
 
     /// Sets an optional NFS export name.

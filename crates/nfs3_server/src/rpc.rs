@@ -44,6 +44,17 @@ pub fn garbage_args_reply_message(xid: u32) -> rpc_msg<'static, 'static> {
     }
 }
 
+pub fn system_err_reply_message(xid: u32) -> rpc_msg<'static, 'static> {
+    let reply = reply_body::MSG_ACCEPTED(accepted_reply {
+        verf: opaque_auth::default(),
+        reply_data: accept_body::SYSTEM_ERR,
+    });
+    rpc_msg {
+        xid,
+        body: rpc_body::REPLY(reply),
+    }
+}
+
 pub fn rpc_vers_mismatch(xid: u32) -> rpc_msg<'static, 'static> {
     let reply = reply_body::MSG_DENIED(rejected_reply::rpc_mismatch(0, 0));
     rpc_msg {

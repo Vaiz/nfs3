@@ -7,10 +7,11 @@ use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::sync::mpsc;
-use tracing::{debug, error, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
 use crate::rpc::*;
+use crate::transaction_tracker::TransactionError;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 // Information from RFC 5531
@@ -27,61 +28,72 @@ async fn handle_rpc(
 ) -> Result<bool, anyhow::Error> {
     let recv = rpc_msg::unpack(input)?.0;
     let xid = recv.xid;
-    if let msg_body::CALL(call) = recv.body {
-        if let auth_flavor::AUTH_UNIX = call.cred.flavor {
-            let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
-            context.auth = auth;
-        }
-        if call.rpcvers != RPC_VERSION_2 {
-            warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
-            rpc_vers_mismatch(xid).pack(output)?;
-            return Ok(true);
-        }
 
-        let transaction = context.transaction_tracker.start_transaction(
-            &context.client_addr,
-            xid,
-            Instant::now(),
-        );
-        if transaction.is_none() {
-            // This is a retransmission
-            // Drop the message and return
-            debug!(
+    let call = match recv.body {
+        msg_body::CALL(call) => call,
+        msg_body::REPLY(_) => {
+            error!("Unexpectedly received a Reply instead of a Call");
+            return Err(anyhow!("Bad RPC Call format"));
+        }
+    };
+
+    if let auth_flavor::AUTH_UNIX = call.cred.flavor {
+        let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
+        context.auth = auth;
+    }
+    if call.rpcvers != RPC_VERSION_2 {
+        warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
+        rpc_vers_mismatch(xid).pack(output)?;
+        return Ok(true);
+    }
+
+    let transaction =
+        context
+            .transaction_tracker
+            .start_transaction(&context.client_addr, xid, Instant::now());
+
+    let _lock = match transaction {
+        Ok(lock) => lock,
+        Err(TransactionError::AlreadyExists) => {
+            info!(
                 "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
                 context.client_addr
             );
-            return Ok(false);
+            return Ok(true);
         }
+        Err(TransactionError::TooManyRequests) => {
+            warn!(
+                "Too many requests, xid: {xid}, client_addr: {}, call: {call:?}",
+                context.client_addr
+            );
 
-        {
-            if call.prog == nfs::PROGRAM {
-                nfs_handlers::handle_nfs(xid, call, input, output, &context).await
-            } else if call.prog == portmap::PROGRAM {
-                portmap_handlers::handle_portmap(xid, call, input, output, &context)
-            } else if call.prog == nfs3_types::mount::PROGRAM {
-                mount_handlers::handle_mount(xid, call, input, output, &context).await
-            } else if call.prog == NFS_ACL_PROGRAM
-                || call.prog == NFS_ID_MAP_PROGRAM
-                || call.prog == NFS_METADATA_PROGRAM
-            {
-                trace!("ignoring NFS_ACL packet");
-                prog_unavail_reply_message(xid).pack(output)?;
-                Ok(())
-            } else {
-                warn!(
-                    "Unknown RPC Program number {} != {}",
-                    call.prog,
-                    nfs::PROGRAM
-                );
-                prog_unavail_reply_message(xid).pack(output)?;
-                Ok(())
-            }
+            system_err_reply_message(xid).pack(output)?;
+            return Ok(true);
         }
-        .map(|_| true)
+    };
+
+    if call.prog == nfs::PROGRAM {
+        nfs_handlers::handle_nfs(xid, call, input, output, &context).await?;
+    } else if call.prog == portmap::PROGRAM {
+        portmap_handlers::handle_portmap(xid, call, input, output, &context)?;
+    } else if call.prog == nfs3_types::mount::PROGRAM {
+        mount_handlers::handle_mount(xid, call, input, output, &context).await?;
+    } else if call.prog == NFS_ACL_PROGRAM
+        || call.prog == NFS_ID_MAP_PROGRAM
+        || call.prog == NFS_METADATA_PROGRAM
+    {
+        trace!("ignoring NFS_ACL packet");
+        prog_unavail_reply_message(xid).pack(output)?;
     } else {
-        error!("Unexpectedly received a Reply instead of a Call");
-        Err(anyhow!("Bad RPC Call format"))
+        warn!(
+            "Unknown RPC Program number {} != {}",
+            call.prog,
+            nfs::PROGRAM
+        );
+        prog_unavail_reply_message(xid).pack(output)?;
     }
+
+    Ok(true)
 }
 
 /// RFC 1057 Section 10

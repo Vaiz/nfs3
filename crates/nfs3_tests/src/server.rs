@@ -21,7 +21,11 @@ where
             vfs: Arc::new(memfs),
             mount_signal: None,
             export_name: Arc::new("/mnt".to_string()),
-            transaction_tracker: Arc::new(TransactionTracker::new(Duration::from_secs(60))),
+            transaction_tracker: Arc::new(TransactionTracker::new(
+                Duration::from_secs(60),
+                256,
+                1024,
+            )),
         };
 
         let this = Self { context, io };
