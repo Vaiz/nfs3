@@ -10,7 +10,7 @@ publish = false # this crate contains only tests
 
 [dependencies]
 nfs3_client = { path = "../nfs3_client", version = "0.3.0", features = ["tokio"] }
-nfs3_server = { path = "../nfs3_server", version = "0.4.0", features = ["__test_reexports", "memfs"] }
+nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["__test_reexports", "memfs"] }
 nfs3_types = { path = "../nfs3_types", version = "0.3.1" }
 
 anyhow.workspace = true
