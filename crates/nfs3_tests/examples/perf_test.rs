@@ -10,7 +10,7 @@ use tracing::info;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     const DIR: &str = "dir_10000";
-    const SIZE: usize = 10000;    
+    const SIZE: usize = 10000;
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
 
     let config = get_config(DIR, SIZE);
@@ -22,7 +22,10 @@ async fn main() {
 
     println!("Elapsed time: {:?}", elapsed_time);
     println!("Requests count: {requests_count}");
-    println!("Requests per second: {}", requests_count as f64 / elapsed_time.as_secs_f64());
+    println!(
+        "Requests per second: {}",
+        requests_count as f64 / elapsed_time.as_secs_f64()
+    );
 
     client.shutdown().await.unwrap();
 }
@@ -46,7 +49,10 @@ fn get_file_name(i: usize) -> String {
     format!("{i}_this_is_a_really_long_file_name_that_keeps_going_and_going_and_going_and_going_0123456789.txt")
 }
 
-async fn test_dir<IO: AsyncRead + AsyncWrite>(mut client: &mut TestContext<IO>, dir: &str) -> anyhow::Result<u64> {
+async fn test_dir<IO: AsyncRead + AsyncWrite>(
+    mut client: &mut TestContext<IO>,
+    dir: &str,
+) -> anyhow::Result<u64> {
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;
 
