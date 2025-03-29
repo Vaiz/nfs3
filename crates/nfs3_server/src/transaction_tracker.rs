@@ -56,11 +56,11 @@ impl TransactionTracker {
         let mut client_lock = val.lock().unwrap();
         client_lock.add_transaction(xid, now).ok()?;
 
-        return Some(TransactionLock::new(
+        Some(TransactionLock::new(
             val.clone(),
             xid,
             self.retention_period,
-        ));
+        ))
     }
 
     pub(crate) fn cleanup(&self, now: Instant) {
@@ -165,7 +165,7 @@ impl ClientTransactions {
 
     fn complete_transaction(&mut self, xid: u32, now: Instant) {
         self.last_active = now;
-        if let Some(p) = self.find_transaction(xid).ok() {
+        if let Ok(p) = self.find_transaction(xid) {
             self.transactions[p].complete(now);
         } else {
             // transaction not found, do nothing

@@ -53,7 +53,8 @@ async fn handle_rpc(
             return Ok(false);
         }
 
-        let res = {
+        
+        {
             if call.prog == nfs::PROGRAM {
                 nfs_handlers::handle_nfs(xid, call, input, output, &context).await
             } else if call.prog == portmap::PROGRAM {
@@ -77,8 +78,7 @@ async fn handle_rpc(
                 Ok(())
             }
         }
-        .map(|_| true);
-        res
+        .map(|_| true)
     } else {
         error!("Unexpectedly received a Reply instead of a Call");
         Err(anyhow!("Bad RPC Call format"))
