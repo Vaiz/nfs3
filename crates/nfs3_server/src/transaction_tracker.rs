@@ -6,13 +6,21 @@ use std::time::{Duration, Instant};
 pub struct TransactionTracker {
     retention_period: Duration,
     transactions: RwLock<HashMap<String, Arc<Mutex<ClientTransactions>>>>,
+    max_active_transactions: u16,
+    trim_limit: usize,
 }
 
 impl TransactionTracker {
-    pub fn new(retention_period: Duration) -> Self {
+    pub fn new(
+        retention_period: Duration,
+        max_active_transactions: u16,
+        trim_limit: usize,
+    ) -> Self {
         Self {
             retention_period,
             transactions: RwLock::new(HashMap::new()),
+            max_active_transactions,
+            trim_limit,
         }
     }
 
@@ -22,7 +30,7 @@ impl TransactionTracker {
         client_addr: &str,
         xid: u32,
         now: Instant,
-    ) -> Option<TransactionLock> {
+    ) -> Result<TransactionLock, TransactionError> {
         // First, we check if client is already in the transactions map
         {
             let transactions = self
@@ -32,8 +40,8 @@ impl TransactionTracker {
 
             if let Some(client_transactions) = transactions.get(client_addr) {
                 let mut client_lock = client_transactions.lock().unwrap();
-                client_lock.add_transaction(xid, now).ok()?;
-                return Some(TransactionLock::new(
+                client_lock.add_transaction(xid, now)?;
+                return Ok(TransactionLock::new(
                     client_transactions.clone(),
                     xid,
                     self.retention_period,
@@ -51,16 +59,24 @@ impl TransactionTracker {
 
         let val = transactions
             .entry(client_addr.to_owned())
-            .or_insert_with(|| Arc::new(Mutex::new(ClientTransactions::new(now))));
+            .or_insert_with(|| self.new_client_transactions(now));
 
         let mut client_lock = val.lock().unwrap();
-        client_lock.add_transaction(xid, now).ok()?;
+        client_lock.add_transaction(xid, now)?;
 
-        Some(TransactionLock::new(
+        Ok(TransactionLock::new(
             val.clone(),
             xid,
             self.retention_period,
         ))
+    }
+
+    fn new_client_transactions(&self, now: Instant) -> Arc<Mutex<ClientTransactions>> {
+        Arc::new(Mutex::new(ClientTransactions::new(
+            now,
+            self.max_active_transactions,
+            self.trim_limit,
+        )))
     }
 
     pub(crate) fn cleanup(&self, now: Instant) {
@@ -79,6 +95,21 @@ impl TransactionTracker {
                 false
             }
         });
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransactionError {
+    AlreadyExists,
+    TooManyRequests,
+}
+
+impl std::fmt::Display for TransactionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransactionError::AlreadyExists => write!(f, "transaction already exists"),
+            TransactionError::TooManyRequests => write!(f, "too many requests"),
+        }
     }
 }
 
@@ -103,6 +134,10 @@ impl Transaction {
     }
 
     fn complete(&mut self, now: Instant) {
+        assert!(
+            matches!(self.state, TransactionState::InProgress),
+            "transaction is already completed"
+        );
         self.state = TransactionState::Completed(now);
     }
 
@@ -120,13 +155,25 @@ struct ClientTransactions {
     // In general, it's expected that transactions from the same host will be in order
     transactions: VecDeque<Transaction>,
     last_active: Instant,
+    active_transactions: u16,
+    max_active_transactions: u16,
+    trim_limit: usize,
 }
 
 impl ClientTransactions {
-    fn new(now: Instant) -> Self {
+    /// Creates a new `ClientTransactions` instance with the given parameters.
+    /// `max_active_transactions` is the maximum number of transactions that can be active at the
+    /// same time.
+    /// `trim_limit` is the soft limit for number of transactions that can be kept in memory.
+    /// `max_active_transactions` should be less than `trim_limit`.
+    fn new(now: Instant, max_active_transactions: u16, trim_limit: usize) -> Self {
+        assert!((max_active_transactions as usize) < trim_limit);
         Self {
             transactions: VecDeque::new(),
             last_active: now,
+            active_transactions: 0,
+            max_active_transactions,
+            trim_limit,
         }
     }
     // Finds a transaction by its xid taking into account that the list is sorted
@@ -147,15 +194,17 @@ impl ClientTransactions {
         }
     }
 
-    fn add_transaction(&mut self, xid: u32, now: Instant) -> Result<(), &Transaction> {
+    fn add_transaction(&mut self, xid: u32, now: Instant) -> Result<(), TransactionError> {
         self.last_active = now;
         match self.find_transaction(xid) {
-            Ok(p) => {
-                // transaction already exists
-                Err(&self.transactions[p])
-            }
+            Ok(_) => Err(TransactionError::AlreadyExists),
             Err(p) => {
+                if self.active_transactions >= self.max_active_transactions {
+                    return Err(TransactionError::TooManyRequests);
+                }
+                self.active_transactions += 1;
                 self.transactions.insert(p, Transaction::in_progress(xid));
+                self.trim_if_needed();
                 Ok(())
             }
         }
@@ -165,6 +214,7 @@ impl ClientTransactions {
         self.last_active = now;
         if let Ok(p) = self.find_transaction(xid) {
             self.transactions[p].complete(now);
+            self.active_transactions -= 1;
         } else {
             // transaction not found, do nothing
         }
@@ -194,6 +244,20 @@ impl ClientTransactions {
         self.transactions
             .iter()
             .any(|tx| !tx.is_stale(now, max_age))
+    }
+
+    // Remove the oldest transactions until we are below the trim limit
+    fn trim_if_needed(&mut self) {
+        while self.transactions.len() > self.trim_limit {
+            if matches!(
+                self.transactions.front().unwrap().state,
+                TransactionState::InProgress
+            ) {
+                // If the transaction is still in progress, we can't remove it
+                break;
+            }
+            self.transactions.pop_front();
+        }
     }
 }
 
@@ -281,7 +345,7 @@ mod tests {
     #[test]
     fn test_client_transactions() {
         let now = Instant::now();
-        let mut client_transactions = ClientTransactions::new(now);
+        let mut client_transactions = ClientTransactions::new(now, 100, 1000);
 
         assert_eq!(client_transactions.transactions.len(), 0);
         assert!(client_transactions.last_active.elapsed() < Duration::new(1, 0));
@@ -303,7 +367,7 @@ mod tests {
     #[test]
     fn out_of_order_transactions() {
         let now = Instant::now();
-        let mut client_transactions = ClientTransactions::new(now);
+        let mut client_transactions = ClientTransactions::new(now, 100, 1000);
 
         client_transactions.add_transaction(9, now).unwrap();
         client_transactions.add_transaction(1, now).unwrap();
@@ -321,7 +385,7 @@ mod tests {
     #[test]
     fn test_client_transactions_stale() {
         let now = Instant::now();
-        let mut client_transactions = ClientTransactions::new(now);
+        let mut client_transactions = ClientTransactions::new(now, 100, 1000);
 
         client_transactions.add_transaction(1, now).unwrap();
         client_transactions.add_transaction(2, now).unwrap();
@@ -352,11 +416,11 @@ mod tests {
 
     #[test]
     fn test_transaction_tracker() -> anyhow::Result<()> {
-        let tracker = TransactionTracker::new(Duration::new(1, 0));
+        let tracker = TransactionTracker::new(Duration::new(1, 0), 100, 1000);
         let now = Instant::now();
 
         let transaction = tracker.start_transaction("client1", 1, now).unwrap();
-        assert!(tracker.start_transaction("client1", 1, now).is_none());
+        assert_eq!(tracker.start_transaction("client1", 1, now).unwrap_err(), TransactionError::AlreadyExists);
         assert_eq!(transaction.xid, 1);
 
         {
@@ -391,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_cleanup() {
-        let tracker = TransactionTracker::new(Duration::new(1, 0));
+        let tracker = TransactionTracker::new(Duration::new(1, 0), 100, 1000);
         let now = Instant::now();
 
         let transaction1 = tracker.start_transaction("client1", 1, now).unwrap();
