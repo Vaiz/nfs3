@@ -160,3 +160,152 @@ async fn invalid_body() -> anyhow::Result<()> {
 
     client.shutdown().await
 }
+
+#[tokio::test]
+async fn invalid_rpc_ver() -> anyhow::Result<()> {
+    let mut client = RpcTestContext::setup();
+
+    let rpc_msg = rpc_msg {
+        xid: 1,
+        body: msg_body::CALL(call_body {
+            rpcvers: 0x1234_5678u32,
+            prog: nfs3_types::nfs3::PROGRAM,
+            vers: nfs3_types::nfs3::VERSION,
+            proc: NFS_PROGRAM::NFSPROC3_NULL as u32,
+            cred: opaque_auth::default(),
+            verf: opaque_auth::default(),
+        }),
+    };
+
+    client.send_call(&rpc_msg, &Void).await?;
+
+    let (msg, body) = client.recv_reply::<Void>().await?;
+    tracing::debug!("{msg:?}");
+    assert_eq!(msg.xid, 1);
+    let msg_body::REPLY(reply) = &msg.body else {
+        panic!("Expected REPLY message, got: {:?}", msg.body);
+    };
+    let reply_body::MSG_DENIED(denied) = reply else {
+        panic!("Expected MSG_DENIED, got: {:?}", reply);
+    };
+    assert!(matches!(
+        denied,
+        nfs3_types::rpc::rejected_reply::RPC_MISMATCH {
+            low: nfs3_types::rpc::RPC_VERSION_2,
+            high: nfs3_types::rpc::RPC_VERSION_2
+        }
+    ));
+    assert!(body.is_none());
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn unknown_program() -> anyhow::Result<()> {
+    let mut client = RpcTestContext::setup();
+
+    let rpc_msg = rpc_msg {
+        xid: 1,
+        body: msg_body::CALL(call_body {
+            rpcvers: nfs3_types::rpc::RPC_VERSION_2,
+            prog: 0x1234_5678u32,
+            vers: nfs3_types::nfs3::VERSION,
+            proc: NFS_PROGRAM::NFSPROC3_NULL as u32,
+            cred: opaque_auth::default(),
+            verf: opaque_auth::default(),
+        }),
+    };
+
+    client.send_call(&rpc_msg, &Void).await?;
+
+    let (msg, body) = client.recv_reply::<Void>().await?;
+    tracing::debug!("{msg:?}");
+    assert_eq!(msg.xid, 1);
+    let msg_body::REPLY(reply) = &msg.body else {
+        panic!("Expected REPLY message, got: {:?}", msg.body);
+    };
+    let reply_body::MSG_ACCEPTED(accepted) = reply else {
+        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+    };
+    assert!(matches!(
+        accepted.reply_data,
+        nfs3_types::rpc::accept_stat_data::PROG_UNAVAIL
+    ));
+    assert!(body.is_none());
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn invalid_nfs_version() -> anyhow::Result<()> {
+    let mut client = RpcTestContext::setup();
+
+    let rpc_msg = rpc_msg {
+        xid: 1,
+        body: msg_body::CALL(call_body {
+            rpcvers: nfs3_types::rpc::RPC_VERSION_2,
+            prog: nfs3_types::nfs3::PROGRAM,
+            vers: 0x1234_5678u32,
+            proc: NFS_PROGRAM::NFSPROC3_NULL as u32,
+            cred: opaque_auth::default(),
+            verf: opaque_auth::default(),
+        }),
+    };
+
+    client.send_call(&rpc_msg, &Void).await?;
+    let (msg, body) = client.recv_reply::<Void>().await?;
+    tracing::debug!("{msg:?}");
+    assert_eq!(msg.xid, 1);
+    let msg_body::REPLY(reply) = &msg.body else {
+        panic!("Expected REPLY message, got: {:?}", msg.body);
+    };
+    let reply_body::MSG_ACCEPTED(accepted) = reply else {
+        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+    };
+    assert!(matches!(
+        accepted.reply_data,
+        nfs3_types::rpc::accept_stat_data::PROG_MISMATCH {
+            low: nfs3_types::nfs3::VERSION,
+            high: nfs3_types::nfs3::VERSION
+        }
+    ));
+    assert!(body.is_none());
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn invalid_procedure() -> anyhow::Result<()> {
+    let mut client = RpcTestContext::setup();
+
+    let rpc_msg = rpc_msg {
+        xid: 1,
+        body: msg_body::CALL(call_body {
+            rpcvers: nfs3_types::rpc::RPC_VERSION_2,
+            prog: nfs3_types::nfs3::PROGRAM,
+            vers: nfs3_types::nfs3::VERSION,
+            proc: 0x1234_5678u32,
+            cred: opaque_auth::default(),
+            verf: opaque_auth::default(),
+        }),
+    };
+
+    client.send_call(&rpc_msg, &Void).await?;
+
+    let (msg, body) = client.recv_reply::<Void>().await?;
+    tracing::debug!("{msg:?}");
+    assert_eq!(msg.xid, 1);
+    let msg_body::REPLY(reply) = &msg.body else {
+        panic!("Expected REPLY message, got: {:?}", msg.body);
+    };
+    let reply_body::MSG_ACCEPTED(accepted) = reply else {
+        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+    };
+    assert!(matches!(
+        accepted.reply_data,
+        nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL
+    ));
+    assert!(body.is_none());
+
+    client.shutdown().await
+}
