@@ -120,16 +120,15 @@ async fn read_fragment(
 ) -> Result<bool, anyhow::Error> {
     let mut header_buf = [0_u8; 4];
     socket.read_exact(&mut header_buf).await?;
-    let fragment_header = u32::from_be_bytes(header_buf);
-    let is_last = (fragment_header & (1 << 31)) > 0;
-    let length = (fragment_header & ((1 << 31) - 1)) as usize;
-    trace!("Reading fragment length:{}, last:{}", length, is_last);
+    let fragment_header: fragment_header = header_buf.into();
+    let is_last = fragment_header.eof();
+    let length = fragment_header.fragment_length() as usize;
+    trace!("Reading fragment length:{length}, last:{is_last}");
     let start_offset = append_to.len();
     append_to.resize(append_to.len() + length, 0);
     socket.read_exact(&mut append_to[start_offset..]).await?;
     trace!(
-        "Finishing Reading fragment length:{}, last:{}",
-        length, is_last
+        "Finishing Reading fragment length:{length}, last:{is_last}",
     );
     Ok(is_last)
 }

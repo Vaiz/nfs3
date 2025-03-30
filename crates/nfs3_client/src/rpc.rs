@@ -4,14 +4,13 @@ use std::fmt::Debug;
 use std::io::Cursor;
 
 use nfs3_types::rpc::{
-    RPC_VERSION_2, accept_stat_data, call_body, msg_body, opaque_auth, reply_body, rpc_msg,
+    RPC_VERSION_2, accept_stat_data, call_body, fragment_header, msg_body, opaque_auth, reply_body,
+    rpc_msg,
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 
 use crate::error::{Error, RpcError};
 use crate::io::{AsyncRead, AsyncWrite};
-
-const EOF_FLAG: u32 = 0x8000_0000;
 
 /// RPC client
 pub struct RpcClient<IO> {
@@ -87,7 +86,7 @@ where
         }
 
         let mut buf = Vec::with_capacity(total_len + 4);
-        let fragment_header = total_len as u32 | EOF_FLAG;
+        let fragment_header = nfs3_types::rpc::fragment_header::new(total_len as u32, true);
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
@@ -104,12 +103,12 @@ where
     {
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;
-        let fragment_header = u32::from_be_bytes(buf);
-        if fragment_header & EOF_FLAG == 0 {
+        let fragment_header: fragment_header = buf.into();
+        if !fragment_header.eof() {
             panic!("Fragment header does not have EOF flag");
         }
 
-        let total_len = fragment_header & !EOF_FLAG;
+        let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
         io.async_read_exact(&mut buf).await?;
 
