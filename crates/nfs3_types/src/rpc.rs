@@ -36,6 +36,9 @@ impl fragment_header {
     pub fn fragment_length(&self) -> u32 {
         self.header & fragment_header::MASK
     }
+    pub fn into_xdr_buf(self) -> [u8; 4] {
+        self.header.to_be_bytes()
+    }
 }
 
 impl From<[u8; 4]> for fragment_header {

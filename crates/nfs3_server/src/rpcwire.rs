@@ -137,9 +137,8 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
     assert!(buf.len() < (1 << 31));
-    // set the last flag
-    let fragment_header = buf.len() as u32 + (1 << 31);
-    let header_buf = u32::to_be_bytes(fragment_header);
+    let fragment_header = fragment_header::new(buf.len() as u32, true);
+    let header_buf = fragment_header.into_xdr_buf();
     socket.write_all(&header_buf).await?;
     trace!("Writing fragment length:{}", buf.len());
     socket.write_all(buf).await?;
