@@ -120,17 +120,14 @@ async fn read_fragment(
 ) -> Result<bool, anyhow::Error> {
     let mut header_buf = [0_u8; 4];
     socket.read_exact(&mut header_buf).await?;
-    let fragment_header = u32::from_be_bytes(header_buf);
-    let is_last = (fragment_header & (1 << 31)) > 0;
-    let length = (fragment_header & ((1 << 31) - 1)) as usize;
-    trace!("Reading fragment length:{}, last:{}", length, is_last);
+    let fragment_header: fragment_header = header_buf.into();
+    let is_last = fragment_header.eof();
+    let length = fragment_header.fragment_length() as usize;
+    trace!("Reading fragment length:{length}, last:{is_last}");
     let start_offset = append_to.len();
     append_to.resize(append_to.len() + length, 0);
     socket.read_exact(&mut append_to[start_offset..]).await?;
-    trace!(
-        "Finishing Reading fragment length:{}, last:{}",
-        length, is_last
-    );
+    trace!("Finishing Reading fragment length:{length}, last:{is_last}",);
     Ok(is_last)
 }
 
@@ -140,9 +137,8 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
     assert!(buf.len() < (1 << 31));
-    // set the last flag
-    let fragment_header = buf.len() as u32 + (1 << 31);
-    let header_buf = u32::to_be_bytes(fragment_header);
+    let fragment_header = fragment_header::new(buf.len() as u32, true);
+    let header_buf = fragment_header.into_xdr_buf();
     socket.write_all(&header_buf).await?;
     trace!("Writing fragment length:{}", buf.len());
     socket.write_all(buf).await?;
