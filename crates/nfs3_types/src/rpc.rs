@@ -11,7 +11,7 @@ use nfs3_macros::XdrCodec;
 use crate::xdr_codec::{Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
 /// RPC header
-/// 
+///
 /// The RPC header is a 32-bit integer that contains the length of the fragment and an EOF flag.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct fragment_header {

@@ -127,9 +127,7 @@ async fn read_fragment(
     let start_offset = append_to.len();
     append_to.resize(append_to.len() + length, 0);
     socket.read_exact(&mut append_to[start_offset..]).await?;
-    trace!(
-        "Finishing Reading fragment length:{length}, last:{is_last}",
-    );
+    trace!("Finishing Reading fragment length:{length}, last:{is_last}",);
     Ok(is_last)
 }
 
