@@ -59,7 +59,7 @@ async fn handle_rpc(
                 "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
                 context.client_addr
             );
-            return Ok(true);
+            return Ok(false);
         }
         Err(TransactionError::TooManyRequests) => {
             warn!(
