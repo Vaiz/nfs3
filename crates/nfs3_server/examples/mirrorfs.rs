@@ -118,11 +118,11 @@ impl FSMap {
     }
 
     fn sym_to_fname(&self, symlist: &[Symbol]) -> OsString {
-        if let Some(x) = symlist.last() {
-            self.intern.get(*x).unwrap().into()
-        } else {
-            "".into()
-        }
+        symlist
+            .last()
+            .map(|x| self.intern.get(*x).unwrap())
+            .unwrap_or_default()
+            .into()
     }
 
     fn collect_all_children(&self, id: fileid3, ret: &mut Vec<fileid3>) {
@@ -430,6 +430,7 @@ impl NFSFileSystem for MirrorFS {
         Ok(ent.fsmeta.clone())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     async fn read(
         &self,
         id: fileid3,
@@ -437,8 +438,8 @@ impl NFSFileSystem for MirrorFS {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let fsmap = self.fsmap.read().await;
-        let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
+        let entry = fsmap.find_entry(id)?;
+        let path = fsmap.sym_to_path(&entry.name);
         drop(fsmap);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
         let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();

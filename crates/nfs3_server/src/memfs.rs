@@ -751,10 +751,10 @@ mod tests {
     #[test]
     fn test_fs_config() {
         let mut config = MemFsConfig::default();
-        config.add_file("/a.txt", "hello world\n".as_bytes());
-        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_file("/a.txt", b"hello world\n");
+        config.add_file("/b.txt", b"Greetings to xet data\n");
         config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+        config.add_file("/another_dir/thisworks.txt", b"i hope\n");
 
         assert_eq!(config.entries.len(), 4);
         assert_eq!(config.entries[0].parent, "/");
