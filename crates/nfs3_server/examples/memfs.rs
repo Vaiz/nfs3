@@ -20,9 +20,10 @@ async fn main() -> anyhow::Result<()> {
     let bind_port = args
         .get(2)
         .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(HOSTPORT as u16);
+        .unwrap_or(HOSTPORT);
 
-    let memfs = nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
+    let memfs =
+        nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
     let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), memfs).await?;
     listener.handle_forever().await?;
 
