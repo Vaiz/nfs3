@@ -12,14 +12,15 @@ use tracing::{error, info, trace, warn};
 use crate::context::RPCContext;
 use crate::rpc::{prog_unavail_reply_message, rpc_vers_mismatch, system_err_reply_message};
 use crate::transaction_tracker::TransactionError;
+use crate::units::KIBIBYTE;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
 
-const NFS_ACL_PROGRAM: u32 = 100227;
-const NFS_ID_MAP_PROGRAM: u32 = 100270;
-const NFS_METADATA_PROGRAM: u32 = 200024;
+const NFS_ACL_PROGRAM: u32 = 100_227;
+const NFS_ID_MAP_PROGRAM: u32 = 100_270;
+const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc(
     input: &mut impl Read,
@@ -168,7 +169,7 @@ impl SocketMessageHandler {
         DuplexStream,
         mpsc::UnboundedReceiver<SocketMessageType>,
     ) {
-        let (socksend, sockrecv) = tokio::io::duplex(256000);
+        let (socksend, sockrecv) = tokio::io::duplex(256 * KIBIBYTE as usize);
         let (msgsend, msgrecv) = mpsc::unbounded_channel();
         (
             Self {

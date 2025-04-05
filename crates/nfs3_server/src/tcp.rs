@@ -71,15 +71,12 @@ where
                     Ok(n) => {
                         let _ = socksend.write_all(&buf[..n]).await;
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
                     Err(e) => {
                         debug!("Message handling closed : {e}");
                         return Err(e.into());
                     }
                 }
-
             },
             reply = msgrecvchan.recv() => {
                 match reply {
@@ -151,7 +148,6 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
                             return result;
                         }
                         num_tries_left -= 1;
-                        continue;
                     }
                     Ok(_) => {
                         return result;
