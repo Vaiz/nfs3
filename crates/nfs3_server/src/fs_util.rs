@@ -17,6 +17,7 @@ use tracing::debug;
 
 /// Compares if file metadata has changed in a significant way
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[must_use]
 pub fn metadata_differ(lhs: &Metadata, rhs: &Metadata) -> bool {
     lhs.ino() != rhs.ino()
         || lhs.mtime() != rhs.mtime()

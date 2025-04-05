@@ -15,7 +15,7 @@ impl NfsMetadataExt<'_> {
         self.0.mode()
     }
     pub fn nlink(&self) -> u32 {
-        self.0.nlink().min(u32::MAX.into()) as u32
+        self.0.nlink().try_into().unwrap_or(u32::MAX)
     }
 
     pub fn uid(&self) -> u32 {
