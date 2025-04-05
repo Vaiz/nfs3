@@ -27,3 +27,9 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 xdr-codec = "0.4.4"
 wasmer-vfs = { version = "3.1.1", default-features = false }
+
+[workspace.lints.clippy]
+enum_glob_use = "deny"
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"

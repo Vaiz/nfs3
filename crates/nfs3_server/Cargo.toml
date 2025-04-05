@@ -38,6 +38,9 @@ tokio = { workspace = true, features = ["rt-multi-thread"], default-features = f
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lints]
+workspace = true
+
 [[example]]
 name = "memfs"
 required-features = ["memfs"]
