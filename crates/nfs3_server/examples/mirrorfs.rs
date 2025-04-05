@@ -107,7 +107,7 @@ impl FSMap {
             path_to_id: HashMap::from([(Vec::new(), 0)]),
         }
     }
-    async fn sym_to_path(&self, symlist: &[Symbol]) -> PathBuf {
+    fn sym_to_path(&self, symlist: &[Symbol]) -> PathBuf {
         let mut ret = self.root.clone();
         for i in symlist {
             ret.push(self.intern.get(*i).unwrap());
@@ -115,7 +115,7 @@ impl FSMap {
         ret
     }
 
-    async fn sym_to_fname(&self, symlist: &[Symbol]) -> OsString {
+    fn sym_to_fname(&self, symlist: &[Symbol]) -> OsString {
         if let Some(x) = symlist.last() {
             self.intern.get(*x).unwrap().into()
         } else {
@@ -154,7 +154,7 @@ impl FSMap {
     fn find_entry_mut(&mut self, id: fileid3) -> Result<&mut FSEntry, nfsstat3> {
         self.id_to_path.get_mut(&id).ok_or(nfsstat3::NFS3ERR_NOENT)
     }
-    async fn find_child(&self, id: fileid3, filename: &[u8]) -> Result<fileid3, nfsstat3> {
+    fn find_child(&self, id: fileid3, filename: &[u8]) -> Result<fileid3, nfsstat3> {
         let mut name = self
             .id_to_path
             .get(&id)
@@ -174,7 +174,7 @@ impl FSMap {
             .get(&id)
             .ok_or(nfsstat3::NFS3ERR_NOENT)?
             .clone();
-        let path = self.sym_to_path(&entry.name).await;
+        let path = self.sym_to_path(&entry.name);
         //
         if !exists_no_traverse(&path) {
             self.delete_entry(id);
@@ -226,7 +226,7 @@ impl FSMap {
             return Ok(());
         }
         let mut cur_path = entry.name.clone();
-        let path = self.sym_to_path(&entry.name).await;
+        let path = self.sym_to_path(&entry.name);
         let mut new_children: Vec<u64> = Vec::new();
         debug!("Relisting entry {:?}: {:?}. Ent: {:?}", id, path, entry);
         if let Ok(mut listing) = tokio::fs::read_dir(&path).await {
@@ -238,7 +238,7 @@ impl FSMap {
                 let sym = self.intern.intern(entry.file_name()).unwrap();
                 cur_path.push(sym);
                 let meta = entry.metadata().await.unwrap();
-                let next_id = self.create_entry(&cur_path, meta).await;
+                let next_id = self.create_entry(&cur_path, meta);
                 new_children.push(next_id);
                 cur_path.pop();
             }
@@ -252,7 +252,7 @@ impl FSMap {
         Ok(())
     }
 
-    async fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: Metadata) -> fileid3 {
+    fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: Metadata) -> fileid3 {
         if let Some(chid) = self.path_to_id.get(fullpath) {
             if let Some(chent) = self.id_to_path.get_mut(chid) {
                 chent.fsmeta = metadata_to_fattr3(*chid, &meta);
@@ -309,7 +309,7 @@ impl MirrorFS {
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&ent.name).await;
+        let mut path = fsmap.sym_to_path(&ent.name);
         let objectname_osstr = objectname.as_os_str().to_os_string();
         path.push(&objectname_osstr);
 
@@ -359,7 +359,7 @@ impl MirrorFS {
         let mut name = ent.name.clone();
         name.push(sym);
         let meta = path.symlink_metadata().map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        let fileid = fsmap.create_entry(&name, meta.clone()).await;
+        let fileid = fsmap.create_entry(&name, meta.clone());
 
         // update the children list
         if let Some(ref mut children) = fsmap
@@ -392,7 +392,7 @@ impl NFSFileSystem for MirrorFS {
 
     async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
-        if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()).await {
+        if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()) {
             if fsmap.id_to_path.contains_key(&id) {
                 return Ok(id);
             }
@@ -400,7 +400,7 @@ impl NFSFileSystem for MirrorFS {
         // Optimize for negative lookups.
         // See if the file actually exists on the filesystem
         let dirent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&dirent.name).await;
+        let mut path = fsmap.sym_to_path(&dirent.name);
         let objectname_osstr = filename.to_os_string();
         path.push(&objectname_osstr);
         if !exists_no_traverse(&path) {
@@ -415,7 +415,7 @@ impl NFSFileSystem for MirrorFS {
         }
         let _ = fsmap.refresh_dir_list(dirid).await;
 
-        fsmap.find_child(dirid, filename.as_ref()).await
+        fsmap.find_child(dirid, filename.as_ref())
         // debug!("lookup({:?}, {:?})", dirid, filename);
 
         // debug!(" -- lookup result {:?}", res);
@@ -428,7 +428,7 @@ impl NFSFileSystem for MirrorFS {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name).await;
+        let path = fsmap.sym_to_path(&ent.name);
         debug!("Stat {:?}: {:?}", path, ent);
         Ok(ent.fsmeta)
     }
@@ -441,7 +441,7 @@ impl NFSFileSystem for MirrorFS {
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name).await;
+        let path = fsmap.sym_to_path(&ent.name);
         drop(fsmap);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
         let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
@@ -485,7 +485,7 @@ impl NFSFileSystem for MirrorFS {
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&entry.name).await;
+        let path = fsmap.sym_to_path(&entry.name);
         path_setattr(&path, &setattr).await?;
 
         // I have to lookup a second time to update
@@ -498,7 +498,7 @@ impl NFSFileSystem for MirrorFS {
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name).await;
+        let path = fsmap.sym_to_path(&ent.name);
         drop(fsmap);
         debug!("write to init {:?}", path);
         let mut f = OpenOptions::new()
@@ -550,7 +550,7 @@ impl NFSFileSystem for MirrorFS {
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&ent.name).await;
+        let mut path = fsmap.sym_to_path(&ent.name);
         path.push(filename.as_os_str());
         if let Ok(meta) = path.symlink_metadata() {
             if meta.is_dir() {
@@ -601,11 +601,11 @@ impl NFSFileSystem for MirrorFS {
         let mut fsmap = self.fsmap.write().await;
 
         let from_dirent = fsmap.find_entry(from_dirid)?;
-        let mut from_path = fsmap.sym_to_path(&from_dirent.name).await;
+        let mut from_path = fsmap.sym_to_path(&from_dirent.name);
         from_path.push(from_filename.as_os_str());
 
         let to_dirent = fsmap.find_entry(to_dirid)?;
-        let mut to_path = fsmap.sym_to_path(&to_dirent.name).await;
+        let mut to_path = fsmap.sym_to_path(&to_dirent.name);
         // to folder must exist
         if !exists_no_traverse(&to_path) {
             return Err(nfsstat3::NFS3ERR_NOENT);
@@ -694,7 +694,7 @@ impl NFSFileSystem for MirrorFS {
     async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name).await;
+        let path = fsmap.sym_to_path(&ent.name);
         drop(fsmap);
         if path.is_symlink() {
             if let Ok(target) = path.read_link() {
@@ -743,7 +743,7 @@ impl MirrorFsIterator {
 
         let remain_children = children.iter().skip(pos).copied().collect::<Vec<_>>();
 
-        let path = fsmap.sym_to_path(&entry.name).await;
+        let path = fsmap.sym_to_path(&entry.name);
         debug!("path: {:?}", path);
         debug!("children len: {:?}", children.len());
         debug!("remaining_len : {:?}", remain_children.len());
@@ -780,7 +780,7 @@ impl ReadDirPlusIterator for MirrorFsIterator {
                 }
             };
 
-            let name = fsmap.sym_to_fname(&fs_entry.name).await;
+            let name = fsmap.sym_to_fname(&fs_entry.name);
             debug!("\t --- {fileid} {name:?}");
             let attr = fs_entry.fsmeta.clone();
 

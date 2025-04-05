@@ -1,6 +1,6 @@
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 
-const HOSTPORT: u32 = 11111;
+const HOSTPORT: u16 = 11111;
 
 // To mount the NFS server on Linux, use the following command:
 // mount -t nfs -o nolocks,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ mnt/
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(HOSTPORT as u16);
 
-    let memfs = nfs3_server::memfs::MemFs::new(default_config()).unwrap();
+    let memfs = nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
     let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), memfs).await?;
     listener.handle_forever().await?;
 
