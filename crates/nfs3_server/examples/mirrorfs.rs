@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::significant_drop_tightening)] // for the sake of the example
+
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
@@ -145,10 +147,7 @@ impl FSMap {
     }
 
     fn find_entry(&self, id: fileid3) -> Result<&FSEntry, nfsstat3> {
-        self
-            .id_to_path
-            .get(&id)
-            .ok_or(nfsstat3::NFS3ERR_NOENT)
+        self.id_to_path.get(&id).ok_or(nfsstat3::NFS3ERR_NOENT)
     }
     fn find_entry_mut(&mut self, id: fileid3) -> Result<&mut FSEntry, nfsstat3> {
         self.id_to_path.get_mut(&id).ok_or(nfsstat3::NFS3ERR_NOENT)
@@ -237,7 +236,7 @@ impl FSMap {
                 let sym = self.intern.intern(entry.file_name()).unwrap();
                 cur_path.push(sym);
                 let meta = entry.metadata().await.unwrap();
-                let next_id = self.create_entry(&cur_path, meta);
+                let next_id = self.create_entry(&cur_path, &meta);
                 new_children.push(next_id);
                 cur_path.pop();
             }
@@ -251,16 +250,16 @@ impl FSMap {
         Ok(())
     }
 
-    fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: Metadata) -> fileid3 {
+    fn create_entry(&mut self, fullpath: &Vec<Symbol>, meta: &Metadata) -> fileid3 {
         if let Some(chid) = self.path_to_id.get(fullpath) {
             if let Some(chent) = self.id_to_path.get_mut(chid) {
-                chent.fsmeta = metadata_to_fattr3(*chid, &meta);
+                chent.fsmeta = metadata_to_fattr3(*chid, meta);
             }
             *chid
         } else {
             // path does not exist
             let next_id = self.next_fileid.fetch_add(1, Ordering::Relaxed);
-            let metafattr = metadata_to_fattr3(next_id, &meta);
+            let metafattr = metadata_to_fattr3(next_id, meta);
             let new_entry = FSEntry {
                 name: fullpath.clone(),
                 fsmeta: metafattr.clone(),
@@ -357,7 +356,7 @@ impl MirrorFS {
         let sym = fsmap.intern.intern(objectname_osstr).unwrap();
         name.push(sym);
         let meta = path.symlink_metadata().map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        let fileid = fsmap.create_entry(&name, meta.clone());
+        let fileid = fsmap.create_entry(&name, &meta);
 
         // update the children list
         if let Some(ref mut children) = fsmap
@@ -628,7 +627,12 @@ impl NFSFileSystem for MirrorFS {
         if let Some(fileid) = fsmap.path_to_id.get(&from_sympath).copied() {
             // update the fileid -> path
             // and the path -> fileid mappings for the new file
-            fsmap.id_to_path.get_mut(&fileid).unwrap().name = to_sympath.clone();
+            fsmap
+                .id_to_path
+                .get_mut(&fileid)
+                .unwrap()
+                .name
+                .clone_from(&to_sympath);
             fsmap.path_to_id.remove(&from_sympath);
             fsmap.path_to_id.insert(to_sympath, fileid);
             if to_dirid != from_dirid {
@@ -694,11 +698,10 @@ impl NFSFileSystem for MirrorFS {
         let path = fsmap.sym_to_path(&ent.name);
         drop(fsmap);
         if path.is_symlink() {
-            if let Ok(target) = path.read_link() {
-                Ok(nfspath3::from_os_str(target.as_os_str()))
-            } else {
-                Err(nfsstat3::NFS3ERR_IO)
-            }
+            path.read_link()
+                .map_or(Err(nfsstat3::NFS3ERR_IO), |target| {
+                    Ok(nfspath3::from_os_str(target.as_os_str()))
+                })
         } else {
             Err(nfsstat3::NFS3ERR_BADTYPE)
         }
