@@ -231,7 +231,7 @@ pub trait NFSFileSystem: Sync {
             maxfilesize: 128u64 * GIBIBYTE,
             time_delta: nfstime3 {
                 seconds: 0,
-                nseconds: 1000000,
+                nseconds: 1_000_000,
             },
             properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
         };

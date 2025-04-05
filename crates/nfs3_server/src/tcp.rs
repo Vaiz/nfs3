@@ -144,7 +144,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
 
                 let result = NFSTcpListener::bind_internal(&ip, port, arcfs.clone()).await;
 
-                match &result {
+                match result {
                     Err(_) => {
                         if num_tries_left == 0 {
                             return result;

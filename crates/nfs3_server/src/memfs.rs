@@ -332,7 +332,7 @@ impl Fs {
     }
 
     fn remove(&mut self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        if filename == ".".as_bytes() || filename == "..".as_bytes() {
+        if filename.as_ref() == b"." || filename.as_ref() == b".." {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
