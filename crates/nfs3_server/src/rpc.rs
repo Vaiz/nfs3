@@ -1,4 +1,7 @@
-use nfs3_types::rpc::{accept_stat_data as accept_body, msg_body as rpc_body, *};
+use nfs3_types::rpc::{
+    accept_stat_data as accept_body, accepted_reply, msg_body as rpc_body, opaque_auth,
+    rejected_reply, reply_body, rpc_msg,
+};
 
 pub fn proc_unavail_reply_message(xid: u32) -> rpc_msg<'static, 'static> {
     let reply = reply_body::MSG_ACCEPTED(accepted_reply {

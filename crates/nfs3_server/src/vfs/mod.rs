@@ -5,7 +5,10 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 pub use iterator::*;
-use nfs3_types::nfs3::{FSINFO3resok as fsinfo3, *};
+use nfs3_types::nfs3::{
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3, fattr3,
+    fileid3, filename3, nfs_fh3, nfspath3, nfstime3, post_op_attr, sattr3,
+};
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -27,7 +30,7 @@ impl DefaultNfsFhConverter {
             .unwrap()
             .as_millis() as u64;
 
-        DefaultNfsFhConverter {
+        Self {
             generation_number,
             generation_number_le: generation_number.to_le_bytes(),
         }
@@ -59,7 +62,7 @@ impl DefaultNfsFhConverter {
             }
         }
     }
-    pub(crate) fn generation_number_le(&self) -> [u8; 8] {
+    pub(crate) const fn generation_number_le(&self) -> [u8; 8] {
         self.generation_number_le
     }
 }

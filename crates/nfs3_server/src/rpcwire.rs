@@ -2,7 +2,7 @@ use std::io::{Cursor, Read, Write};
 use std::time::Instant;
 
 use anyhow::anyhow;
-use nfs3_types::rpc::*;
+use nfs3_types::rpc::{RPC_VERSION_2, auth_flavor, auth_unix, fragment_header, msg_body, rpc_msg};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
-use crate::rpc::*;
+use crate::rpc::{prog_unavail_reply_message, rpc_vers_mismatch, system_err_reply_message};
 use crate::transaction_tracker::TransactionError;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
@@ -37,7 +37,7 @@ async fn handle_rpc(
         }
     };
 
-    if let auth_flavor::AUTH_UNIX = call.cred.flavor {
+    if call.cred.flavor == auth_flavor::AUTH_UNIX {
         let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
         context.auth = auth;
     }
@@ -147,9 +147,9 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 
 pub type SocketMessageType = Result<Vec<u8>, anyhow::Error>;
 
-/// The Socket Message Handler reads from a TcpStream and spawns off
+/// The Socket Message Handler reads from a `TcpStream` and spawns off
 /// subtasks to handle each message. replies are queued into the
-/// reply_send_channel.
+/// `reply_send_channel`.
 #[derive(Debug)]
 pub struct SocketMessageHandler {
     cur_fragment: Vec<u8>,
@@ -159,7 +159,7 @@ pub struct SocketMessageHandler {
 }
 
 impl SocketMessageHandler {
-    /// Creates a new SocketMessageHandler with the receiver for queued message replies
+    /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub fn new(
         context: &RPCContext,
     ) -> (

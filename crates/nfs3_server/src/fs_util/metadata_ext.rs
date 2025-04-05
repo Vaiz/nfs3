@@ -67,16 +67,16 @@ impl NfsMetadataExt<'_> {
         }
     }
 
-    /// number_of_links is nightly only, issue: 63010
+    /// `number_of_links` is nightly only, issue: 63010
     pub fn nlink(&self) -> u32 {
         if self.0.is_dir() { 2 } else { 1 }
     }
 
-    pub fn uid(&self) -> u32 {
+    pub const fn uid(&self) -> u32 {
         1000
     }
 
-    pub fn gid(&self) -> u32 {
+    pub const fn gid(&self) -> u32 {
         1000
     }
 

@@ -4,9 +4,9 @@ Disclaimer
 This project originated as a fork of [xetdata/nfsserve](https://github.com/xetdata/nfsserve) and
 includes a substantial amount of code from that repository.
 
-Rust NFSv3 Server
+Rust `NFSv3` Server
 =================
-This is an incomplete but very functional implementation of an NFSv3 server
+This is an incomplete but very functional implementation of an `NFSv3` server
 in Rust.
 
 Why? You may ask. 
@@ -24,7 +24,7 @@ Why not FUSE you may ask:
    a lot of the work myself.
 
 So, this is a FUSE-like user-mode filesystem API that basically works by 
-creating a localhost NFSv3 server you can mount.
+creating a localhost `NFSv3` server you can mount.
 
 This is used in [pyxet](https://github.com/xetdata/pyxet) and 
 [xet-core](https://github.com/xetdata/xet-core/) to provide the `xet mount`
@@ -33,7 +33,7 @@ anywhere.
 
 This is a blogpost explaining our rationale: [link](https://about.xethub.com/blog/nfs-fuse-why-we-built-nfs-server-rust).
 
-Run the MemFS Demo
+Run the `MemFS` Demo
 ==================
 To run the demofs, this will host an NFS server on localhost:11111
 ```bash
@@ -74,7 +74,7 @@ Relevant RFCs
  - SUN RPC is the RPC wire format: [RFC 1057](https://datatracker.ietf.org/doc/html/rfc1057).
  - NFS is at [RFC 1813](https://datatracker.ietf.org/doc/html/rfc1813).
  - NFS Mount Protocol is at [RFC 1813 Appendix I](https://datatracker.ietf.org/doc/html/rfc1813#appendix-I).
- - PortMapper is at [RFC 1057 Appendix A](https://datatracker.ietf.org/doc/html/rfc1057#appendix-A).
+ - `PortMapper` is at [RFC 1057 Appendix A](https://datatracker.ietf.org/doc/html/rfc1057#appendix-A).
 
 
 More More Details Than Necessary
@@ -87,7 +87,7 @@ The basic way a message works is:
 4. A message tells us 3 pieces of information,
   - The RPC Program (just an integer denoting
     a protocol "class". For instance NFS protocol is 100003, the Portmapper protocol is 100000).
-  - The version of the RPC program (ex: 3 = NFSv3, 4 = NFSv4, etc)
+  - The version of the RPC program (ex: 3 = `NFSv3`, 4 = `NFSv4`, etc)
   - The method invoked (Which NFS method to call) (See for instance nfs.rs top comment for the list)
 5. Continuing to decode the message will give us the arguments of the method
 6. And we take the method response, wrap it around a record and return it. 
@@ -103,7 +103,7 @@ on 111 to ask about which port NFS is listening on, then connects to the returne
 port.
 
 We do not strictly need to implement this protocol as this is pretty much
-unused these days (NFSv4 does not use the portmapper for instance). If `-o port` and `-o mountport`
+unused these days (`NFSv4` does not use the portmapper for instance). If `-o port` and `-o mountport`
 are specified, Linux and Mac's builtin NFS client do not need it either.
 But this was useful for debugging and testing as libnfs seems to require a
 portmapper, but it annoyingly hardcodes it to 111. I modified the source to

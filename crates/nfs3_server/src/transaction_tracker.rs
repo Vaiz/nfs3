@@ -11,6 +11,7 @@ pub struct TransactionTracker {
 }
 
 impl TransactionTracker {
+    #[must_use]
     pub fn new(
         retention_period: Duration,
         max_active_transactions: u16,
@@ -98,7 +99,7 @@ impl TransactionTracker {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TransactionError {
+pub enum TransactionError {
     AlreadyExists,
     TooManyRequests,
 }
@@ -106,8 +107,8 @@ pub(crate) enum TransactionError {
 impl std::fmt::Display for TransactionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransactionError::AlreadyExists => write!(f, "transaction already exists"),
-            TransactionError::TooManyRequests => write!(f, "too many requests"),
+            Self::AlreadyExists => write!(f, "transaction already exists"),
+            Self::TooManyRequests => write!(f, "too many requests"),
         }
     }
 }
@@ -125,7 +126,7 @@ struct Transaction {
 }
 
 impl Transaction {
-    fn in_progress(xid: u32) -> Self {
+    const fn in_progress(xid: u32) -> Self {
         Self {
             xid,
             state: TransactionState::InProgress,
@@ -219,7 +220,7 @@ impl ClientTransactions {
         }
     }
 
-    /// Removes transactions older than the specified max_age, starting from the beginning of the
+    /// Removes transactions older than the specified `max_age`, starting from the beginning of the
     /// list.
     fn remove_old_transactions(&mut self, now: Instant, max_age: Duration) {
         while let Some(tx) = self.transactions.front() {
@@ -261,14 +262,14 @@ impl ClientTransactions {
 }
 
 #[derive(Debug)]
-pub(crate) struct TransactionLock {
+pub struct TransactionLock {
     transactions: Arc<Mutex<ClientTransactions>>,
     xid: u32,
     retention_period: Duration,
 }
 
 impl TransactionLock {
-    fn new(
+    const fn new(
         transactions: Arc<Mutex<ClientTransactions>>,
         xid: u32,
         retention_period: Duration,
@@ -297,7 +298,7 @@ pub struct Cleaner {
 }
 
 impl Cleaner {
-    pub fn new(
+    pub const fn new(
         tracker: Arc<TransactionTracker>,
         interval: Duration,
         stop: Arc<tokio::sync::Notify>,
@@ -313,8 +314,8 @@ impl Cleaner {
         tracing::debug!("Transaction tracker cleaner started");
         loop {
             tokio::select! {
-                _ = self.stop.notified() => break,
-                _ = tokio::time::sleep(self.interval) => {
+                () = self.stop.notified() => break,
+                () = tokio::time::sleep(self.interval) => {
                     self.tracker.cleanup(Instant::now());
                 }
             }
@@ -324,7 +325,7 @@ impl Cleaner {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unwrap_used, clippy::significant_drop_tightening)]
 
     use super::*;
 
@@ -461,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_tracker() -> anyhow::Result<()> {
+    fn test_transaction_tracker() {
         let tracker = TransactionTracker::new(Duration::new(1, 0), 100, 1000);
         let now = Instant::now();
 
@@ -498,8 +499,6 @@ mod tests {
                 TransactionState::Completed(_)
             ));
         }
-
-        Ok(())
     }
 
     #[test]

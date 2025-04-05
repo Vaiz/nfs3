@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::context::RPCContext;
-use crate::rpcwire::*;
+use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::NFSFileSystem;
@@ -33,6 +33,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> Drop for NFSTcpListener<T> {
     }
 }
 
+#[must_use]
 pub fn generate_host_ip(hostnum: u16) -> String {
     format!(
         "127.88.{}.{}",
@@ -119,8 +120,8 @@ pub trait NFSTcp: Send + Sync {
 impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
     /// Binds to a ipstr of the form [ip address]:port. For instance
     /// "127.0.0.1:12000". fs is an instance of an implementation
-    /// of NFSFileSystem.
-    pub async fn bind(ipstr: &str, fs: T) -> io::Result<NFSTcpListener<T>> {
+    /// of `NFSFileSystem`.
+    pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -142,16 +143,15 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result = NFSTcpListener::bind_internal(&ip, port, arcfs.clone()).await;
+                let result = Self::bind_internal(&ip, port, arcfs.clone()).await;
 
                 match result {
                     Err(_) => {
                         if num_tries_left == 0 {
                             return result;
-                        } else {
-                            num_tries_left -= 1;
-                            continue;
                         }
+                        num_tries_left -= 1;
+                        continue;
                     }
                     Ok(_) => {
                         return result;
@@ -161,11 +161,11 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             unreachable!(); // Does not detect automatically that loop above never terminates.
         } else {
             // Otherwise, try this.
-            NFSTcpListener::bind_internal(ip, port, arcfs).await
+            Self::bind_internal(ip, port, arcfs).await
         }
     }
 
-    async fn bind_internal(ip: &str, port: u16, arcfs: Arc<T>) -> io::Result<NFSTcpListener<T>> {
+    async fn bind_internal(ip: &str, port: u16, arcfs: Arc<T>) -> io::Result<Self> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
         info!("Listening on {:?}", &ipstr);
@@ -174,7 +174,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             SocketAddr::V4(s) => s.port(),
             SocketAddr::V6(s) => s.port(),
         };
-        Ok(NFSTcpListener {
+        Ok(Self {
             listener,
             port,
             arcfs,
@@ -210,7 +210,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
                 .as_ref()
                 .trim_end_matches('/')
                 .trim_start_matches('/')
-        ))
+        ));
     }
 }
 

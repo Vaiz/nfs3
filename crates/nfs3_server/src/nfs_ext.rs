@@ -13,7 +13,8 @@ pub trait CookieVerfExt {
 impl CookieVerfExt for cookieverf3 {
     fn from_attr(dir_attr: &post_op_attr) -> Self {
         if let post_op_attr::Some(attr) = dir_attr {
-            let cvf_version = ((attr.mtime.seconds as u64) << 32) | (attr.mtime.nseconds as u64);
+            let cvf_version =
+                (u64::from(attr.mtime.seconds) << 32) | u64::from(attr.mtime.nseconds);
             Self(cvf_version.to_be_bytes())
         } else {
             Self::SOME_COOKIE_VERF

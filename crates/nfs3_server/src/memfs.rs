@@ -1,4 +1,4 @@
-//! In-memory file system for NFSv3.
+//! In-memory file system for `NFSv3`.
 //!
 //! It is a simple implementation of a file system that stores files and directories in memory.
 //! This file system is used for testing purposes and is not intended for production use.
@@ -7,7 +7,7 @@
 //!
 //! - It's a very naive implementation and does not guarantee the best performance.
 //! - Methods `create_exclusive`, `rename`, `symlink`, and `readlink` are not implemented and return
-//!   NFS3ERR_NOTSUPP.
+//!   `NFS3ERR_NOTSUPP`.
 //!
 //! # Examples
 //!
@@ -185,28 +185,28 @@ impl Entry {
         Self::Dir(Dir::new(name, id, parent))
     }
 
-    fn as_dir(&self) -> Result<&Dir, nfsstat3> {
+    const fn as_dir(&self) -> Result<&Dir, nfsstat3> {
         match self {
             Self::Dir(dir) => Ok(dir),
             Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
         }
     }
 
-    fn as_dir_mut(&mut self) -> Result<&mut Dir, nfsstat3> {
+    const fn as_dir_mut(&mut self) -> Result<&mut Dir, nfsstat3> {
         match self {
             Self::Dir(dir) => Ok(dir),
             Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
         }
     }
 
-    fn as_file(&self) -> Result<&File, nfsstat3> {
+    const fn as_file(&self) -> Result<&File, nfsstat3> {
         match self {
             Self::File(file) => Ok(file),
             Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
         }
     }
 
-    fn as_file_mut(&mut self) -> Result<&mut File, nfsstat3> {
+    const fn as_file_mut(&mut self) -> Result<&mut File, nfsstat3> {
         match self {
             Self::File(file) => Ok(file),
             Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
@@ -252,7 +252,7 @@ impl Entry {
                 nfs::set_atime::SET_TO_SERVER_TIME => {
                     attr.atime = current_time();
                 }
-            };
+            }
             match setattr.mtime {
                 nfs::set_mtime::DONT_CHANGE => {}
                 nfs::set_mtime::SET_TO_CLIENT_TIME(c) => {
@@ -261,7 +261,7 @@ impl Entry {
                 nfs::set_mtime::SET_TO_SERVER_TIME => {
                     attr.mtime = current_time();
                 }
-            };
+            }
             if let nfs::set_uid3::Some(u) = setattr.uid {
                 attr.uid = u;
             }
@@ -270,7 +270,7 @@ impl Entry {
             }
         }
         if let nfs::set_size3::Some(s) = setattr.size {
-            if let Entry::File(file) = self {
+            if let Self::File(file) = self {
                 file.resize(s);
             }
         }
@@ -378,9 +378,9 @@ impl Fs {
     }
 }
 
-/// In-memory file system for NFSv3.
+/// In-memory file system for `NFSv3`.
 ///
-/// MemFs implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
+/// `MemFs` implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
 #[derive(Debug)]
 pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
@@ -465,11 +465,11 @@ impl MemFs {
             return Err(nfsstat3::NFS3ERR_NOTDIR);
         } else if let Entry::Dir(dir) = &entry {
             // if looking for dir/. its the current directory
-            if filename == ".".as_bytes() {
+            if filename.as_ref() == b"." {
                 return Ok(dirid);
             }
             // if looking for dir/.. its the parent directory
-            if filename == "..".as_bytes() {
+            if filename.as_ref() == b".." {
                 return Ok(dir.parent);
             }
             for i in &dir.content {
@@ -661,7 +661,7 @@ struct MemFsIterator {
 }
 
 impl MemFsIterator {
-    fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
+    const fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
         Self {
             fs,
             entries,
