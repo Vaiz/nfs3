@@ -15,7 +15,7 @@ impl NfsMetadataExt<'_> {
         self.0.mode()
     }
     pub fn nlink(&self) -> u32 {
-        self.0.nlink().min(u32::MAX.into()) as u32
+        self.0.nlink().try_into().unwrap_or(u32::MAX)
     }
 
     pub fn uid(&self) -> u32 {
@@ -57,6 +57,7 @@ impl NfsMetadataExt<'_> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps, clippy::unused_self)]
 impl NfsMetadataExt<'_> {
     pub fn mode(&self) -> u32 {
         // Assume full `rwxrwxrwx` permissions if not read-only
@@ -67,16 +68,16 @@ impl NfsMetadataExt<'_> {
         }
     }
 
-    /// number_of_links is nightly only, issue: 63010
+    /// `number_of_links` is nightly only, issue: 63010
     pub fn nlink(&self) -> u32 {
         if self.0.is_dir() { 2 } else { 1 }
     }
 
-    pub fn uid(&self) -> u32 {
+    pub const fn uid(&self) -> u32 {
         1000
     }
 
-    pub fn gid(&self) -> u32 {
+    pub const fn gid(&self) -> u32 {
         1000
     }
 

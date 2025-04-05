@@ -2,16 +2,16 @@ use std::io::{Read, Write};
 
 use nfs3_types::portmap;
 use nfs3_types::portmap::PMAP_PROG;
-use nfs3_types::rpc::*;
+use nfs3_types::rpc::call_body;
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use tracing::{debug, error};
 
 use crate::context::RPCContext;
-use crate::rpc::*;
+use crate::rpc::{make_success_reply, proc_unavail_reply_message, prog_mismatch_reply_message};
 
 pub fn handle_portmap(
     xid: u32,
-    call: call_body<'_>,
+    call: &call_body<'_>,
     input: &mut impl Read,
     output: &mut impl Write,
     context: &RPCContext,
@@ -60,7 +60,7 @@ pub fn pmapproc_getport(
     let mapping = portmap::mapping::unpack(read)?.0;
     debug!("pmapproc_getport({:?}, {:?}) ", xid, mapping);
     make_success_reply(xid).pack(output)?;
-    let port = context.local_port as u32;
+    let port = u32::from(context.local_port);
     debug!("\t{:?} --> {:?}", xid, port);
     port.pack(output)?;
     Ok(())

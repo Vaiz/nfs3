@@ -1,4 +1,4 @@
-//! In-memory file system for NFSv3.
+//! In-memory file system for `NFSv3`.
 //!
 //! It is a simple implementation of a file system that stores files and directories in memory.
 //! This file system is used for testing purposes and is not intended for production use.
@@ -7,7 +7,7 @@
 //!
 //! - It's a very naive implementation and does not guarantee the best performance.
 //! - Methods `create_exclusive`, `rename`, `symlink`, and `readlink` are not implemented and return
-//!   NFS3ERR_NOTSUPP.
+//!   `NFS3ERR_NOTSUPP`.
 //!
 //! # Examples
 //!
@@ -126,14 +126,15 @@ impl File {
     }
 
     fn resize(&mut self, size: u64) {
-        self.content.resize(size as usize, 0);
+        self.content
+            .resize(usize::try_from(size).expect("size is too large"), 0);
         self.attr.size = size;
         self.attr.used = size;
     }
 
-    fn read(&self, offset: u64, count: u32) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let mut start = offset as usize;
-        let mut end = offset as usize + count as usize;
+    fn read(&self, offset: u64, count: u32) -> (Vec<u8>, bool) {
+        let mut start = usize::try_from(offset).unwrap_or(usize::MAX);
+        let mut end = start + count as usize;
         let bytes = &self.content;
         let eof = end >= bytes.len();
         if start >= bytes.len() {
@@ -142,9 +143,10 @@ impl File {
         if end > bytes.len() {
             end = bytes.len();
         }
-        Ok((bytes[start..end].to_vec(), eof))
+        (bytes[start..end].to_vec(), eof)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn write(&mut self, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         if offset > self.content.len() as u64 {
             return Err(nfsstat3::NFS3ERR_INVAL);
@@ -163,9 +165,9 @@ impl File {
 fn current_time() -> nfstime3 {
     let d = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap();
+        .expect("failed to get current time");
     nfstime3 {
-        seconds: d.as_secs() as u32,
+        seconds: u32::try_from(d.as_secs()).unwrap_or(u32::MAX),
         nseconds: d.subsec_nanos(),
     }
 }
@@ -185,56 +187,56 @@ impl Entry {
         Self::Dir(Dir::new(name, id, parent))
     }
 
-    fn as_dir(&self) -> Result<&Dir, nfsstat3> {
+    const fn as_dir(&self) -> Result<&Dir, nfsstat3> {
         match self {
             Self::Dir(dir) => Ok(dir),
             Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
         }
     }
 
-    fn as_dir_mut(&mut self) -> Result<&mut Dir, nfsstat3> {
+    const fn as_dir_mut(&mut self) -> Result<&mut Dir, nfsstat3> {
         match self {
             Self::Dir(dir) => Ok(dir),
             Self::File(_) => Err(nfsstat3::NFS3ERR_NOTDIR),
         }
     }
 
-    fn as_file(&self) -> Result<&File, nfsstat3> {
+    const fn as_file(&self) -> Result<&File, nfsstat3> {
         match self {
             Self::File(file) => Ok(file),
             Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
         }
     }
 
-    fn as_file_mut(&mut self) -> Result<&mut File, nfsstat3> {
+    const fn as_file_mut(&mut self) -> Result<&mut File, nfsstat3> {
         match self {
             Self::File(file) => Ok(file),
             Self::Dir(_) => Err(nfsstat3::NFS3ERR_ISDIR),
         }
     }
 
-    fn fileid(&self) -> fileid3 {
+    const fn fileid(&self) -> fileid3 {
         match self {
             Self::File(file) => file.attr.fileid,
             Self::Dir(dir) => dir.attr.fileid,
         }
     }
 
-    fn name(&self) -> &filename3<'static> {
+    const fn name(&self) -> &filename3<'static> {
         match self {
             Self::File(file) => &file.name,
             Self::Dir(dir) => &dir.name,
         }
     }
 
-    fn attr(&self) -> &fattr3 {
+    const fn attr(&self) -> &fattr3 {
         match self {
             Self::File(file) => &file.attr,
             Self::Dir(dir) => &dir.attr,
         }
     }
 
-    fn attr_mut(&mut self) -> &mut fattr3 {
+    const fn attr_mut(&mut self) -> &mut fattr3 {
         match self {
             Self::File(file) => &mut file.attr,
             Self::Dir(dir) => &mut dir.attr,
@@ -252,7 +254,7 @@ impl Entry {
                 nfs::set_atime::SET_TO_SERVER_TIME => {
                     attr.atime = current_time();
                 }
-            };
+            }
             match setattr.mtime {
                 nfs::set_mtime::DONT_CHANGE => {}
                 nfs::set_mtime::SET_TO_CLIENT_TIME(c) => {
@@ -261,7 +263,7 @@ impl Entry {
                 nfs::set_mtime::SET_TO_SERVER_TIME => {
                     attr.mtime = current_time();
                 }
-            };
+            }
             if let nfs::set_uid3::Some(u) = setattr.uid {
                 attr.uid = u;
             }
@@ -270,7 +272,7 @@ impl Entry {
             }
         }
         if let nfs::set_size3::Some(s) = setattr.size {
-            if let Entry::File(file) = self {
+            if let Self::File(file) = self {
                 file.resize(s);
             }
         }
@@ -332,20 +334,17 @@ impl Fs {
     }
 
     fn remove(&mut self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        if filename == ".".as_bytes() || filename == "..".as_bytes() {
+        if filename.as_ref() == b"." || filename.as_ref() == b".." {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
         let object_id = {
             let entry = self.entries.get(&dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
             let dir = entry.as_dir()?;
-            let id = dir.content.iter().find(|i| {
-                if let Some(f) = self.entries.get(i) {
-                    f.name() == filename
-                } else {
-                    false
-                }
-            });
+            let id = dir
+                .content
+                .iter()
+                .find(|i| self.entries.get(i).is_some_and(|f| f.name() == filename));
             id.copied().ok_or(nfsstat3::NFS3ERR_NOENT)?
         };
 
@@ -362,7 +361,7 @@ impl Fs {
         self.entries.remove(&object_id);
         self.entries
             .get_mut(&dirid)
-            .unwrap()
+            .expect("entry not found")
             .as_dir_mut()?
             .content
             .remove(&object_id);
@@ -378,9 +377,9 @@ impl Fs {
     }
 }
 
-/// In-memory file system for NFSv3.
+/// In-memory file system for `NFSv3`.
 ///
-/// MemFs implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
+/// `MemFs` implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
 #[derive(Debug)]
 pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
@@ -429,10 +428,13 @@ impl MemFs {
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let dir = Entry::new_dir(dirname.clone_to_owned(), newid, dirid);
+        let dir = Entry::new_dir(dirname, newid, dirid);
         let attr = dir.attr().clone();
 
-        self.fs.write().unwrap().push(dirid, dir)?;
+        self.fs
+            .write()
+            .expect("lock is poisoned")
+            .push(dirid, dir)?;
 
         Ok((newid, attr))
     }
@@ -452,24 +454,27 @@ impl MemFs {
         file.set_attr(attr);
         let attr = file.attr().clone();
 
-        self.fs.write().unwrap().push(dirid, file)?;
+        self.fs
+            .write()
+            .expect("lock is poisoned")
+            .push(dirid, file)?;
 
         Ok((newid, attr))
     }
 
     fn lookup_impl(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
-        let fs = self.fs.read().unwrap();
+        let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
         if let Entry::File(_) = entry {
             return Err(nfsstat3::NFS3ERR_NOTDIR);
         } else if let Entry::Dir(dir) = &entry {
             // if looking for dir/. its the current directory
-            if filename == ".".as_bytes() {
+            if filename.as_ref() == b"." {
                 return Ok(dirid);
             }
             // if looking for dir/.. its the parent directory
-            if filename == "..".as_bytes() {
+            if filename.as_ref() == b".." {
                 return Ok(dir.parent);
             }
             for i in &dir.content {
@@ -502,7 +507,7 @@ impl MemFs {
     }
 
     fn make_iter(&self, dirid: fileid3, start_after: cookie3) -> Result<MemFsIterator, nfsstat3> {
-        let fs = self.fs.read().unwrap();
+        let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let dir = entry.as_dir()?;
 
@@ -534,13 +539,13 @@ impl NFSFileSystem for MemFs {
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        let fs = self.fs.read().unwrap();
+        let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         Ok(entry.attr().clone())
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        let mut fs = self.fs.write().unwrap();
+        let mut fs = self.fs.write().expect("lock is poisoned");
         let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         entry.set_attr(setattr);
         Ok(entry.attr().clone())
@@ -552,13 +557,13 @@ impl NFSFileSystem for MemFs {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let fs = self.fs.read().unwrap();
+        let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file()?;
-        file.read(offset, count)
+        Ok(file.read(offset, count))
     }
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        let mut fs = self.fs.write().unwrap();
+        let mut fs = self.fs.write().expect("lock is poisoned");
 
         let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file_mut()?;
@@ -592,7 +597,10 @@ impl NFSFileSystem for MemFs {
     }
 
     async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
-        self.fs.write().unwrap().remove(dirid, filename)
+        self.fs
+            .write()
+            .expect("lock is poisoned")
+            .remove(dirid, filename)
     }
 
     async fn rename(
@@ -661,7 +669,7 @@ struct MemFsIterator {
 }
 
 impl MemFsIterator {
-    fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
+    const fn new(fs: Arc<RwLock<Fs>>, entries: Vec<fileid3>) -> Self {
         Self {
             fs,
             entries,
@@ -680,14 +688,13 @@ impl ReadDirPlusIterator for MemFsIterator {
             let id = self.entries[self.index];
             self.index += 1;
 
-            let fs = self.fs.read().unwrap();
+            let fs = self.fs.read().expect("lock is poisoned");
             let entry = fs.get(id);
-            if entry.is_none() {
+            let Some(entry) = entry else {
                 // skip missing entries
                 tracing::warn!("entry not found: {id}");
                 continue;
-            }
-            let entry = entry.unwrap();
+            };
             let attr = entry.attr().clone();
             let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
             return NextResult::Ok(entryplus3 {
@@ -719,8 +726,16 @@ pub struct MemFsConfig {
 
 impl MemFsConfig {
     /// Adds a directory to the file system configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path is empty.
     pub fn add_dir(&mut self, path: &str) {
-        let name = path.split(DELIMITER).next_back().unwrap().to_string();
+        let name = path
+            .split(DELIMITER)
+            .next_back()
+            .expect("dir path cannot be empty")
+            .to_string();
         let path = path.trim_end_matches(&name);
         self.entries.push(MemFsConfigEntry {
             parent: path.to_string(),
@@ -731,8 +746,16 @@ impl MemFsConfig {
     }
 
     /// Adds a file to the file system configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path is empty.
     pub fn add_file(&mut self, path: &str, content: impl Into<Vec<u8>>) {
-        let name = path.split(DELIMITER).next_back().unwrap().to_string();
+        let name = path
+            .split(DELIMITER)
+            .next_back()
+            .expect("file path cannot be empty")
+            .to_string();
         let path = path.trim_end_matches(&name);
 
         self.entries.push(MemFsConfigEntry {
@@ -751,10 +774,10 @@ mod tests {
     #[test]
     fn test_fs_config() {
         let mut config = MemFsConfig::default();
-        config.add_file("/a.txt", "hello world\n".as_bytes());
-        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_file("/a.txt", b"hello world\n");
+        config.add_file("/b.txt", b"Greetings to xet data\n");
         config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+        config.add_file("/another_dir/thisworks.txt", b"i hope\n");
 
         assert_eq!(config.entries.len(), 4);
         assert_eq!(config.entries[0].parent, "/");

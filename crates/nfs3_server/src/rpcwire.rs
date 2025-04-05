@@ -2,7 +2,7 @@ use std::io::{Cursor, Read, Write};
 use std::time::Instant;
 
 use anyhow::anyhow;
-use nfs3_types::rpc::*;
+use nfs3_types::rpc::{RPC_VERSION_2, auth_flavor, auth_unix, fragment_header, msg_body, rpc_msg};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -10,16 +10,17 @@ use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
-use crate::rpc::*;
+use crate::rpc::{prog_unavail_reply_message, rpc_vers_mismatch, system_err_reply_message};
 use crate::transaction_tracker::TransactionError;
+use crate::units::KIBIBYTE;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
 
-const NFS_ACL_PROGRAM: u32 = 100227;
-const NFS_ID_MAP_PROGRAM: u32 = 100270;
-const NFS_METADATA_PROGRAM: u32 = 200024;
+const NFS_ACL_PROGRAM: u32 = 100_227;
+const NFS_ID_MAP_PROGRAM: u32 = 100_270;
+const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc(
     input: &mut impl Read,
@@ -37,7 +38,7 @@ async fn handle_rpc(
         }
     };
 
-    if let auth_flavor::AUTH_UNIX = call.cred.flavor {
+    if call.cred.flavor == auth_flavor::AUTH_UNIX {
         let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
         context.auth = auth;
     }
@@ -75,7 +76,7 @@ async fn handle_rpc(
     if call.prog == nfs::PROGRAM {
         nfs_handlers::handle_nfs(xid, call, input, output, &context).await?;
     } else if call.prog == portmap::PROGRAM {
-        portmap_handlers::handle_portmap(xid, call, input, output, &context)?;
+        portmap_handlers::handle_portmap(xid, &call, input, output, &context)?;
     } else if call.prog == nfs3_types::mount::PROGRAM {
         mount_handlers::handle_mount(xid, call, input, output, &context).await?;
     } else if call.prog == NFS_ACL_PROGRAM
@@ -131,6 +132,7 @@ async fn read_fragment(
     Ok(is_last)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
     buf: &[u8],
@@ -147,9 +149,9 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 
 pub type SocketMessageType = Result<Vec<u8>, anyhow::Error>;
 
-/// The Socket Message Handler reads from a TcpStream and spawns off
+/// The Socket Message Handler reads from a `TcpStream` and spawns off
 /// subtasks to handle each message. replies are queued into the
-/// reply_send_channel.
+/// `reply_send_channel`.
 #[derive(Debug)]
 pub struct SocketMessageHandler {
     cur_fragment: Vec<u8>,
@@ -159,7 +161,7 @@ pub struct SocketMessageHandler {
 }
 
 impl SocketMessageHandler {
-    /// Creates a new SocketMessageHandler with the receiver for queued message replies
+    /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub fn new(
         context: &RPCContext,
     ) -> (
@@ -167,7 +169,7 @@ impl SocketMessageHandler {
         DuplexStream,
         mpsc::UnboundedReceiver<SocketMessageType>,
     ) {
-        let (socksend, sockrecv) = tokio::io::duplex(256000);
+        let (socksend, sockrecv) = tokio::io::duplex(256 * KIBIBYTE as usize);
         let (msgsend, msgrecv) = mpsc::unbounded_channel();
         (
             Self {

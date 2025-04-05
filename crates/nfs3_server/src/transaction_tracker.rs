@@ -11,6 +11,7 @@ pub struct TransactionTracker {
 }
 
 impl TransactionTracker {
+    #[must_use]
     pub fn new(
         retention_period: Duration,
         max_active_transactions: u16,
@@ -38,7 +39,7 @@ impl TransactionTracker {
                 .expect("unable to unlock transactions mutex");
 
             if let Some(client_transactions) = transactions.get(client_addr) {
-                let mut client_lock = client_transactions.lock().unwrap();
+                let mut client_lock = client_transactions.lock().expect("lock is poisoned");
                 client_lock.add_transaction(xid, now)?;
                 return Ok(TransactionLock::new(
                     client_transactions.clone(),
@@ -51,16 +52,13 @@ impl TransactionTracker {
         // If client is not in the transactions map, we need to add it
         // It's possible that another thread added it while we were checking, so we need to
         // check again
-        let mut transactions = self
-            .transactions
-            .write()
-            .expect("unable to unlock transactions mutex");
+        let mut transactions = self.transactions.write().expect("lock is poisoned");
 
         let val = transactions
             .entry(client_addr.to_owned())
             .or_insert_with(|| self.new_client_transactions(now));
 
-        let mut client_lock = val.lock().unwrap();
+        let mut client_lock = val.lock().expect("lock is poisoned");
         client_lock.add_transaction(xid, now)?;
 
         Ok(TransactionLock::new(
@@ -79,13 +77,10 @@ impl TransactionTracker {
     }
 
     pub(crate) fn cleanup(&self, now: Instant) {
-        let mut transactions = self
-            .transactions
-            .write()
-            .expect("unable to unlock transactions mutex");
+        let mut transactions = self.transactions.write().expect("lock is poisoned");
 
         transactions.retain(|_, client_transactions| {
-            let mut client_lock = client_transactions.lock().unwrap();
+            let mut client_lock = client_transactions.lock().expect("lock is poisoned");
             if client_lock.is_active(now, self.retention_period) {
                 client_lock.remove_old_transactions(now, self.retention_period);
                 true
@@ -98,7 +93,7 @@ impl TransactionTracker {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TransactionError {
+pub enum TransactionError {
     AlreadyExists,
     TooManyRequests,
 }
@@ -106,8 +101,8 @@ pub(crate) enum TransactionError {
 impl std::fmt::Display for TransactionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransactionError::AlreadyExists => write!(f, "transaction already exists"),
-            TransactionError::TooManyRequests => write!(f, "too many requests"),
+            Self::AlreadyExists => write!(f, "transaction already exists"),
+            Self::TooManyRequests => write!(f, "too many requests"),
         }
     }
 }
@@ -125,7 +120,7 @@ struct Transaction {
 }
 
 impl Transaction {
-    fn in_progress(xid: u32) -> Self {
+    const fn in_progress(xid: u32) -> Self {
         Self {
             xid,
             state: TransactionState::InProgress,
@@ -176,6 +171,7 @@ impl ClientTransactions {
         }
     }
     // Finds a transaction by its xid taking into account that the list is sorted
+    #[allow(clippy::option_if_let_else)]
     fn find_transaction(&self, xid: u32) -> Result<usize, usize> {
         use std::cmp::Ordering;
         if let Some(last_tx) = self.transactions.back() {
@@ -219,7 +215,7 @@ impl ClientTransactions {
         }
     }
 
-    /// Removes transactions older than the specified max_age, starting from the beginning of the
+    /// Removes transactions older than the specified `max_age`, starting from the beginning of the
     /// list.
     fn remove_old_transactions(&mut self, now: Instant, max_age: Duration) {
         while let Some(tx) = self.transactions.front() {
@@ -246,6 +242,7 @@ impl ClientTransactions {
     }
 
     // Remove the oldest transactions until we are below the trim limit
+    #[allow(clippy::unwrap_used)]
     fn trim_if_needed(&mut self) {
         while self.transactions.len() > self.trim_limit {
             if matches!(
@@ -261,14 +258,14 @@ impl ClientTransactions {
 }
 
 #[derive(Debug)]
-pub(crate) struct TransactionLock {
+pub struct TransactionLock {
     transactions: Arc<Mutex<ClientTransactions>>,
     xid: u32,
     retention_period: Duration,
 }
 
 impl TransactionLock {
-    fn new(
+    const fn new(
         transactions: Arc<Mutex<ClientTransactions>>,
         xid: u32,
         retention_period: Duration,
@@ -284,7 +281,7 @@ impl TransactionLock {
 impl Drop for TransactionLock {
     fn drop(&mut self) {
         let now = Instant::now();
-        let mut transactions = self.transactions.lock().unwrap();
+        let mut transactions = self.transactions.lock().expect("lock is poisoned");
         transactions.complete_transaction(self.xid, now);
         transactions.remove_old_transactions(now, self.retention_period);
     }
@@ -297,7 +294,7 @@ pub struct Cleaner {
 }
 
 impl Cleaner {
-    pub fn new(
+    pub const fn new(
         tracker: Arc<TransactionTracker>,
         interval: Duration,
         stop: Arc<tokio::sync::Notify>,
@@ -313,8 +310,8 @@ impl Cleaner {
         tracing::debug!("Transaction tracker cleaner started");
         loop {
             tokio::select! {
-                _ = self.stop.notified() => break,
-                _ = tokio::time::sleep(self.interval) => {
+                () = self.stop.notified() => break,
+                () = tokio::time::sleep(self.interval) => {
                     self.tracker.cleanup(Instant::now());
                 }
             }
@@ -324,6 +321,8 @@ impl Cleaner {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::significant_drop_tightening)]
+
     use super::*;
 
     #[test]
@@ -459,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_tracker() -> anyhow::Result<()> {
+    fn test_transaction_tracker() {
         let tracker = TransactionTracker::new(Duration::new(1, 0), 100, 1000);
         let now = Instant::now();
 
@@ -496,8 +495,6 @@ mod tests {
                 TransactionState::Completed(_)
             ));
         }
-
-        Ok(())
     }
 
     #[test]

@@ -5,7 +5,10 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 pub use iterator::*;
-use nfs3_types::nfs3::{FSINFO3resok as fsinfo3, *};
+use nfs3_types::nfs3::{
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3, fattr3,
+    fileid3, filename3, nfs_fh3, nfspath3, nfstime3, post_op_attr, sattr3,
+};
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -21,13 +24,14 @@ pub(crate) struct DefaultNfsFhConverter {
 impl DefaultNfsFhConverter {
     const HANDLE_LENGTH: usize = 16;
 
+    #[allow(clippy::cast_possible_truncation)] // it's ok to truncate the generation number
     pub(crate) fn new() -> Self {
         let generation_number = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("failed to get system time")
             .as_millis() as u64;
 
-        DefaultNfsFhConverter {
+        Self {
             generation_number,
             generation_number_le: generation_number.to_le_bytes(),
         }
@@ -49,9 +53,17 @@ impl DefaultNfsFhConverter {
         }
 
         if id.data[0..8] == self.generation_number_le {
-            Ok(u64::from_le_bytes(id.data[8..16].try_into().unwrap()))
+            Ok(u64::from_le_bytes(
+                id.data[8..16]
+                    .try_into()
+                    .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
+            ))
         } else {
-            let id_gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
+            let id_gen = u64::from_le_bytes(
+                id.data[0..8]
+                    .try_into()
+                    .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
+            );
             if id_gen < self.generation_number {
                 Err(nfsstat3::NFS3ERR_STALE)
             } else {
@@ -59,7 +71,7 @@ impl DefaultNfsFhConverter {
             }
         }
     }
-    pub(crate) fn generation_number_le(&self) -> [u8; 8] {
+    pub(crate) const fn generation_number_le(&self) -> [u8; 8] {
         self.generation_number_le
     }
 }
@@ -214,10 +226,10 @@ pub trait NFSFileSystem: Sync {
 
     /// Get static file system Information
     async fn fsinfo(&self, root_fileid: fileid3) -> Result<fsinfo3, nfsstat3> {
-        let dir_attr: post_op_attr = match self.getattr(root_fileid).await {
-            Ok(v) => post_op_attr::Some(v),
-            Err(_) => post_op_attr::None,
-        };
+        let dir_attr = self
+            .getattr(root_fileid)
+            .await
+            .map_or(post_op_attr::None, post_op_attr::Some);
 
         let res = fsinfo3 {
             obj_attributes: dir_attr,
@@ -231,7 +243,7 @@ pub trait NFSFileSystem: Sync {
             maxfilesize: 128u64 * GIBIBYTE,
             time_delta: nfstime3 {
                 seconds: 0,
-                nseconds: 1000000,
+                nseconds: 1_000_000,
             },
             properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
         };

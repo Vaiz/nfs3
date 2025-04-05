@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::context::RPCContext;
-use crate::rpcwire::*;
+use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::NFSFileSystem;
@@ -33,6 +33,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> Drop for NFSTcpListener<T> {
     }
 }
 
+#[must_use]
 pub fn generate_host_ip(hostnum: u16) -> String {
     format!(
         "127.88.{}.{}",
@@ -59,10 +60,10 @@ where
             }
         }
     });
-    let mut buf = Box::new([0u8; 128 * KIBIBYTE as usize]);
+    let mut buf = vec![0u8; 128 * KIBIBYTE as usize].into_boxed_slice();
     loop {
         tokio::select! {
-            result = socket.read(&mut *buf) => {
+            result = socket.read(&mut buf) => {
                 match result {
                     Ok(0) => {
                         return Ok(());
@@ -70,15 +71,12 @@ where
                     Ok(n) => {
                         let _ = socksend.write_all(&buf[..n]).await;
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
                     Err(e) => {
                         debug!("Message handling closed : {e}");
                         return Err(e.into());
                     }
                 }
-
             },
             reply = msgrecvchan.recv() => {
                 match reply {
@@ -119,8 +117,8 @@ pub trait NFSTcp: Send + Sync {
 impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
     /// Binds to a ipstr of the form [ip address]:port. For instance
     /// "127.0.0.1:12000". fs is an instance of an implementation
-    /// of NFSFileSystem.
-    pub async fn bind(ipstr: &str, fs: T) -> io::Result<NFSTcpListener<T>> {
+    /// of `NFSFileSystem`.
+    pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -142,16 +140,14 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result = NFSTcpListener::bind_internal(&ip, port, arcfs.clone()).await;
+                let result = Self::bind_internal(&ip, port, arcfs.clone()).await;
 
-                match &result {
+                match result {
                     Err(_) => {
                         if num_tries_left == 0 {
                             return result;
-                        } else {
-                            num_tries_left -= 1;
-                            continue;
                         }
+                        num_tries_left -= 1;
                     }
                     Ok(_) => {
                         return result;
@@ -161,20 +157,20 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
             unreachable!(); // Does not detect automatically that loop above never terminates.
         } else {
             // Otherwise, try this.
-            NFSTcpListener::bind_internal(ip, port, arcfs).await
+            Self::bind_internal(ip, port, arcfs).await
         }
     }
 
-    async fn bind_internal(ip: &str, port: u16, arcfs: Arc<T>) -> io::Result<NFSTcpListener<T>> {
+    async fn bind_internal(ip: &str, port: u16, arcfs: Arc<T>) -> io::Result<Self> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
         info!("Listening on {:?}", &ipstr);
 
-        let port = match listener.local_addr().unwrap() {
+        let port = match listener.local_addr().expect("failed to get local address") {
             SocketAddr::V4(s) => s.port(),
             SocketAddr::V6(s) => s.port(),
         };
-        Ok(NFSTcpListener {
+        Ok(Self {
             listener,
             port,
             arcfs,
@@ -210,7 +206,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
                 .as_ref()
                 .trim_end_matches('/')
                 .trim_start_matches('/')
-        ))
+        ));
     }
 }
 
@@ -218,12 +214,18 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
 impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16 {
-        let addr = self.listener.local_addr().unwrap();
+        let addr = self
+            .listener
+            .local_addr()
+            .expect("failed to get local address");
         addr.port()
     }
 
     fn get_listen_ip(&self) -> IpAddr {
-        let addr = self.listener.local_addr().unwrap();
+        let addr = self
+            .listener
+            .local_addr()
+            .expect("failed to get local address");
         addr.ip()
     }
 
@@ -247,7 +249,10 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
             let (socket, _) = self.listener.accept().await?;
             let context = RPCContext {
                 local_port: self.port,
-                client_addr: socket.peer_addr().unwrap().to_string(),
+                client_addr: socket
+                    .peer_addr()
+                    .expect("failed to get peer address")
+                    .to_string(),
                 auth: nfs3_types::rpc::auth_unix::default(),
                 vfs: self.arcfs.clone(),
                 mount_signal: self.mount_signal.clone(),
