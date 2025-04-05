@@ -33,3 +33,5 @@ enum_glob_use = "deny"
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
 unwrap_used = "deny"
+significant_drop_tightening = "allow" # it's too buggy
+missing_errors_doc = "allow"

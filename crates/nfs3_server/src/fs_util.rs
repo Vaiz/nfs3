@@ -127,6 +127,7 @@ pub async fn path_setattr(path: &Path, setattr: &sattr3) -> Result<(), nfsstat3>
 }
 
 /// Set attributes of a file
+#[allow(clippy::unused_async)] // keeping it async for API compatibility
 pub async fn file_setattr(file: &std::fs::File, setattr: &sattr3) -> Result<(), nfsstat3> {
     if let set_mode3::Some(mode) = setattr.mode {
         debug!(" -- set permissions {:?}", mode);
