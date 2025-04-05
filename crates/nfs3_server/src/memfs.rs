@@ -213,28 +213,28 @@ impl Entry {
         }
     }
 
-    fn fileid(&self) -> fileid3 {
+    const fn fileid(&self) -> fileid3 {
         match self {
             Self::File(file) => file.attr.fileid,
             Self::Dir(dir) => dir.attr.fileid,
         }
     }
 
-    fn name(&self) -> &filename3<'static> {
+    const fn name(&self) -> &filename3<'static> {
         match self {
             Self::File(file) => &file.name,
             Self::Dir(dir) => &dir.name,
         }
     }
 
-    fn attr(&self) -> &fattr3 {
+    const fn attr(&self) -> &fattr3 {
         match self {
             Self::File(file) => &file.attr,
             Self::Dir(dir) => &dir.attr,
         }
     }
 
-    fn attr_mut(&mut self) -> &mut fattr3 {
+    const fn attr_mut(&mut self) -> &mut fattr3 {
         match self {
             Self::File(file) => &mut file.attr,
             Self::Dir(dir) => &mut dir.attr,

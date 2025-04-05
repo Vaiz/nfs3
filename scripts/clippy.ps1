@@ -9,10 +9,12 @@ $clippyArgs = @(
     "--", "-D", "warnings"
 )
 
+clear
 if ($Fix) {
-    Write-Host "⚙️ Running cargo fix before Clippy..."
-    cargo fix --workspace --allow-dirty --allow-staged
+    Write-Host "⚙️ Running cargo clippy --fix..."
+    cargo clippy --fix --allow-dirty @clippyArgs
+    cargo +nightly fmt
+} else {
+    Write-Host "⚙️ Running cargo clippy..."
+    cargo clippy @clippyArgs
 }
-
-Write-Host "🔍 Running Clippy with workspace configuration..."
-cargo clippy @clippyArgs

@@ -1,4 +1,4 @@
-use nfs3_server::tcp::*;
+use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 
 const HOSTPORT: u32 = 11111;
 
@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = std::env::args().collect::<Vec<_>>();
-    let bind_ip = args.get(1).map(|s| s.as_str()).unwrap_or("0.0.0.0");
+    let bind_ip = args.get(1).map_or("0.0.0.0", std::string::String::as_str);
 
     let bind_port = args
         .get(2)
@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn default_config() -> nfs3_server::memfs::MemFsConfig {
-    const CAT: &str = r#"
+    const CAT: &str = r"
     /\_____/\
    /  o   o  \
   ( ==  ^  == )
@@ -38,11 +38,11 @@ fn default_config() -> nfs3_server::memfs::MemFsConfig {
   (           )
  ( (  )   (  ) )
 (__(__)___(__)__)
-"#;
+";
 
     let mut config = nfs3_server::memfs::MemFsConfig::default();
-    config.add_file("/a.txt", "hello world\n".as_bytes());
-    config.add_file("/b.txt", "Greetings\n".as_bytes());
+    config.add_file("/a.txt", b"hello world\n");
+    config.add_file("/b.txt", b"Greetings\n");
     config.add_file("/cat.txt", CAT.as_bytes());
     config.add_dir("/a directory");
     for i in 0..10 {
