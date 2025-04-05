@@ -48,10 +48,10 @@ impl BoundedEntryPlusList {
     pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3<'static>> {
         // dircount - the maximum number of bytes of directory information returned. This number
         // should not include the size of the attributes and file handle portions of the result.
-        let added_dircount = fileid3::PACKED_SIZE.unwrap()
+        let added_dircount = fileid3::PACKED_SIZE.expect("should be set")
             + 4
             + entry.name.packed_size()
-            + cookie3::PACKED_SIZE.unwrap();
+            + cookie3::PACKED_SIZE.expect("should be set");
 
         if self.accumulated_dircount + added_dircount > self.dircount {
             return Err(entry);

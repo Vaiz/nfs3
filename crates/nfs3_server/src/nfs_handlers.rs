@@ -1,13 +1,15 @@
+#![allow(clippy::unwrap_used)] // FIXME: will fix this after some refactoring
+
 use std::io::{Read, Write};
 
 use nfs3_types::nfs3::{
     ACCESS3_LOOKUP, ACCESS3_READ, CREATE3args, FSSTAT3resok, GETATTR3args, GETATTR3res,
     GETATTR3resok, LOOKUP3args, LOOKUP3res, LOOKUP3resfail, LOOKUP3resok, MKDIR3args, NFS_PROGRAM,
-    Nfs3Result, PATHCONF3resok, READ3args, READ3resok, READDIR3args, READDIR3res, READDIR3resfail,
-    READDIR3resok, READDIRPLUS3args, READDIRPLUS3res, READDIRPLUS3resfail, READDIRPLUS3resok,
-    SETATTR3args, SYMLINK3args, VERSION, WRITE3args, WRITE3resok, cookieverf3, createhow3,
-    dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr, post_op_fh3,
-    pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data, writeverf3,
+    Nfs3Option, Nfs3Result, PATHCONF3resok, READ3args, READ3resok, READDIR3args, READDIR3res,
+    READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res, READDIRPLUS3resfail,
+    READDIRPLUS3resok, SETATTR3args, SYMLINK3args, VERSION, WRITE3args, WRITE3resok, cookieverf3,
+    createhow3, dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr,
+    post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data, writeverf3,
 };
 use nfs3_types::rpc::call_body;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
@@ -19,6 +21,7 @@ use crate::rpc::{
     garbage_args_reply_message, make_success_reply, proc_unavail_reply_message,
     prog_mismatch_reply_message,
 };
+use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
@@ -157,16 +160,10 @@ async fn lookup_impl(
     }
 
     let dirid = dirid.unwrap();
-    let dir_attributes = match context.vfs.getattr(dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let dir_attributes = nfs_option_from_result(context.vfs.getattr(dirid).await);
     match context.vfs.lookup(dirid, &dirops.name).await {
         Ok(fid) => {
-            let obj_attributes = match context.vfs.getattr(fid).await {
-                Ok(v) => post_op_attr::Some(v),
-                Err(_) => post_op_attr::None,
-            };
+            let obj_attributes = nfs_option_from_result(context.vfs.getattr(fid).await);
 
             debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
             Ok(LOOKUP3res::Ok(LOOKUP3resok {
@@ -200,15 +197,12 @@ pub async fn nfsproc3_read(
     }
     let id = id.unwrap();
 
-    let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
     match context.vfs.read(id, args.offset, args.count).await {
         Ok((bytes, eof)) => {
             let res = READ3resok {
                 file_attributes: obj_attr,
-                count: bytes.len() as u32,
+                count: u32::try_from(bytes.len()).expect("buffer is too big"),
                 eof,
                 data: Opaque::owned(bytes),
             };
@@ -281,10 +275,7 @@ pub async fn nfsproc3_access(
     }
     let id = id.unwrap();
 
-    let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
     // TODO better checks here
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         access &= ACCESS3_READ | ACCESS3_LOOKUP;
@@ -316,10 +307,7 @@ pub async fn nfsproc3_pathconf(
     }
     let id = id.unwrap();
 
-    let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
     let res = PATHCONF3resok {
         obj_attributes: obj_attr,
         linkmax: 0,
@@ -354,18 +342,15 @@ pub async fn nfsproc3_fsstat(
     }
     let id = id.unwrap();
 
-    let obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
     let res = FSSTAT3resok {
         obj_attributes: obj_attr,
-        tbytes: 1024 * 1024 * 1024 * 1024,
-        fbytes: 1024 * 1024 * 1024 * 1024,
-        abytes: 1024 * 1024 * 1024 * 1024,
-        tfiles: 1024 * 1024 * 1024,
-        ffiles: 1024 * 1024 * 1024,
-        afiles: 1024 * 1024 * 1024,
+        tbytes: TEBIBYTE,
+        fbytes: TEBIBYTE,
+        abytes: TEBIBYTE,
+        tfiles: GIBIBYTE,
+        ffiles: GIBIBYTE,
+        afiles: GIBIBYTE,
         invarsec: u32::MAX,
     };
     make_success_reply(xid).pack(output)?;
@@ -554,6 +539,7 @@ pub async fn nfsproc3_readdir(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 async fn readdir_impl(
     xid: u32,
     readdir3args: READDIR3args,
@@ -743,7 +729,7 @@ pub async fn nfsproc3_write(
     Ok(())
 }
 
-#[allow(clippy::collapsible_if)]
+#[allow(clippy::collapsible_if, clippy::too_many_lines)]
 pub async fn nfsproc3_create(
     xid: u32,
     input: &mut impl Read,
@@ -803,10 +789,7 @@ pub async fn nfsproc3_create(
             // file exists. Fail with NFS3ERR_EXIST.
             // Re-read dir attributes
             // for post op attr
-            let post_dir_attr = match context.vfs.getattr(dirid).await {
-                Ok(v) => post_op_attr::Some(v),
-                Err(_) => post_op_attr::None,
-            };
+            let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
 
             make_success_reply(xid).pack(output)?;
             nfsstat3::NFS3ERR_EXIST.pack(output)?;
@@ -850,10 +833,7 @@ pub async fn nfsproc3_create(
     }
 
     // Re-read dir attributes for post op attr
-    let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
     let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
@@ -1013,10 +993,7 @@ pub async fn nfsproc3_remove(
     let res = context.vfs.remove(dirid, &dirops.name).await;
 
     // Re-read dir attributes for post op attr
-    let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
     let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
@@ -1135,14 +1112,8 @@ pub async fn nfsproc3_rename(
         .await;
 
     // Re-read dir attributes for post op attr
-    let post_from_dir_attr = match context.vfs.getattr(from_dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
-    let post_to_dir_attr = match context.vfs.getattr(to_dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let post_from_dir_attr = nfs_option_from_result(context.vfs.getattr(from_dirid).await);
+    let post_to_dir_attr = nfs_option_from_result(context.vfs.getattr(to_dirid).await);
     let from_wcc_res = wcc_data {
         before: pre_from_dir_attr,
         after: post_from_dir_attr,
@@ -1228,10 +1199,7 @@ pub async fn nfsproc3_mkdir(
     let res = context.vfs.mkdir(dirid, &args.where_.name).await;
 
     // Re-read dir attributes for post op attr
-    let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
     let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
@@ -1322,10 +1290,7 @@ pub async fn nfsproc3_symlink(
         .await;
 
     // Re-read dir attributes for post op attr
-    let post_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => post_op_attr::Some(v),
-        Err(_) => post_op_attr::None,
-    };
+    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
     let wcc_res = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
@@ -1365,12 +1330,15 @@ pub async fn nfsproc3_readlink(
 
     let id = context.vfs.fh_to_id(&handle);
     // fail if unable to convert file handle
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+    let id = match id {
+        Ok(id) => id,
+        Err(stat) => {
+            make_success_reply(xid).pack(output)?;
+            stat.pack(output)?;
+            post_op_attr::None.pack(output)?;
+            return Ok(());
+        }
+    };
     // if the id does not exist, we fail
     let symlink_attr = match context.vfs.getattr(id).await {
         Ok(v) => post_op_attr::Some(v),
@@ -1398,4 +1366,8 @@ pub async fn nfsproc3_readlink(
         }
     }
     Ok(())
+}
+
+fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
+    result.map_or_else(|_| Nfs3Option::None, Nfs3Option::Some)
 }

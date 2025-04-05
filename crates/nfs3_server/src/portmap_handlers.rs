@@ -11,7 +11,7 @@ use crate::rpc::{make_success_reply, proc_unavail_reply_message, prog_mismatch_r
 
 pub fn handle_portmap(
     xid: u32,
-    call: call_body<'_>,
+    call: &call_body<'_>,
     input: &mut impl Read,
     output: &mut impl Write,
     context: &RPCContext,

@@ -49,6 +49,7 @@ const fn mode_unmask(mode: u32) -> u32 {
     (mode | 0x80) & 0x1FF
 }
 
+#[allow(clippy::option_if_let_else, clippy::needless_pass_by_value)]
 fn to_nfstime3(time: std::io::Result<std::time::SystemTime>) -> nfstime3 {
     match time {
         Ok(time) => time.try_into().unwrap_or_default(),

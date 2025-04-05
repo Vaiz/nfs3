@@ -75,7 +75,7 @@ async fn handle_rpc(
     if call.prog == nfs::PROGRAM {
         nfs_handlers::handle_nfs(xid, call, input, output, &context).await?;
     } else if call.prog == portmap::PROGRAM {
-        portmap_handlers::handle_portmap(xid, call, input, output, &context)?;
+        portmap_handlers::handle_portmap(xid, &call, input, output, &context)?;
     } else if call.prog == nfs3_types::mount::PROGRAM {
         mount_handlers::handle_mount(xid, call, input, output, &context).await?;
     } else if call.prog == NFS_ACL_PROGRAM
@@ -131,6 +131,7 @@ async fn read_fragment(
     Ok(is_last)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
     buf: &[u8],

@@ -57,6 +57,7 @@ impl NfsMetadataExt<'_> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps, clippy::unused_self)]
 impl NfsMetadataExt<'_> {
     pub fn mode(&self) -> u32 {
         // Assume full `rwxrwxrwx` permissions if not read-only
