@@ -1369,5 +1369,5 @@ pub async fn nfsproc3_readlink(
 }
 
 fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
-    result.map_or_else(|_| Nfs3Option::None, Nfs3Option::Some)
+    result.map_or(Nfs3Option::None, Nfs3Option::Some)
 }
