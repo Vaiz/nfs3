@@ -39,7 +39,7 @@ impl TransactionTracker {
                 .expect("unable to unlock transactions mutex");
 
             if let Some(client_transactions) = transactions.get(client_addr) {
-                let mut client_lock = client_transactions.lock().unwrap();
+                let mut client_lock = client_transactions.lock().expect("lock is poisoned");
                 client_lock.add_transaction(xid, now)?;
                 return Ok(TransactionLock::new(
                     client_transactions.clone(),
@@ -52,16 +52,13 @@ impl TransactionTracker {
         // If client is not in the transactions map, we need to add it
         // It's possible that another thread added it while we were checking, so we need to
         // check again
-        let mut transactions = self
-            .transactions
-            .write()
-            .expect("unable to unlock transactions mutex");
+        let mut transactions = self.transactions.write().expect("lock is poisoned");
 
         let val = transactions
             .entry(client_addr.to_owned())
             .or_insert_with(|| self.new_client_transactions(now));
 
-        let mut client_lock = val.lock().unwrap();
+        let mut client_lock = val.lock().expect("lock is poisoned");
         client_lock.add_transaction(xid, now)?;
 
         Ok(TransactionLock::new(
@@ -80,13 +77,10 @@ impl TransactionTracker {
     }
 
     pub(crate) fn cleanup(&self, now: Instant) {
-        let mut transactions = self
-            .transactions
-            .write()
-            .expect("unable to unlock transactions mutex");
+        let mut transactions = self.transactions.write().expect("lock is poisoned");
 
         transactions.retain(|_, client_transactions| {
-            let mut client_lock = client_transactions.lock().unwrap();
+            let mut client_lock = client_transactions.lock().expect("lock is poisoned");
             if client_lock.is_active(now, self.retention_period) {
                 client_lock.remove_old_transactions(now, self.retention_period);
                 true
@@ -177,6 +171,7 @@ impl ClientTransactions {
         }
     }
     // Finds a transaction by its xid taking into account that the list is sorted
+    #[allow(clippy::option_if_let_else)]
     fn find_transaction(&self, xid: u32) -> Result<usize, usize> {
         use std::cmp::Ordering;
         if let Some(last_tx) = self.transactions.back() {
@@ -247,6 +242,7 @@ impl ClientTransactions {
     }
 
     // Remove the oldest transactions until we are below the trim limit
+    #[allow(clippy::unwrap_used)]
     fn trim_if_needed(&mut self) {
         while self.transactions.len() > self.trim_limit {
             if matches!(
@@ -285,7 +281,7 @@ impl TransactionLock {
 impl Drop for TransactionLock {
     fn drop(&mut self) {
         let now = Instant::now();
-        let mut transactions = self.transactions.lock().unwrap();
+        let mut transactions = self.transactions.lock().expect("lock is poisoned");
         transactions.complete_transaction(self.xid, now);
         transactions.remove_old_transactions(now, self.retention_period);
     }

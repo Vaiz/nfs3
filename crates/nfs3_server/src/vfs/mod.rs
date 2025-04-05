@@ -24,10 +24,11 @@ pub(crate) struct DefaultNfsFhConverter {
 impl DefaultNfsFhConverter {
     const HANDLE_LENGTH: usize = 16;
 
+    #[allow(clippy::cast_possible_truncation)] // it's ok to truncate the generation number
     pub(crate) fn new() -> Self {
         let generation_number = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("failed to get system time")
             .as_millis() as u64;
 
         Self {
@@ -52,9 +53,17 @@ impl DefaultNfsFhConverter {
         }
 
         if id.data[0..8] == self.generation_number_le {
-            Ok(u64::from_le_bytes(id.data[8..16].try_into().unwrap()))
+            Ok(u64::from_le_bytes(
+                id.data[8..16]
+                    .try_into()
+                    .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
+            ))
         } else {
-            let id_gen = u64::from_le_bytes(id.data[0..8].try_into().unwrap());
+            let id_gen = u64::from_le_bytes(
+                id.data[0..8]
+                    .try_into()
+                    .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
+            );
             if id_gen < self.generation_number {
                 Err(nfsstat3::NFS3ERR_STALE)
             } else {
@@ -217,10 +226,10 @@ pub trait NFSFileSystem: Sync {
 
     /// Get static file system Information
     async fn fsinfo(&self, root_fileid: fileid3) -> Result<fsinfo3, nfsstat3> {
-        let dir_attr: post_op_attr = match self.getattr(root_fileid).await {
-            Ok(v) => post_op_attr::Some(v),
-            Err(_) => post_op_attr::None,
-        };
+        let dir_attr = self
+            .getattr(root_fileid)
+            .await
+            .map_or(post_op_attr::None, post_op_attr::Some);
 
         let res = fsinfo3 {
             obj_attributes: dir_attr,

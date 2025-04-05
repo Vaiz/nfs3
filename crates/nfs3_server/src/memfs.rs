@@ -32,7 +32,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
-use std::u32;
 
 use nfs3_types::nfs3::{
     self as nfs, cookie3, entryplus3, fattr3, fileid3, filename3, ftype3, nfs_fh3, nfspath3,

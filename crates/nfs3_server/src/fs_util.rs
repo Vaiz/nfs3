@@ -89,7 +89,7 @@ pub async fn path_setattr(path: &Path, setattr: &sattr3) -> Result<(), nfsstat3>
             let time = filetime::FileTime::from_unix_time(i64::from(time.seconds), time.nseconds);
             let _ = filetime::set_file_atime(path, time);
         }
-        _ => {}
+        set_atime::DONT_CHANGE => {}
     }
     match &setattr.mtime {
         set_mtime::SET_TO_SERVER_TIME => {
@@ -99,7 +99,7 @@ pub async fn path_setattr(path: &Path, setattr: &sattr3) -> Result<(), nfsstat3>
             let time = filetime::FileTime::from_unix_time(i64::from(time.seconds), time.nseconds);
             let _ = filetime::set_file_mtime(path, time);
         }
-        _ => {}
+        set_mtime::DONT_CHANGE => {}
     }
     if let set_mode3::Some(mode) = setattr.mode {
         debug!(" -- set permissions {:?} {:?}", path, mode);
