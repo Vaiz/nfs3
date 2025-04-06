@@ -17,7 +17,7 @@ impl PackedSize for Void {
 }
 
 impl<In: std::io::Read> Unpack<In> for Void {
-    fn unpack(_buf: &mut In) -> nfs3_types::xdr_codec::Result<(Void, usize)> {
-        Ok((Void, 0))
+    fn unpack(_buf: &mut In) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
+        Ok((Self, 0))
     }
 }

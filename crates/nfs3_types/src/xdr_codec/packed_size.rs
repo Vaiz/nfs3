@@ -13,7 +13,7 @@ pub trait PackedSize {
     /// Returns the packed size of the object. If `PACKED_SIZE` is `Some`, it returns that value.
     /// Otherwise, it calls `count_packed_size` to calculate the size.
     fn packed_size(&self) -> usize {
-        Self::PACKED_SIZE.unwrap_or(self.count_packed_size())
+        Self::PACKED_SIZE.unwrap_or_else(|| self.count_packed_size())
     }
 
     /// Calculates the packed size of the object dynamically.
@@ -80,7 +80,7 @@ where
 }
 
 #[inline]
-pub(crate) fn add_padding(sz: usize) -> usize {
+pub const fn add_padding(sz: usize) -> usize {
     (sz + 3) & !3
 }
 

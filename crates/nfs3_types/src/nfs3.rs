@@ -4,13 +4,13 @@
     clippy::upper_case_acronyms
 )]
 
-//! This module contains the definitions of the NFSv3 protocol as defined in RFC 1813.
+//! This module contains the definitions of the `NFSv3` protocol as defined in RFC 1813.
 
 use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
-pub const PROGRAM: u32 = 100003;
+pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
 
 pub const ACCESS3_READ: u32 = 1;
@@ -37,10 +37,15 @@ pub enum Nfs3Result<T, E> {
 }
 
 impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
+    /// Returns the contained value, consuming the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result is an `Err`.
     pub fn unwrap(self) -> T {
         match self {
-            Nfs3Result::Ok(val) => val,
-            Nfs3Result::Err((code, res)) => panic!("NFS3 error: {code:?}, result: {res:?}"),
+            Self::Ok(val) => val,
+            Self::Err((code, res)) => panic!("NFS3 error: {code:?}, result: {res:?}"),
         }
     }
 }
@@ -53,8 +58,8 @@ where
 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         let len = match self {
-            Nfs3Result::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
-            Nfs3Result::Err((code, err)) => code.pack(out)? + err.pack(out)?,
+            Self::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
+            Self::Err((code, err)) => code.pack(out)? + err.pack(out)?,
         };
         Ok(len)
     }
@@ -70,17 +75,14 @@ where
         let mut sz = 0;
         let (code, dsz): (nfsstat3, usize) = Unpack::unpack(input)?;
         sz += dsz;
-        match code {
-            nfsstat3::NFS3_OK => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::Ok(val), sz))
-            }
-            _ => {
-                let (val, csz) = Unpack::unpack(input)?;
-                sz += csz;
-                Ok((Self::Err((code, val)), sz))
-            }
+        if code == nfsstat3::NFS3_OK {
+            let (val, fsz) = Unpack::unpack(input)?;
+            sz += fsz;
+            Ok((Self::Ok(val), sz))
+        } else {
+            let (val, csz) = Unpack::unpack(input)?;
+            sz += csz;
+            Ok((Self::Err((code, val)), sz))
         }
     }
 }
@@ -94,8 +96,8 @@ where
 
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            Nfs3Result::Ok(v) => v.packed_size(),
-            Nfs3Result::Err((code, err)) => code.packed_size() + err.packed_size(),
+            Self::Ok(v) => v.packed_size(),
+            Self::Err((code, err)) => code.packed_size() + err.packed_size(),
         }
     }
 }
@@ -130,16 +132,22 @@ pub enum Nfs3Option<T> {
 }
 
 impl<T> Nfs3Option<T> {
-    pub fn is_some(&self) -> bool {
-        matches!(self, Nfs3Option::Some(_))
+    pub const fn is_some(&self) -> bool {
+        matches!(self, Self::Some(_))
     }
-    pub fn is_none(&self) -> bool {
-        matches!(self, Nfs3Option::None)
+    pub const fn is_none(&self) -> bool {
+        matches!(self, Self::None)
     }
+
+    /// Returns the contained value, consuming the option.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the option is `None`.
     pub fn unwrap(self) -> T {
         match self {
-            Nfs3Option::Some(val) => val,
-            Nfs3Option::None => panic!("called `Nfs3Option::unwrap()` on a `None` value"),
+            Self::Some(val) => val,
+            Self::None => panic!("called `Nfs3Option::unwrap()` on a `None` value"),
         }
     }
 }
@@ -151,8 +159,8 @@ where
 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         let len = match self {
-            Nfs3Option::Some(v) => 1.pack(out)? + v.pack(out)?,
-            Nfs3Option::None => 0.pack(out)?,
+            Self::Some(v) => 1.pack(out)? + v.pack(out)?,
+            Self::None => 0.pack(out)?,
         };
         Ok(len)
     }
@@ -183,8 +191,8 @@ impl<T: PackedSize> PackedSize for Nfs3Option<T> {
 
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            Nfs3Option::Some(v) => v.packed_size(),
-            Nfs3Option::None => 0,
+            Self::Some(v) => v.packed_size(),
+            Self::None => 0,
         }
     }
 }
@@ -390,6 +398,7 @@ pub struct PATHCONF3resfail {
 }
 
 #[derive(Debug, XdrCodec)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct PATHCONF3resok {
     pub obj_attributes: post_op_attr,
     pub linkmax: u32,
@@ -626,7 +635,7 @@ pub struct diropargs3<'a> {
     pub name: filename3<'a>,
 }
 
-#[derive(Debug, XdrCodec, PartialEq)]
+#[derive(Debug, XdrCodec, PartialEq, Eq)]
 pub struct entry3<'a> {
     pub fileid: fileid3,
     pub name: filename3<'a>,
@@ -680,14 +689,18 @@ impl AsRef<[u8]> for filename3<'_> {
     }
 }
 
+#[allow(clippy::missing_const_for_fn)] // it breaks code
 impl filename3<'_> {
+    #[must_use]
     pub fn clone_to_owned(&self) -> filename3<'static> {
         self.0.to_vec().into()
     }
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -753,6 +766,7 @@ impl AsRef<[u8]> for nfspath3<'_> {
 }
 
 impl nfspath3<'_> {
+    #[must_use]
     pub fn clone_to_owned(&self) -> nfspath3<'static> {
         self.0.to_vec().into()
     }
@@ -809,7 +823,7 @@ impl TryFrom<std::time::SystemTime> for nfstime3 {
     fn try_from(time: std::time::SystemTime) -> std::result::Result<Self, Self::Error> {
         time.duration_since(std::time::UNIX_EPOCH)
             .map(|duration| Self {
-                seconds: duration.as_secs().min(u32::MAX as u64) as u32,
+                seconds: u32::try_from(duration.as_secs()).unwrap_or(u32::MAX),
                 nseconds: duration.subsec_nanos(),
             })
     }
@@ -916,9 +930,9 @@ impl PackedSize for cookieverf3 {
 impl<Out: Write> Pack<Out> for createhow3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         Ok(match self {
-            createhow3::UNCHECKED(val) => createmode3::UNCHECKED.pack(out)? + val.pack(out)?,
-            createhow3::GUARDED(val) => createmode3::GUARDED.pack(out)? + val.pack(out)?,
-            createhow3::EXCLUSIVE(val) => createmode3::EXCLUSIVE.pack(out)? + val.pack(out)?,
+            Self::UNCHECKED(val) => createmode3::UNCHECKED.pack(out)? + val.pack(out)?,
+            Self::GUARDED(val) => createmode3::GUARDED.pack(out)? + val.pack(out)?,
+            Self::EXCLUSIVE(val) => createmode3::EXCLUSIVE.pack(out)? + val.pack(out)?,
         })
     }
 }
@@ -926,11 +940,12 @@ impl<Out: Write> Pack<Out> for createhow3 {
 impl PackedSize for createhow3 {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            createhow3::UNCHECKED(val) => val.packed_size(),
-            createhow3::GUARDED(val) => val.packed_size(),
-            createhow3::EXCLUSIVE(val) => val.packed_size(),
+            Self::UNCHECKED(val) => val.packed_size(),
+            Self::GUARDED(val) => val.packed_size(),
+            Self::EXCLUSIVE(val) => val.packed_size(),
         }
     }
 }
@@ -952,11 +967,11 @@ impl PackedSize for createverf3 {
 impl<Out: Write> Pack<Out> for mknoddata3 {
     fn pack(&self, out: &mut Out) -> Result<usize> {
         Ok(match self {
-            mknoddata3::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
-            mknoddata3::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
-            mknoddata3::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
-            mknoddata3::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &mknoddata3::default => return Err(xdr_codec::Error::invalidcase(-1)),
+            Self::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
+            Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
+            Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
+            Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
+            &Self::default => return Err(xdr_codec::Error::invalidcase(-1)),
         })
     }
 }
@@ -964,13 +979,14 @@ impl<Out: Write> Pack<Out> for mknoddata3 {
 impl PackedSize for mknoddata3 {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            mknoddata3::NF3CHR(val) => val.packed_size(),
-            mknoddata3::NF3BLK(val) => val.packed_size(),
-            mknoddata3::NF3SOCK(val) => val.packed_size(),
-            mknoddata3::NF3FIFO(val) => val.packed_size(),
-            mknoddata3::default => 0,
+            Self::NF3CHR(val) => val.packed_size(),
+            Self::NF3BLK(val) => val.packed_size(),
+            Self::NF3SOCK(val) => val.packed_size(),
+            Self::NF3FIFO(val) => val.packed_size(),
+            Self::default => 0,
         }
     }
 }
@@ -989,6 +1005,7 @@ impl<Out: Write> Pack<Out> for set_atime {
 impl PackedSize for set_atime {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::DONT_CHANGE => 0,
@@ -1012,6 +1029,7 @@ impl<Out: Write> Pack<Out> for set_mtime {
 impl PackedSize for set_mtime {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::DONT_CHANGE => 0,
@@ -1038,7 +1056,7 @@ impl PackedSize for writeverf3 {
 impl<In: Read> Unpack<In> for cookieverf3 {
     fn unpack(input: &mut In) -> Result<(Self, usize)> {
         let (buf, sz) = unpack_array::<NFS3_COOKIEVERFSIZE, _>(input)?;
-        Ok((cookieverf3(buf), sz))
+        Ok((Self(buf), sz))
     }
 }
 
@@ -1072,7 +1090,7 @@ impl<In: Read> Unpack<In> for createhow3 {
 impl<In: Read> Unpack<In> for createverf3 {
     fn unpack(input: &mut In) -> Result<(Self, usize)> {
         let (buf, sz) = unpack_array::<NFS3_CREATEVERFSIZE, _>(input)?;
-        Ok((createverf3(buf), sz))
+        Ok((Self(buf), sz))
     }
 }
 
@@ -1151,7 +1169,7 @@ impl<In: Read> Unpack<In> for set_mtime {
 impl<In: Read> Unpack<In> for writeverf3 {
     fn unpack(input: &mut In) -> Result<(Self, usize)> {
         let (buf, sz) = unpack_array::<NFS3_WRITEVERFSIZE, _>(input)?;
-        Ok((writeverf3(buf), sz))
+        Ok((Self(buf), sz))
     }
 }
 
@@ -1192,6 +1210,7 @@ pub enum NFS_PROGRAM {
 impl std::convert::TryFrom<u32> for NFS_PROGRAM {
     type Error = crate::xdr_codec::Error;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::NFSPROC3_NULL),

@@ -10,7 +10,7 @@ use std::io::{Read, Write};
 
 use crate::xdr_codec::{Error, List, Opaque, Pack, Unpack, XdrCodec};
 
-pub const PROGRAM: u32 = 100005;
+pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
 pub const MNTPATHLEN: usize = 1024;
 pub const MNTNAMLEN: usize = 255;
@@ -134,6 +134,7 @@ pub enum MOUNT_PROGRAM {
 impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
     type Error = crate::xdr_codec::Error;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MOUNTPROC3_NULL),

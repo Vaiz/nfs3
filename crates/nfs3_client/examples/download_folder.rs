@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gid: 0xffff_fffe,
         gids: vec![],
     };
-    let credential = nfs3_types::rpc::opaque_auth::auth_unix(auth_unix);
+    let credential = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix);
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmapper_port)
