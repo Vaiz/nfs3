@@ -104,9 +104,10 @@ where
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;
         let fragment_header: fragment_header = buf.into();
-        if !fragment_header.eof() {
-            panic!("Fragment header does not have EOF flag");
-        }
+        assert!(
+            fragment_header.eof(),
+            "Fragment header does not have EOF flag"
+        );
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
@@ -125,8 +126,7 @@ where
             msg_body::CALL(_) => return Err(RpcError::UnexpectedCall.into()),
         };
 
-        if let accept_stat_data::SUCCESS = reply.reply_data {
-        } else {
+        if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
             return Err(crate::error::RpcError::try_from(reply.reply_data)
                 .unwrap()
                 .into());

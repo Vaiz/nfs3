@@ -106,25 +106,26 @@ async fn download_folder(
                     continue;
                 }
 
-                let (fh, attrs) = match (entry.name_handle, entry.name_attributes) {
-                    (Nfs3Option::Some(fh), Nfs3Option::Some(attr)) => (fh, attr),
-                    _ => {
-                        let lookup = connection
-                            .lookup(nfs3::LOOKUP3args {
-                                what: nfs3::diropargs3 {
-                                    dir: folder_fh.clone(),
-                                    name: entry.name,
-                                },
-                            })
-                            .await?
-                            .unwrap();
+                let (fh, attrs) = if let (Nfs3Option::Some(fh), Nfs3Option::Some(attr)) =
+                    (entry.name_handle, entry.name_attributes)
+                {
+                    (fh, attr)
+                } else {
+                    let lookup = connection
+                        .lookup(nfs3::LOOKUP3args {
+                            what: nfs3::diropargs3 {
+                                dir: folder_fh.clone(),
+                                name: entry.name,
+                            },
+                        })
+                        .await?
+                        .unwrap();
 
-                        if lookup.obj_attributes.is_none() {
-                            eprintln!("Failed to lookup entry: {name}");
-                            continue;
-                        }
-                        (lookup.object, lookup.obj_attributes.unwrap())
+                    if lookup.obj_attributes.is_none() {
+                        eprintln!("Failed to lookup entry: {name}");
+                        continue;
                     }
+                    (lookup.object, lookup.obj_attributes.unwrap())
                 };
 
                 let local_entry_path = Path::new(&local_path).join(name);

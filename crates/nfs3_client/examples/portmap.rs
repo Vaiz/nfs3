@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match result {
         Ok(port) => println!("Resolved MOUNT3 port: {port}"),
         Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
-            eprintln!("MOUNT3 program is unavailable")
+            eprintln!("MOUNT3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve MOUNT3 port: {e}"),
     }
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match result {
         Ok(port) => println!("Resolved NFSv3 port: {port}"),
         Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
-            eprintln!("NFSv3 program is unavailable")
+            eprintln!("NFSv3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve NFSv3 port: {e}"),
     }

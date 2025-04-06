@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match fsinfo {
         nfs3::FSINFO3res::Ok(ok) => {
-            println!("fsinfo: {:?}", ok);
+            println!("fsinfo: {ok:?}");
         }
         nfs3::FSINFO3res::Err((err, _)) => {
             eprintln!("fsinfo error: {}", err as u32);

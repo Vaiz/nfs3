@@ -39,8 +39,8 @@ where
         self.mount_client.umnt(self.mount_path).await
     }
 
-    /// Returns the underlying NFSv3 client and drops everything else.
-    /// This is useful for when you want to use the NFSv3 client for a long period of time
+    /// Returns the underlying `NFSv3` client and drops everything else.
+    /// This is useful for when you want to use the `NFSv3` client for a long period of time
     /// and don't want to keep the connection to Mount service open.
     pub fn into_nfs3_client(self) -> Nfs3Client<IO> {
         self.nfs3_client
@@ -61,7 +61,7 @@ impl<IO> DerefMut for Nfs3Connection<IO> {
     }
 }
 
-/// Builder for establishing an NFSv3 connection.
+/// Builder for establishing an `NFSv3` connection.
 ///
 /// By default, the builder attempts to use a privileged port (300-1023) for outgoing connections.
 /// This behavior can be modified by calling `connect_from_privileged_port(false)`.
@@ -82,7 +82,7 @@ where
     C: crate::net::Connector<Connection = S>,
     S: AsyncRead + AsyncWrite + 'static,
 {
-    /// Creates a new NFSv3 connection builder.
+    /// Creates a new `NFSv3` connection builder.
     /// The `mount_path` is the path to mount on the server.
     pub fn new(connector: C, host: String, mount_path: String) -> Self {
         Self {
@@ -100,23 +100,23 @@ where
 
     /// Sets whether to connect from a privileged port (0-1023).
     /// The default is `true`.
-    pub fn connect_from_privileged_port(mut self, connect: bool) -> Self {
+    pub const fn connect_from_privileged_port(mut self, connect: bool) -> Self {
         self.connect_from_privileged_port = connect;
         self
     }
 
     /// Sets the portmapper port. The default port is 111.
-    pub fn portmapper_port(mut self, port: u16) -> Self {
+    pub const fn portmapper_port(mut self, port: u16) -> Self {
         self.portmapper_port = port;
         self
     }
     /// Sets the mount port. The default port is resolved from the portmapper.
-    pub fn mount_port(mut self, port: u16) -> Self {
+    pub const fn mount_port(mut self, port: u16) -> Self {
         self.mount_port = Some(port);
         self
     }
-    /// Sets the NFSv3 port. The default port is resolved from the portmapper.
-    pub fn nfs3_port(mut self, port: u16) -> Self {
+    /// Sets the `NFSv3` port. The default port is resolved from the portmapper.
+    pub const fn nfs3_port(mut self, port: u16) -> Self {
         self.nfs3_port = Some(port);
         self
     }

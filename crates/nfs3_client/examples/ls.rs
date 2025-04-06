@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entries = readdir.reply.entries.into_inner();
         for entry in &entries {
             let name = String::from_utf8_lossy(&entry.name.0);
-            println!("{name}")
+            println!("{name}");
         }
 
         if readdir.reply.eof {
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (is_dir, size, mtime) = if let Nfs3Option::Some(attrs) = attrs {
                 let is_dir = matches!(attrs.type_, nfs3::ftype3::NF3DIR);
                 let mtime = &attrs.mtime;
-                let duration = Duration::new(mtime.seconds as u64, mtime.nseconds);
+                let duration = Duration::new(u64::from(mtime.seconds), mtime.nseconds);
                 let systime = UNIX_EPOCH.checked_add(duration).unwrap_or(UNIX_EPOCH);
                 (is_dir, attrs.size, systime)
             } else {
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{dirname:<60} {:>10} {mtime}", " ");
             } else {
                 println!("{name:<60} {size:>10} {mtime}");
-            };
+            }
         }
 
         if readdirplus.reply.eof {

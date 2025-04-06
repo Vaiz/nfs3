@@ -13,7 +13,7 @@ use crate::net::Connector;
 pub struct TokioIo<T>(T);
 
 impl<T> TokioIo<T> {
-    pub fn new(inner: T) -> Self {
+    pub const fn new(inner: T) -> Self {
         Self(inner)
     }
 }
@@ -48,7 +48,7 @@ impl Connector for TokioConnector {
     type Connection = TokioIo<TcpStream>;
 
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection> {
-        let addr = format!("{}:{}", host, port);
+        let addr = format!("{host}:{port}");
         let stream = tokio::net::TcpStream::connect(&addr).await?;
         Ok(TokioIo::new(stream))
     }
@@ -62,7 +62,7 @@ impl Connector for TokioConnector {
         let socket = TcpSocket::new_v4()?;
         socket.bind(format!("0.0.0.0:{local_port}").parse().unwrap())?;
 
-        let addr = format!("{}:{}", host, port).parse().unwrap();
+        let addr = format!("{host}:{port}").parse().unwrap();
         let stream = socket.connect(addr).await?;
         Ok(TokioIo::new(stream))
     }
