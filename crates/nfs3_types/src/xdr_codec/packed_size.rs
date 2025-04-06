@@ -80,7 +80,7 @@ where
 }
 
 #[inline]
-pub(crate) fn add_padding(sz: usize) -> usize {
+pub const fn add_padding(sz: usize) -> usize {
     (sz + 3) & !3
 }
 

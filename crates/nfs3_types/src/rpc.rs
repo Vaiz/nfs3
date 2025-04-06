@@ -22,21 +22,25 @@ impl fragment_header {
     pub const EOF_FLAG: u32 = 0x8000_0000;
     pub const MASK: u32 = 0x7FFF_FFFF;
 
+    #[must_use]
     pub fn new(length: u32, eof: bool) -> Self {
-        assert!(length <= fragment_header::MASK);
+        assert!(length <= Self::MASK);
         let mut header = length;
         if eof {
-            header |= fragment_header::EOF_FLAG;
+            header |= Self::EOF_FLAG;
         }
         Self { header }
     }
-    pub fn eof(&self) -> bool {
-        self.header & fragment_header::EOF_FLAG != 0
+    #[must_use]
+    pub const fn eof(&self) -> bool {
+        self.header & Self::EOF_FLAG != 0
     }
-    pub fn fragment_length(&self) -> u32 {
-        self.header & fragment_header::MASK
+    #[must_use]
+    pub const fn fragment_length(&self) -> u32 {
+        self.header & Self::MASK
     }
-    pub fn into_xdr_buf(self) -> [u8; 4] {
+    #[must_use]
+    pub const fn into_xdr_buf(self) -> [u8; 4] {
         self.header.to_be_bytes()
     }
 }
@@ -121,6 +125,7 @@ impl Default for opaque_auth<'static> {
 }
 
 impl opaque_auth<'static> {
+    #[must_use]
     pub fn auth_unix(auth: auth_unix) -> Self {
         let mut out = Vec::with_capacity(auth.packed_size());
         auth.pack(&mut out).expect("failed to pack auth_unix");
@@ -130,6 +135,7 @@ impl opaque_auth<'static> {
         }
     }
 
+    #[must_use]
     pub fn borrow(&self) -> opaque_auth<'_> {
         opaque_auth {
             flavor: self.flavor,
@@ -191,14 +197,14 @@ where
 {
     fn pack(&self, w: &mut Out) -> Result<usize> {
         let len = match self {
-            accept_stat_data::SUCCESS => accept_stat::SUCCESS.pack(w)?,
-            accept_stat_data::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(w)?,
-            accept_stat_data::PROG_MISMATCH { low, high } => {
+            Self::SUCCESS => accept_stat::SUCCESS.pack(w)?,
+            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(w)?,
+            Self::PROG_MISMATCH { low, high } => {
                 accept_stat::PROG_MISMATCH.pack(w)? + low.pack(w)? + high.pack(w)?
             }
-            accept_stat_data::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(w)?,
-            accept_stat_data::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(w)?,
-            accept_stat_data::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(w)?,
+            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(w)?,
+            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(w)?,
+            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(w)?,
         };
         Ok(len)
     }
@@ -209,12 +215,12 @@ impl PackedSize for accept_stat_data {
 
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            accept_stat_data::SUCCESS => 0,
-            accept_stat_data::PROG_UNAVAIL => 0,
-            accept_stat_data::PROG_MISMATCH { .. } => 8,
-            accept_stat_data::PROC_UNAVAIL => 0,
-            accept_stat_data::GARBAGE_ARGS => 0,
-            accept_stat_data::SYSTEM_ERR => 0,
+            Self::SUCCESS => 0,
+            Self::PROG_UNAVAIL => 0,
+            Self::PROG_MISMATCH { .. } => 8,
+            Self::PROC_UNAVAIL => 0,
+            Self::GARBAGE_ARGS => 0,
+            Self::SYSTEM_ERR => 0,
         }
     }
 }
@@ -226,19 +232,16 @@ where
     fn unpack(r: &mut In) -> Result<(Self, usize)> {
         let (accept_stat, len) = accept_stat::unpack(r)?;
         let (body, body_len) = match accept_stat {
-            accept_stat::SUCCESS => (accept_stat_data::SUCCESS, 0),
+            accept_stat::SUCCESS => (Self::SUCCESS, 0),
             accept_stat::PROG_MISMATCH => {
                 let (low, low_len) = u32::unpack(r)?;
                 let (high, high_len) = u32::unpack(r)?;
-                (
-                    accept_stat_data::PROG_MISMATCH { low, high },
-                    low_len + high_len,
-                )
+                (Self::PROG_MISMATCH { low, high }, low_len + high_len)
             }
-            accept_stat::PROG_UNAVAIL => (accept_stat_data::PROG_UNAVAIL, 0),
-            accept_stat::PROC_UNAVAIL => (accept_stat_data::PROC_UNAVAIL, 0),
-            accept_stat::GARBAGE_ARGS => (accept_stat_data::GARBAGE_ARGS, 0),
-            accept_stat::SYSTEM_ERR => (accept_stat_data::SYSTEM_ERR, 0),
+            accept_stat::PROG_UNAVAIL => (Self::PROG_UNAVAIL, 0),
+            accept_stat::PROC_UNAVAIL => (Self::PROC_UNAVAIL, 0),
+            accept_stat::GARBAGE_ARGS => (Self::GARBAGE_ARGS, 0),
+            accept_stat::SYSTEM_ERR => (Self::SYSTEM_ERR, 0),
         };
         Ok((body, len + body_len))
     }
@@ -251,11 +254,13 @@ pub enum rejected_reply {
 }
 
 impl rejected_reply {
-    pub fn rpc_mismatch(low: u32, high: u32) -> Self {
-        rejected_reply::RPC_MISMATCH { low, high }
+    #[must_use]
+    pub const fn rpc_mismatch(low: u32, high: u32) -> Self {
+        Self::RPC_MISMATCH { low, high }
     }
-    pub fn auth_error(auth_stat: auth_stat) -> Self {
-        rejected_reply::AUTH_ERROR(auth_stat)
+    #[must_use]
+    pub const fn auth_error(auth_stat: auth_stat) -> Self {
+        Self::AUTH_ERROR(auth_stat)
     }
 }
 
@@ -265,12 +270,10 @@ where
 {
     fn pack(&self, w: &mut Out) -> Result<usize> {
         let len = match self {
-            rejected_reply::RPC_MISMATCH { low, high } => {
+            Self::RPC_MISMATCH { low, high } => {
                 reject_stat::RPC_MISMATCH.pack(w)? + low.pack(w)? + high.pack(w)?
             }
-            rejected_reply::AUTH_ERROR(auth_stat) => {
-                reject_stat::AUTH_ERROR.pack(w)? + auth_stat.pack(w)?
-            }
+            Self::AUTH_ERROR(auth_stat) => reject_stat::AUTH_ERROR.pack(w)? + auth_stat.pack(w)?,
         };
         Ok(len)
     }
@@ -281,8 +284,8 @@ impl PackedSize for rejected_reply {
 
     fn count_packed_size(&self) -> usize {
         4 + match self {
-            rejected_reply::RPC_MISMATCH { .. } => 8,
-            rejected_reply::AUTH_ERROR(_) => 4,
+            Self::RPC_MISMATCH { .. } => 8,
+            Self::AUTH_ERROR(_) => 4,
         }
     }
 }
@@ -297,14 +300,11 @@ where
             reject_stat::RPC_MISMATCH => {
                 let (low, low_len) = u32::unpack(r)?;
                 let (high, high_len) = u32::unpack(r)?;
-                (
-                    rejected_reply::RPC_MISMATCH { low, high },
-                    low_len + high_len,
-                )
+                (Self::RPC_MISMATCH { low, high }, low_len + high_len)
             }
             reject_stat::AUTH_ERROR => {
                 let (auth_stat, auth_stat_len) = auth_stat::unpack(r)?;
-                (rejected_reply::AUTH_ERROR(auth_stat), auth_stat_len)
+                (Self::AUTH_ERROR(auth_stat), auth_stat_len)
             }
         };
         Ok((body, len + body_len))

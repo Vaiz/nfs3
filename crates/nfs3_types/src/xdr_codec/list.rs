@@ -16,9 +16,11 @@ impl<T> Default for List<T> {
 }
 
 impl<T> List<T> {
+    #[must_use]
     pub fn into_inner(self) -> Vec<T> {
         self.0
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -79,7 +81,7 @@ where
             len += item_len;
             items.push(item);
         }
-        Ok((List(items), len))
+        Ok((Self(items), len))
     }
 }
 
@@ -93,10 +95,11 @@ impl<T> BoundedList<T>
 where
     T: PackedSize,
 {
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         let list = List(Vec::new());
         let current_size = list.packed_size();
-        BoundedList {
+        Self {
             list,
             current_size,
             max_size,
@@ -114,6 +117,7 @@ where
         Ok(())
     }
 
+    #[must_use]
     pub fn into_inner(self) -> List<T> {
         self.list
     }

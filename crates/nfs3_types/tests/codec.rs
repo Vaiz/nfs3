@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use std::borrow::Cow;
 use std::io::Cursor;
 
@@ -108,7 +110,7 @@ struct StructWithLifetime<'a> {
 #[test]
 fn test_struct_with_lifetime_serialization() {
     let original = StructWithLifetime {
-        inner: Opaque(Cow::Borrowed("Hello".as_bytes())),
+        inner: Opaque(Cow::Borrowed(b"Hello")),
     };
 
     let mut buffer = Vec::new();
@@ -116,7 +118,7 @@ fn test_struct_with_lifetime_serialization() {
     assert_eq!(original.packed_size(), 12);
     assert_eq!(len, 12);
     assert_eq!(buffer[0..4], [0u8, 0, 0, 5]);
-    assert_eq!(&buffer[4..], "Hello\0\0\0".as_bytes());
+    assert_eq!(&buffer[4..], b"Hello\0\0\0");
 
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = StructWithLifetime::unpack(&mut cursor).unwrap();
@@ -236,12 +238,12 @@ fn test_dirlist3_with_entries_serialization() {
         entries: List(vec![
             entry3 {
                 fileid: 0x1234,
-                name: filename3::from("file1".as_bytes()),
+                name: filename3::from(&b"file1"[..]),
                 cookie: 0x5678,
             },
             entry3 {
                 fileid: 0x9abc,
-                name: filename3::from("file2".as_bytes()),
+                name: filename3::from(&b"file2"[..]),
                 cookie: 0xdef0,
             },
         ]),
@@ -313,7 +315,7 @@ fn test_rpc_call_len() {
 
     let call = call_body {
         rpcvers: RPC_VERSION_2,
-        prog: 100003,
+        prog: 100_003,
         vers: 3,
         proc: 0,
         cred: opaque_auth::default(),
