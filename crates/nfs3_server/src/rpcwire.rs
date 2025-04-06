@@ -31,14 +31,8 @@ async fn handle_rpc_message(
     message: PackedRpcMessage,
 ) -> anyhow::Result<Option<OutgoingRpcMessage>> {
     let message = IncomingRpcMessage::try_from(message)?;
-    let xid = message.rpc().xid;
-    let call = match &message.rpc().body {
-        msg_body::CALL(call) => call,
-        msg_body::REPLY(_) => {
-            error!("Unexpectedly received a Reply instead of a Call");
-            return Err(anyhow!("Bad RPC Call format"));
-        }
-    };
+    let xid = message.xid();
+    let call = message.body();
 
     if call.rpcvers != RPC_VERSION_2 {
         warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
