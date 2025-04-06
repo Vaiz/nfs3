@@ -4,7 +4,10 @@ use std::time::Instant;
 
 use anyhow::anyhow;
 use messages::{IncomingRpcMessage, OutgoingRpcMessage, PackedRpcMessage};
-use nfs3_types::rpc::{accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header, msg_body, rpc_msg, RPC_VERSION_2};
+use nfs3_types::rpc::{
+    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header, msg_body,
+    rpc_msg,
+};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -26,7 +29,7 @@ const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
-async fn handle_rpc_message(    
+async fn handle_rpc_message(
     mut context: RPCContext,
     message: PackedRpcMessage,
 ) -> anyhow::Result<Option<OutgoingRpcMessage>> {
@@ -61,7 +64,10 @@ async fn handle_rpc_message(
         // }
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
-            Ok(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL)))
+            Ok(Some(OutgoingRpcMessage::accept_error(
+                xid,
+                accept_stat_data::PROG_UNAVAIL,
+            )))
         }
         _ => {
             warn!(
@@ -69,7 +75,10 @@ async fn handle_rpc_message(
                 call.prog,
                 nfs::PROGRAM
             );
-            Ok(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL)))
+            Ok(Some(OutgoingRpcMessage::accept_error(
+                xid,
+                accept_stat_data::PROG_UNAVAIL,
+            )))
         }
     }
 }
@@ -80,9 +89,9 @@ fn lock_transaction(
     call: &call_body<'_>,
 ) -> Result<TransactionLock, Option<OutgoingRpcMessage>> {
     let transaction =
-    context
-        .transaction_tracker
-        .start_transaction(&context.client_addr, xid, Instant::now());
+        context
+            .transaction_tracker
+            .start_transaction(&context.client_addr, xid, Instant::now());
 
     match transaction {
         Ok(lock) => Ok(lock),
@@ -99,7 +108,10 @@ fn lock_transaction(
                 context.client_addr
             );
 
-            Err(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::SYSTEM_ERR)))
+            Err(Some(OutgoingRpcMessage::accept_error(
+                xid,
+                accept_stat_data::SYSTEM_ERR,
+            )))
         }
     }
 }
