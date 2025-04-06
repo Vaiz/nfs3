@@ -158,8 +158,8 @@ where
     }
 
     async fn resolve_ports(&self) -> Result<(u16, u16), Error> {
-        if self.mount_port.is_some() && self.nfs3_port.is_some() {
-            return Ok((self.mount_port.unwrap(), self.nfs3_port.unwrap()));
+        if let (Some(mount_port), Some(nfs3_port)) = (self.mount_port, self.nfs3_port) {
+            return Ok((mount_port, nfs3_port));
         }
 
         let io = self
@@ -221,7 +221,6 @@ where
         match &result {
             Err(e) if e.kind() == IoErrorKind::AddrInUse => {
                 // Ignore this error and try the next port
-                continue;
             }
             Ok(_) | Err(_) => {
                 return result;

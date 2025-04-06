@@ -61,7 +61,7 @@ pub enum RpcError {
     RpcMismatch,
     WrongLength,
     UnexpectedXid,
-    NotFullyParsed { buf: Vec<u8>, pos: usize },
+    NotFullyParsed { buf: Vec<u8>, pos: u64 },
     ProgUnavail,
     ProgMismatch,
     ProcUnavail,

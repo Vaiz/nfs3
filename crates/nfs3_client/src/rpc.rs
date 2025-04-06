@@ -53,6 +53,7 @@ where
     ///
     /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
     /// the reply.
+    #[allow(clippy::similar_names)] // prog and proc are part of call_body struct
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,
@@ -85,8 +86,8 @@ where
             return Err(RpcError::WrongLength.into());
         }
 
+        let fragment_header = nfs3_types::rpc::fragment_header::new(u32::try_from(total_len).expect("message is too large"), true);
         let mut buf = Vec::with_capacity(total_len + 4);
-        let fragment_header = nfs3_types::rpc::fragment_header::new(total_len as u32, true);
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
@@ -128,13 +129,13 @@ where
 
         if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
             return Err(crate::error::RpcError::try_from(reply.reply_data)
-                .unwrap()
+                .expect("accept_stat_data::SUCCESS is not a valid error")
                 .into());
         }
 
         let (final_value, _) = T::unpack(&mut cursor)?;
-        if cursor.position() as usize != total_len as usize {
-            let pos = cursor.position() as usize;
+        if cursor.position() != u64::from(total_len) {
+            let pos = cursor.position();
             return Err(RpcError::NotFullyParsed {
                 buf: cursor.into_inner(),
                 pos,
