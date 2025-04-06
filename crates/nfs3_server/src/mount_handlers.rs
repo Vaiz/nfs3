@@ -12,7 +12,7 @@ use crate::rpc::{garbage_args_reply_message, make_success_reply, proc_unavail_re
 
 pub async fn handle_mount(
     xid: u32,
-    call: call_body<'_>,
+    call: &call_body<'_>,
     input: &mut impl Read,
     output: &mut impl Write,
     context: &RPCContext,
