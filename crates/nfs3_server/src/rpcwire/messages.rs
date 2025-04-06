@@ -2,11 +2,12 @@ use std::any;
 use std::io::Cursor;
 
 use anyhow::bail;
-use nfs3_types::rpc::{accept_stat_data, accepted_reply, call_body, fragment_header, opaque_auth, rpc_msg};
+use nfs3_types::rpc::{
+    accept_stat_data, accepted_reply, call_body, fragment_header, msg_body, opaque_auth,
+    reply_body, rpc_msg,
+};
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
-use nfs3_types::rpc::msg_body;
-use nfs3_types::rpc::reply_body;
 use tracing::error;
 
 use crate::rpc::rpc_vers_mismatch;
@@ -18,9 +19,9 @@ pub struct PackedRpcMessage {
 
 impl PackedRpcMessage {
     pub async fn recv<T>(input: &mut T) -> anyhow::Result<Self>
-    where 
+    where
         T: AsyncRead + Unpin,
-     {
+    {
         let mut header_buf = [0_u8; 4];
         input.read_exact(&mut header_buf).await?;
         let header: fragment_header = header_buf.into();
@@ -76,9 +77,7 @@ impl IncomingRpcMessage {
     pub fn body(&self) -> &call_body<'static> {
         &self.body
     }
-    pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(
-        &'a self,
-    ) -> Result<T, anyhow::Error> {
+    pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(&'a self) -> Result<T, anyhow::Error> {
         let slice = &self.data[self.message_start..];
         let mut cursor = Cursor::new(slice);
         let (msg, pos) = T::unpack(&mut cursor)?;
@@ -86,6 +85,17 @@ impl IncomingRpcMessage {
             bail!("Unpacked message size does not match expected size");
         }
         Ok(msg)
+    }
+
+    pub fn into_success_reply<T>(&self, message: Box<T>) -> OutgoingRpcMessage
+    where
+        T: Message + PackedSize + 'static,
+    {
+        OutgoingRpcMessage::success(self.xid, message)
+    }
+
+    pub fn into_error_reply(&self, err: accept_stat_data) -> OutgoingRpcMessage {
+        OutgoingRpcMessage::accept_error(self.xid, err)
     }
 }
 
@@ -112,6 +122,26 @@ impl OutgoingRpcMessage {
         }
     }
 
+    pub fn success<T>(xid: u32, message: Box<T>) -> Self
+    where
+        T: Message + PackedSize + 'static,
+    {
+        let rpc = rpc_msg {
+            xid,
+            body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
+                verf: opaque_auth::default(),
+                reply_data: accept_stat_data::SUCCESS,
+            })),
+        };
+
+        let message_size = message.packed_size();
+        Self {
+            rpc,
+            message,
+            message_size,
+        }
+    }
+
     pub fn rpc_mismatch(xid: u32) -> Self {
         let rpc = rpc_vers_mismatch(xid);
         Self {
@@ -124,12 +154,10 @@ impl OutgoingRpcMessage {
     pub fn accept_error(xid: u32, err: accept_stat_data) -> Self {
         let rpc = rpc_msg {
             xid,
-            body: msg_body::REPLY(reply_body::MSG_ACCEPTED(
-                accepted_reply {
-                    verf: opaque_auth::default(),
-                    reply_data: err,
-                },
-            )),
+            body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
+                verf: opaque_auth::default(),
+                reply_data: err,
+            })),
         };
         Self {
             rpc,
@@ -137,6 +165,18 @@ impl OutgoingRpcMessage {
             message_size: 0,
         }
     }
+}
 
-
+macro_rules! unpack_message {
+    ($message:expr, $type:ty) => {
+        match $message.unpack_message::<$type>() {
+            Ok(unpacked) => unpacked,
+            Err(err) => {
+                error!("Failed to unpack message: {err}");
+                return Ok(Some(
+                    message.into_error_reply(accept_stat_data::GARBAGE_ARGS),
+                ));
+            }
+        }
+    };
 }
