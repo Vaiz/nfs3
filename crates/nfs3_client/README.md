@@ -1,6 +1,6 @@
-# nfs3_client
+# `nfs3_client`
 
-`nfs3_client` is a Rust crate that provides an asynchronous client implementation for interacting with NFSv3 servers. It includes functionality for connecting to NFS servers, performing various NFS operations, and handling the underlying RPC communication.
+`nfs3_client` is a Rust crate that provides an asynchronous client implementation for interacting with `NFSv3` servers. It includes functionality for connecting to NFS servers, performing various NFS operations, and handling the underlying RPC communication.
 
 # Examples
 

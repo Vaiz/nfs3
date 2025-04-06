@@ -1,5 +1,7 @@
 //! Provides wrappers for tokio's types
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
 use tokio::io::{AsyncRead as TokioAsyncRead, AsyncWrite as TokioAsyncWrite};
 use tokio::net::{TcpSocket, TcpStream};
 
@@ -13,7 +15,7 @@ use crate::net::Connector;
 pub struct TokioIo<T>(T);
 
 impl<T> TokioIo<T> {
-    pub fn new(inner: T) -> Self {
+    pub const fn new(inner: T) -> Self {
         Self(inner)
     }
 }
@@ -48,7 +50,7 @@ impl Connector for TokioConnector {
     type Connection = TokioIo<TcpStream>;
 
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection> {
-        let addr = format!("{}:{}", host, port);
+        let addr = format!("{host}:{port}");
         let stream = tokio::net::TcpStream::connect(&addr).await?;
         Ok(TokioIo::new(stream))
     }
@@ -60,10 +62,11 @@ impl Connector for TokioConnector {
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
         let socket = TcpSocket::new_v4()?;
-        socket.bind(format!("0.0.0.0:{local_port}").parse().unwrap())?;
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), local_port);
+        socket.bind(local_addr)?;
 
-        let addr = format!("{}:{}", host, port).parse().unwrap();
-        let stream = socket.connect(addr).await?;
+        let remote_addr = SocketAddr::new(host.parse().expect("invalid host address"), port);
+        let stream = socket.connect(remote_addr).await?;
         Ok(TokioIo::new(stream))
     }
 }

@@ -7,10 +7,7 @@ use tokio::net::TcpStream;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().collect::<Vec<_>>();
-    let ip = match args.get(1) {
-        Some(ip) => ip.as_str(),
-        None => "127.0.0.1",
-    };
+    let ip = args.get(1).map_or("127.0.0.1", |ip| ip.as_str());
     let port = match args.get(2) {
         Some(port) => port.parse::<u16>()?,
         None => nfs3_types::portmap::PMAP_PORT,
@@ -29,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match result {
         Ok(port) => println!("Resolved MOUNT3 port: {port}"),
         Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
-            eprintln!("MOUNT3 program is unavailable")
+            eprintln!("MOUNT3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve MOUNT3 port: {e}"),
     }
@@ -40,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match result {
         Ok(port) => println!("Resolved NFSv3 port: {port}"),
         Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
-            eprintln!("NFSv3 program is unavailable")
+            eprintln!("NFSv3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve NFSv3 port: {e}"),
     }

@@ -18,12 +18,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Io(e) => e.fmt(f),
-            Error::Xdr(e) => e.fmt(f),
-            Error::Rpc(e) => e.fmt(f),
-            Error::Portmap(e) => e.fmt(f),
-            Error::MountError(e) => (*e as u32).fmt(f),
-            Error::NfsError(e) => (*e as u32).fmt(f),
+            Self::Io(e) => e.fmt(f),
+            Self::Xdr(e) => e.fmt(f),
+            Self::Rpc(e) => e.fmt(f),
+            Self::Portmap(e) => e.fmt(f),
+            Self::MountError(e) => (*e as u32).fmt(f),
+            Self::NfsError(e) => (*e as u32).fmt(f),
         }
     }
 }
@@ -61,7 +61,7 @@ pub enum RpcError {
     RpcMismatch,
     WrongLength,
     UnexpectedXid,
-    NotFullyParsed { buf: Vec<u8>, pos: usize },
+    NotFullyParsed { buf: Vec<u8>, pos: u64 },
     ProgUnavail,
     ProgMismatch,
     ProcUnavail,
@@ -72,17 +72,17 @@ pub enum RpcError {
 impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RpcError::UnexpectedCall => write!(f, "Unexpected CALL request"),
-            RpcError::Auth => write!(f, "Authentication error"),
-            RpcError::RpcMismatch => write!(f, "RPC version mismatch"),
-            RpcError::WrongLength => write!(f, "Wrong length in RPC message"),
-            RpcError::UnexpectedXid => write!(f, "Unexpected XID in RPC reply"),
-            RpcError::NotFullyParsed { .. } => write!(f, "Not fully parsed"),
-            RpcError::ProgUnavail => write!(f, "Program unavailable"),
-            RpcError::ProgMismatch => write!(f, "Program mismatch"),
-            RpcError::ProcUnavail => write!(f, "Procedure unavailable"),
-            RpcError::GarbageArgs => write!(f, "Garbage arguments"),
-            RpcError::SystemErr => write!(f, "System error"),
+            Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
+            Self::Auth => write!(f, "Authentication error"),
+            Self::RpcMismatch => write!(f, "RPC version mismatch"),
+            Self::WrongLength => write!(f, "Wrong length in RPC message"),
+            Self::UnexpectedXid => write!(f, "Unexpected XID in RPC reply"),
+            Self::NotFullyParsed { .. } => write!(f, "Not fully parsed"),
+            Self::ProgUnavail => write!(f, "Program unavailable"),
+            Self::ProgMismatch => write!(f, "Program mismatch"),
+            Self::ProcUnavail => write!(f, "Procedure unavailable"),
+            Self::GarbageArgs => write!(f, "Garbage arguments"),
+            Self::SystemErr => write!(f, "System error"),
         }
     }
 }
@@ -92,8 +92,8 @@ impl StdError for RpcError {}
 impl From<rejected_reply> for RpcError {
     fn from(e: rejected_reply) -> Self {
         match e {
-            rejected_reply::RPC_MISMATCH { .. } => RpcError::RpcMismatch,
-            rejected_reply::AUTH_ERROR(_) => RpcError::Auth,
+            rejected_reply::RPC_MISMATCH { .. } => Self::RpcMismatch,
+            rejected_reply::AUTH_ERROR(_) => Self::Auth,
         }
     }
 }
@@ -104,11 +104,11 @@ impl TryFrom<accept_stat_data> for RpcError {
     fn try_from(value: accept_stat_data) -> Result<Self, Self::Error> {
         match value {
             accept_stat_data::SUCCESS => Err(()),
-            accept_stat_data::PROG_UNAVAIL => Ok(RpcError::ProgUnavail),
-            accept_stat_data::PROG_MISMATCH { .. } => Ok(RpcError::ProgMismatch),
-            accept_stat_data::PROC_UNAVAIL => Ok(RpcError::ProcUnavail),
-            accept_stat_data::GARBAGE_ARGS => Ok(RpcError::GarbageArgs),
-            accept_stat_data::SYSTEM_ERR => Ok(RpcError::SystemErr),
+            accept_stat_data::PROG_UNAVAIL => Ok(Self::ProgUnavail),
+            accept_stat_data::PROG_MISMATCH { .. } => Ok(Self::ProgMismatch),
+            accept_stat_data::PROC_UNAVAIL => Ok(Self::ProcUnavail),
+            accept_stat_data::GARBAGE_ARGS => Ok(Self::GarbageArgs),
+            accept_stat_data::SYSTEM_ERR => Ok(Self::SystemErr),
         }
     }
 }
@@ -122,8 +122,8 @@ pub enum PortmapError {
 impl fmt::Display for PortmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PortmapError::ProgramUnavailable => write!(f, "Program unavailable"),
-            PortmapError::InvalidPortValue(value) => write!(f, "Invalid port value: {}", value),
+            Self::ProgramUnavailable => write!(f, "Program unavailable"),
+            Self::InvalidPortValue(value) => write!(f, "Invalid port value: {value}"),
         }
     }
 }

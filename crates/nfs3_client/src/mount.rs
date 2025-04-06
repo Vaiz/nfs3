@@ -1,6 +1,8 @@
 use std::io::Cursor;
 
-use nfs3_types::mount::*;
+use nfs3_types::mount::{
+    MOUNT_PROGRAM, PROGRAM, VERSION, dirpath, exports, mountlist, mountres3, mountres3_ok,
+};
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 

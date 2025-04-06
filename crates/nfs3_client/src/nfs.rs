@@ -1,6 +1,14 @@
 use std::io::Cursor;
 
-use nfs3_types::nfs3::*;
+use nfs3_types::nfs3::{
+    ACCESS3args, ACCESS3res, COMMIT3args, COMMIT3res, CREATE3args, CREATE3res, FSINFO3args,
+    FSINFO3res, FSSTAT3args, FSSTAT3res, GETATTR3args, GETATTR3res, LINK3args, LINK3res,
+    LOOKUP3args, LOOKUP3res, MKDIR3args, MKDIR3res, MKNOD3args, MKNOD3res, NFS_PROGRAM,
+    PATHCONF3args, PATHCONF3res, PROGRAM, READ3args, READ3res, READDIR3args, READDIR3res,
+    READDIRPLUS3args, READDIRPLUS3res, READLINK3args, READLINK3res, REMOVE3args, REMOVE3res,
+    RENAME3args, RENAME3res, RMDIR3args, RMDIR3res, SETATTR3args, SETATTR3res, SYMLINK3args,
+    SYMLINK3res, VERSION, WRITE3args, WRITE3res,
+};
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 
@@ -8,7 +16,7 @@ use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
-/// Client for the NFSv3 service
+/// Client for the `NFSv3` service
 #[derive(Debug)]
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
@@ -18,14 +26,14 @@ impl<IO> Nfs3Client<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
-    /// Create a new NFSv3 client.
+    /// Create a new `NFSv3` client.
     pub fn new(io: IO) -> Self {
         Self {
             rpc: RpcClient::new(io),
         }
     }
 
-    /// Create a new NFSv3 client with custom credential and verifier.
+    /// Create a new `NFSv3` client with custom credential and verifier.
     pub fn new_with_auth(
         io: IO,
         credential: opaque_auth<'static>,

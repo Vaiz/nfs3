@@ -53,6 +53,7 @@ where
     ///
     /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
     /// the reply.
+    #[allow(clippy::similar_names)] // prog and proc are part of call_body struct
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
         R: Unpack<Cursor<Vec<u8>>>,
@@ -85,8 +86,11 @@ where
             return Err(RpcError::WrongLength.into());
         }
 
+        let fragment_header = nfs3_types::rpc::fragment_header::new(
+            u32::try_from(total_len).expect("message is too large"),
+            true,
+        );
         let mut buf = Vec::with_capacity(total_len + 4);
-        let fragment_header = nfs3_types::rpc::fragment_header::new(total_len as u32, true);
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
@@ -104,9 +108,10 @@ where
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;
         let fragment_header: fragment_header = buf.into();
-        if !fragment_header.eof() {
-            panic!("Fragment header does not have EOF flag");
-        }
+        assert!(
+            fragment_header.eof(),
+            "Fragment header does not have EOF flag"
+        );
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
@@ -125,16 +130,15 @@ where
             msg_body::CALL(_) => return Err(RpcError::UnexpectedCall.into()),
         };
 
-        if let accept_stat_data::SUCCESS = reply.reply_data {
-        } else {
+        if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
             return Err(crate::error::RpcError::try_from(reply.reply_data)
-                .unwrap()
+                .expect("accept_stat_data::SUCCESS is not a valid error")
                 .into());
         }
 
         let (final_value, _) = T::unpack(&mut cursor)?;
-        if cursor.position() as usize != total_len as usize {
-            let pos = cursor.position() as usize;
+        if cursor.position() != u64::from(total_len) {
+            let pos = cursor.position();
             return Err(RpcError::NotFullyParsed {
                 buf: cursor.into_inner(),
                 pos,

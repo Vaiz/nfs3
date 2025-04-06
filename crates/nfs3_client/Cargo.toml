@@ -28,6 +28,9 @@ tokio = { workspace = true, default-features = false, features = ["rt", "macros"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lints]
+workspace = true
+
 [[example]]
 name = "portmap"
 required-features = ["tokio"]
