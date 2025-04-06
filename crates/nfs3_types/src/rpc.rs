@@ -22,6 +22,11 @@ impl fragment_header {
     pub const EOF_FLAG: u32 = 0x8000_0000;
     pub const MASK: u32 = 0x7FFF_FFFF;
 
+    /// Creates a new `fragment_header` with the given length and EOF flag.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length is greater than 2 GiB.
     #[must_use]
     pub fn new(length: u32, eof: bool) -> Self {
         assert!(length <= Self::MASK);
@@ -125,8 +130,13 @@ impl Default for opaque_auth<'static> {
 }
 
 impl opaque_auth<'static> {
+    /// Creates a new `opaque_auth` with the given flavor and body constructed from `auth_unix`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `auth_unix` cannot be packed.
     #[must_use]
-    pub fn auth_unix(auth: auth_unix) -> Self {
+    pub fn auth_unix(auth: &auth_unix) -> Self {
         let mut out = Vec::with_capacity(auth.packed_size());
         auth.pack(&mut out).expect("failed to pack auth_unix");
         Self {
@@ -213,6 +223,7 @@ where
 impl PackedSize for accept_stat_data {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::SUCCESS => 0,

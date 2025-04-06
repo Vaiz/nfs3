@@ -52,6 +52,7 @@ pub enum PMAP_PROG {
 impl std::convert::TryFrom<u32> for PMAP_PROG {
     type Error = crate::xdr_codec::Error;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::PMAPPROC_NULL),

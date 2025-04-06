@@ -10,7 +10,7 @@ use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
 
-pub const PROGRAM: u32 = 100003;
+pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
 
 pub const ACCESS3_READ: u32 = 1;
@@ -37,6 +37,11 @@ pub enum Nfs3Result<T, E> {
 }
 
 impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
+    /// Returns the contained value, consuming the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result is an `Err`.
     pub fn unwrap(self) -> T {
         match self {
             Self::Ok(val) => val,
@@ -133,6 +138,12 @@ impl<T> Nfs3Option<T> {
     pub const fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
+
+    /// Returns the contained value, consuming the option.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the option is `None`.
     pub fn unwrap(self) -> T {
         match self {
             Self::Some(val) => val,
@@ -387,6 +398,7 @@ pub struct PATHCONF3resfail {
 }
 
 #[derive(Debug, XdrCodec)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct PATHCONF3resok {
     pub obj_attributes: post_op_attr,
     pub linkmax: u32,
@@ -928,6 +940,7 @@ impl<Out: Write> Pack<Out> for createhow3 {
 impl PackedSize for createhow3 {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::UNCHECKED(val) => val.packed_size(),
@@ -966,6 +979,7 @@ impl<Out: Write> Pack<Out> for mknoddata3 {
 impl PackedSize for mknoddata3 {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::NF3CHR(val) => val.packed_size(),
@@ -991,6 +1005,7 @@ impl<Out: Write> Pack<Out> for set_atime {
 impl PackedSize for set_atime {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::DONT_CHANGE => 0,
@@ -1014,6 +1029,7 @@ impl<Out: Write> Pack<Out> for set_mtime {
 impl PackedSize for set_mtime {
     const PACKED_SIZE: Option<usize> = None;
 
+    #[allow(clippy::match_same_arms)]
     fn count_packed_size(&self) -> usize {
         4 + match self {
             Self::DONT_CHANGE => 0,
@@ -1194,6 +1210,7 @@ pub enum NFS_PROGRAM {
 impl std::convert::TryFrom<u32> for NFS_PROGRAM {
     type Error = crate::xdr_codec::Error;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::NFSPROC3_NULL),
