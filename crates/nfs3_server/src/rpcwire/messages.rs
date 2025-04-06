@@ -1,10 +1,13 @@
+use std::any;
 use std::io::Cursor;
 
-use nfs3_types::rpc::{accept_stat_data, accepted_reply, fragment_header, opaque_auth, rpc_msg};
+use anyhow::bail;
+use nfs3_types::rpc::{accept_stat_data, accepted_reply, call_body, fragment_header, opaque_auth, rpc_msg};
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use nfs3_types::rpc::msg_body;
 use nfs3_types::rpc::reply_body;
+use tracing::error;
 
 use crate::rpc::rpc_vers_mismatch;
 
@@ -31,19 +34,35 @@ impl PackedRpcMessage {
 
 pub struct IncomingRpcMessage {
     header: fragment_header,
-    rpc: rpc_msg<'static, 'static>,
+    xid: u32,
+    body: call_body<'static>,
     data: Vec<u8>,
     message_start: usize, // offset of the start of the message in the data buffer
 }
 
 impl TryFrom<PackedRpcMessage> for IncomingRpcMessage {
-    type Error = nfs3_types::xdr_codec::Error;
+    type Error = anyhow::Error;
 
     fn try_from(packed: PackedRpcMessage) -> Result<Self, Self::Error> {
-        let (rpc, pos) = rpc_msg::unpack(&mut Cursor::new(&packed.data))?;
+        let (rpc, pos) = match rpc_msg::unpack(&mut Cursor::new(&packed.data)) {
+            Ok(ok) => ok,
+            Err(err) => {
+                bail!("Failed to unpack RPC message: {err}");
+            }
+        };
+
+        let xid = rpc.xid;
+        let body = match rpc.body {
+            msg_body::CALL(call) => call,
+            msg_body::REPLY(_) => {
+                bail!("Expected a CALL message, got REPLY. XID: {xid}");
+            }
+        };
+
         Ok(Self {
             header: packed.header,
-            rpc,
+            xid,
+            body,
             data: packed.data,
             message_start: pos,
         })
@@ -51,14 +70,22 @@ impl TryFrom<PackedRpcMessage> for IncomingRpcMessage {
 }
 
 impl IncomingRpcMessage {
-    pub fn rpc(&self) -> &rpc_msg<'static, 'static> {
-        &self.rpc
+    pub fn xid(&self) -> u32 {
+        self.xid
+    }
+    pub fn body(&self) -> &call_body<'static> {
+        &self.body
     }
     pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(
         &'a self,
-    ) -> Result<T, nfs3_types::xdr_codec::Error> {
-        let mut cursor = Cursor::new(&self.data[self.message_start..]);
-        T::unpack(&mut cursor).map(|(message, _)| message)
+    ) -> Result<T, anyhow::Error> {
+        let slice = &self.data[self.message_start..];
+        let mut cursor = Cursor::new(slice);
+        let (msg, pos) = T::unpack(&mut cursor)?;
+        if pos != slice.len() {
+            bail!("Unpacked message size does not match expected size");
+        }
+        Ok(msg)
     }
 }
 
