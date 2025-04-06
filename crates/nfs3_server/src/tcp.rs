@@ -85,7 +85,7 @@ where
                         return Err(e);
                     }
                     Some(Ok(msg)) => {
-                        if let Err(e) = write_fragment(&mut socket, &msg).await {
+                        if let Err(e) = write_fragment(&mut socket, msg).await {
                             error!("Write error {e}");
                         }
                     }

@@ -1,4 +1,3 @@
-use std::any;
 use std::io::Cursor;
 
 use anyhow::bail;
@@ -8,44 +7,80 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tracing::error;
 
 use crate::rpc::rpc_vers_mismatch;
 
-pub struct PackedRpcMessage {
-    header: fragment_header,
-    data: Vec<u8>,
+#[derive(Debug)]
+pub enum PackedRpcMessage {
+    Incomplete(IncompleteRpcMessage),
+    Complete(CompleteRpcMessage),
 }
 
 impl PackedRpcMessage {
-    pub async fn recv<T>(input: &mut T) -> anyhow::Result<Self>
-    where
-        T: AsyncRead + Unpin,
-    {
+    pub fn new() -> Self {
+        Self::Incomplete(IncompleteRpcMessage::default())
+    }
+    pub async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
+        match self {
+            PackedRpcMessage::Incomplete(incomplete) => {
+                let eof = incomplete.recv(input).await?;
+                if eof {
+                    let data = std::mem::take(incomplete);
+                    *self = PackedRpcMessage::Complete(CompleteRpcMessage(data.0));
+                }
+                Ok(eof)
+            }
+            PackedRpcMessage::Complete(_) => Ok(true),
+        }
+    }
+}
+
+/// Contains collected RPC message fragments without their headers.
+#[derive(Default, Debug)]
+pub struct IncompleteRpcMessage(Vec<u8>);
+
+impl IncompleteRpcMessage {
+    async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
         let mut header_buf = [0_u8; 4];
         input.read_exact(&mut header_buf).await?;
         let header: fragment_header = header_buf.into();
-        let length = header.fragment_length() as usize;
+        let prev_length = self.0.len();
+        let fragment_length = header.fragment_length() as usize;
+        self.0.resize(prev_length + fragment_length, 0);
+        input.read_exact(&mut self.0[prev_length..]).await?;
 
-        let mut data = vec![0_u8; length];
-        input.read_exact(&mut data).await?;
-        Ok(Self { header, data })
+        if header.eof() { Ok(true) } else { Ok(false) }
+    }
+}
+
+#[derive(Debug)]
+pub struct CompleteRpcMessage(Vec<u8>);
+
+impl CompleteRpcMessage {
+    pub fn into_inner(self) -> Vec<u8> {
+        self.0
     }
 }
 
 pub struct IncomingRpcMessage {
-    header: fragment_header,
     xid: u32,
     body: call_body<'static>,
     data: Vec<u8>,
     message_start: usize, // offset of the start of the message in the data buffer
 }
 
-impl TryFrom<PackedRpcMessage> for IncomingRpcMessage {
+impl CompleteRpcMessage {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+}
+
+impl TryFrom<CompleteRpcMessage> for IncomingRpcMessage {
     type Error = anyhow::Error;
 
-    fn try_from(packed: PackedRpcMessage) -> Result<Self, Self::Error> {
-        let (rpc, pos) = match rpc_msg::unpack(&mut Cursor::new(&packed.data)) {
+    fn try_from(packed: CompleteRpcMessage) -> Result<Self, Self::Error> {
+        let packed = packed.0;
+        let (rpc, pos) = match rpc_msg::unpack(&mut Cursor::new(&packed)) {
             Ok(ok) => ok,
             Err(err) => {
                 bail!("Failed to unpack RPC message: {err}");
@@ -61,10 +96,9 @@ impl TryFrom<PackedRpcMessage> for IncomingRpcMessage {
         };
 
         Ok(Self {
-            header: packed.header,
             xid,
             body,
-            data: packed.data,
+            data: packed,
             message_start: pos,
         })
     }
@@ -77,6 +111,11 @@ impl IncomingRpcMessage {
     pub fn body(&self) -> &call_body<'static> {
         &self.body
     }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
     pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(&'a self) -> Result<T, anyhow::Error> {
         let slice = &self.data[self.message_start..];
         let mut cursor = Cursor::new(slice);
@@ -99,29 +138,34 @@ impl IncomingRpcMessage {
     }
 }
 
-pub trait Message: Pack<Cursor<Vec<u8>>> {}
+pub trait Message: Send {
+    fn msg_packed_size(&self) -> usize;
+    fn msg_pack(&self, buf: &mut [u8]) -> anyhow::Result<usize>;
+}
 
-impl<T> Message for T where T: Pack<Cursor<Vec<u8>>> {}
+impl<T> Message for T
+where
+    T: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send,
+{
+    fn msg_packed_size(&self) -> usize {
+        self.packed_size()
+    }
+
+    fn msg_pack(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
+        // Safety: This is safe because pack doesn't hold any references to the buffer
+        let buf: &'static mut [u8] = unsafe { std::mem::transmute(buf) };
+        let mut cursor = Cursor::new(buf);
+        let pos = self.pack(&mut cursor)?;
+        Ok(pos)
+    }
+}
 
 pub struct OutgoingRpcMessage {
     rpc: rpc_msg<'static, 'static>,
     message: Box<dyn Message>,
-    message_size: usize,
 }
 
 impl OutgoingRpcMessage {
-    pub fn new<T>(rpc: rpc_msg<'static, 'static>, message: Box<T>) -> Self
-    where
-        T: Message + PackedSize + 'static,
-    {
-        let message_size = message.packed_size() as usize;
-        Self {
-            rpc,
-            message,
-            message_size,
-        }
-    }
-
     pub fn success<T>(xid: u32, message: Box<T>) -> Self
     where
         T: Message + PackedSize + 'static,
@@ -134,12 +178,7 @@ impl OutgoingRpcMessage {
             })),
         };
 
-        let message_size = message.packed_size();
-        Self {
-            rpc,
-            message,
-            message_size,
-        }
+        Self { rpc, message }
     }
 
     pub fn rpc_mismatch(xid: u32) -> Self {
@@ -147,7 +186,6 @@ impl OutgoingRpcMessage {
         Self {
             rpc,
             message: Box::new(Void),
-            message_size: 0,
         }
     }
 
@@ -162,21 +200,19 @@ impl OutgoingRpcMessage {
         Self {
             rpc,
             message: Box::new(Void),
-            message_size: 0,
         }
     }
-}
 
-macro_rules! unpack_message {
-    ($message:expr, $type:ty) => {
-        match $message.unpack_message::<$type>() {
-            Ok(unpacked) => unpacked,
-            Err(err) => {
-                error!("Failed to unpack message: {err}");
-                return Ok(Some(
-                    message.into_error_reply(accept_stat_data::GARBAGE_ARGS),
-                ));
-            }
-        }
-    };
+    pub fn pack(self) -> anyhow::Result<CompleteRpcMessage> {
+        let size = self
+            .rpc
+            .packed_size()
+            .checked_add(self.message.msg_packed_size())
+            .expect("Failed to calculate size");
+
+        let mut packed = Vec::with_capacity(size);
+        let pos = self.rpc.msg_pack(&mut packed[..])?;
+        self.message.msg_pack(&mut packed[pos..])?;
+        Ok(CompleteRpcMessage(packed))
+    }
 }

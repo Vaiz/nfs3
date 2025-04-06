@@ -26,7 +26,7 @@ use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
     xid: u32,
-    call: call_body<'_>,
+    call: &call_body<'_>,
     input: &mut impl Read,
     output: &mut impl Write,
     context: &RPCContext,
