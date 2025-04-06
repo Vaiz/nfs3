@@ -100,34 +100,40 @@ where
 
     /// Sets whether to connect from a privileged port (0-1023).
     /// The default is `true`.
+    #[must_use]
     pub const fn connect_from_privileged_port(mut self, connect: bool) -> Self {
         self.connect_from_privileged_port = connect;
         self
     }
 
     /// Sets the portmapper port. The default port is 111.
+    #[must_use]
     pub const fn portmapper_port(mut self, port: u16) -> Self {
         self.portmapper_port = port;
         self
     }
     /// Sets the mount port. The default port is resolved from the portmapper.
+    #[must_use]
     pub const fn mount_port(mut self, port: u16) -> Self {
         self.mount_port = Some(port);
         self
     }
     /// Sets the `NFSv3` port. The default port is resolved from the portmapper.
+    #[must_use]
     pub const fn nfs3_port(mut self, port: u16) -> Self {
         self.nfs3_port = Some(port);
         self
     }
 
     /// Sets the credential for the RPC calls. The default is `opaque_auth::default()`.
+    #[must_use]
     pub fn credential(mut self, credential: opaque_auth<'static>) -> Self {
         self.credential = credential;
         self
     }
 
     /// Sets the verifier for the RPC calls. The default is `opaque_auth::default()`.
+    #[must_use]
     pub fn verifier(mut self, verifier: opaque_auth<'static>) -> Self {
         self.verifier = verifier;
         self

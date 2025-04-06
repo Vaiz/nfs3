@@ -7,10 +7,7 @@ use tokio::net::TcpStream;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().collect::<Vec<_>>();
-    let ip = match args.get(1) {
-        Some(ip) => ip.as_str(),
-        None => "127.0.0.1",
-    };
+    let ip = args.get(1).map_or("127.0.0.1", |ip| ip.as_str());
     let port = match args.get(2) {
         Some(port) => port.parse::<u16>()?,
         None => nfs3_types::portmap::PMAP_PORT,

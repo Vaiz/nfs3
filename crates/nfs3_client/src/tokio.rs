@@ -65,10 +65,7 @@ impl Connector for TokioConnector {
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), local_port);
         socket.bind(local_addr)?;
 
-        let remote_addr = SocketAddr::new(
-            host.parse().expect("invalid host address"),
-            port,
-        );
+        let remote_addr = SocketAddr::new(host.parse().expect("invalid host address"), port);
         let stream = socket.connect(remote_addr).await?;
         Ok(TokioIo::new(stream))
     }

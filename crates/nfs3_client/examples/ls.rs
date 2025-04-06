@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        cookie = entries.last().unwrap().cookie;
+        cookie = entries.last().expect("entries list is empty").cookie;
         cookieverf = readdir.cookieverf;
     }
 
@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        cookie = entries.last().unwrap().cookie;
+        cookie = entries.last().expect("entries list is empty").cookie;
         cookieverf = readdirplus.cookieverf;
     }
 

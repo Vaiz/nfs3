@@ -86,7 +86,10 @@ where
             return Err(RpcError::WrongLength.into());
         }
 
-        let fragment_header = nfs3_types::rpc::fragment_header::new(u32::try_from(total_len).expect("message is too large"), true);
+        let fragment_header = nfs3_types::rpc::fragment_header::new(
+            u32::try_from(total_len).expect("message is too large"),
+            true,
+        );
         let mut buf = Vec::with_capacity(total_len + 4);
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
