@@ -1,8 +1,10 @@
+use std::f32::consts::E;
 use std::io::{Cursor, Read, Write};
 use std::time::Instant;
 
 use anyhow::anyhow;
-use nfs3_types::rpc::{RPC_VERSION_2, auth_flavor, auth_unix, fragment_header, msg_body, rpc_msg};
+use messages::{IncomingRpcMessage, OutgoingRpcMessage, PackedRpcMessage};
+use nfs3_types::rpc::{accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header, msg_body, rpc_msg, RPC_VERSION_2};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -11,9 +13,11 @@ use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
 use crate::rpc::{prog_unavail_reply_message, rpc_vers_mismatch, system_err_reply_message};
-use crate::transaction_tracker::TransactionError;
+use crate::transaction_tracker::{TransactionError, TransactionLock};
 use crate::units::KIBIBYTE;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
+
+pub(crate) mod messages;
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
@@ -21,6 +25,90 @@ use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
+
+async fn handle_rpc_message(    
+    mut context: RPCContext,
+    message: PackedRpcMessage,
+) -> anyhow::Result<Option<OutgoingRpcMessage>> {
+    let message = IncomingRpcMessage::try_from(message)?;
+    let xid = message.rpc().xid;
+    let call = match &message.rpc().body {
+        msg_body::CALL(call) => call,
+        msg_body::REPLY(_) => {
+            error!("Unexpectedly received a Reply instead of a Call");
+            return Err(anyhow!("Bad RPC Call format"));
+        }
+    };
+
+    if call.rpcvers != RPC_VERSION_2 {
+        warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
+        return Ok(Some(OutgoingRpcMessage::rpc_mismatch(xid)));
+    }
+
+    if call.cred.flavor == auth_flavor::AUTH_UNIX {
+        let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
+        context.auth = auth;
+    }
+
+    let transaction = lock_transaction(&context, xid, call);
+    if let Err(e) = transaction {
+        return Ok(e);
+    }
+
+    match call.prog {
+        // nfs::PROGRAM => {
+        //     nfs_handlers::handle_nfs(xid, call, &message.data, &mut context).await?;
+        // }
+        // portmap::PROGRAM => {
+        //     portmap_handlers::handle_portmap(xid, call, &message.data, &mut context)?;
+        // }
+        // nfs3_types::mount::PROGRAM => {
+        //     mount_handlers::handle_mount(xid, call, &message.data, &mut context).await?;
+        // }
+        NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
+            trace!("ignoring NFS_ACL packet");
+            Ok(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL)))
+        }
+        _ => {
+            warn!(
+                "Unknown RPC Program number {} != {}",
+                call.prog,
+                nfs::PROGRAM
+            );
+            Ok(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL)))
+        }
+    }
+}
+
+fn lock_transaction(
+    context: &RPCContext,
+    xid: u32,
+    call: &call_body<'_>,
+) -> Result<TransactionLock, Option<OutgoingRpcMessage>> {
+    let transaction =
+    context
+        .transaction_tracker
+        .start_transaction(&context.client_addr, xid, Instant::now());
+
+    match transaction {
+        Ok(lock) => Ok(lock),
+        Err(TransactionError::AlreadyExists) => {
+            info!(
+                "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
+                context.client_addr
+            );
+            return Err(None);
+        }
+        Err(TransactionError::TooManyRequests) => {
+            warn!(
+                "Too many requests, xid: {xid}, client_addr: {}, call: {call:?}",
+                context.client_addr
+            );
+
+            Err(Some(OutgoingRpcMessage::accept_error(xid, accept_stat_data::SYSTEM_ERR)))
+        }
+    }
+}
 
 async fn handle_rpc(
     input: &mut impl Read,
