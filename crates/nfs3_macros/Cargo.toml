@@ -22,3 +22,6 @@ syn.workspace = true
 [dev-dependencies]
 byteorder.workspace = true
 xdr-codec.workspace = true
+
+[lints]
+workspace = true

@@ -6,6 +6,7 @@ use quote::quote;
 use syn::{Data, DataStruct, DeriveInput, Fields, parse_macro_input};
 
 #[proc_macro_derive(XdrCodec)]
+#[allow(clippy::missing_panics_doc, clippy::too_many_lines)]
 pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -96,14 +97,14 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                     }
                 });
                 let deserialize_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
-                    let var_name = syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site());
+                    let var_name = syn::Ident::new(&format!("field_{i}"), proc_macro2::Span::call_site());
                     quote! {
                         let (#var_name, read_bytes) = Unpack::unpack(src)?;
                         total_read += read_bytes;
                     }
                 });
                 let struct_fields = (0..unnamed_fields.unnamed.len()).map(|i| {
-                    let var_name = syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site());
+                    let var_name = syn::Ident::new(&format!("field_{i}"), proc_macro2::Span::call_site());
                     quote! { #var_name }
                 });
                 quote! {
@@ -199,7 +200,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        _ => panic!("XdrCodec can only be derived for structs and enums"),
+        Data::Union(_) => panic!("XdrCodec can only be derived for structs and enums"),
     }
         .into()
 }
