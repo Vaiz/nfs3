@@ -116,6 +116,10 @@ impl IncomingRpcMessage {
         &self.data
     }
 
+    pub fn message_data(&self) -> &[u8] {
+        &self.data[self.message_start..]
+    }
+
     pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(&'a self) -> Result<T, anyhow::Error> {
         let slice = &self.data[self.message_start..];
         let mut cursor = Cursor::new(slice);

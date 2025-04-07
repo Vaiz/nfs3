@@ -89,13 +89,13 @@ async fn handle_rpc_message(
     match call.prog {
         portmap::PROGRAM => portmap_handlers::handle_portmap(&mut context, message)?.try_into(),
         nfs3_types::mount::PROGRAM => {
-            let mut input = Cursor::new(message.data());
+            let mut input = Cursor::new(message.message_data());
             let mut output = Cursor::<Vec<u8>>::default();
             mount_handlers::handle_mount(xid, call, &mut input, &mut output, &mut context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
         }
         nfs::PROGRAM => {
-            let mut input = Cursor::new(message.data());
+            let mut input = Cursor::new(message.message_data());
             let mut output = Cursor::<Vec<u8>>::default();
             nfs_handlers::handle_nfs(xid, call, &mut input, &mut output, &mut context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
