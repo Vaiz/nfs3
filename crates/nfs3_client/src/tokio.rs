@@ -20,7 +20,6 @@ impl<T> TokioIo<T> {
     }
 }
 
-#[async_trait::async_trait]
 impl<T> AsyncRead for TokioIo<T>
 where
     T: TokioAsyncRead + Unpin + Send,
@@ -30,7 +29,6 @@ where
     }
 }
 
-#[async_trait::async_trait]
 impl<T> AsyncWrite for TokioIo<T>
 where
     T: TokioAsyncWrite + Unpin + Send,
@@ -45,7 +43,6 @@ where
 /// Connects to a host and port using Tokio's [`TcpStream`].
 pub struct TokioConnector;
 
-#[async_trait::async_trait]
 impl Connector for TokioConnector {
     type Connection = TokioIo<TcpStream>;
 

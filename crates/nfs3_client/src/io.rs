@@ -1,35 +1,41 @@
 //! Asynchronous I/O traits for reading and writing bytes.
 
 /// Trait to read bytes asynchronously.
-#[async_trait::async_trait]
-pub trait AsyncRead {
+pub trait AsyncRead: Send {
     /// Read bytes from the stream into the provided buffer.
-    async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
+    fn async_read(&mut self, buf: &mut [u8])
+    -> impl Future<Output = std::io::Result<usize>> + Send;
 
     /// Read exactly the number of bytes into the buffer.
-    async fn async_read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
-        let mut buf = buf;
-        while !buf.is_empty() {
-            let n = self.async_read(buf).await?;
-            buf = &mut buf[n..];
+    fn async_read_exact(
+        &mut self,
+        buf: &mut [u8],
+    ) -> impl Future<Output = std::io::Result<()>> + Send {
+        async move {
+            let mut buf = buf;
+            while !buf.is_empty() {
+                let n = self.async_read(buf).await?;
+                buf = &mut buf[n..];
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
 /// Trait to write bytes asynchronously.
-#[async_trait::async_trait]
-pub trait AsyncWrite {
+pub trait AsyncWrite: Send {
     /// Write bytes to the stream from the provided buffer.
-    async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+    fn async_write(&mut self, buf: &[u8]) -> impl Future<Output = std::io::Result<usize>> + Send;
 
     /// Write all bytes to the stream from the provided buffer.
-    async fn async_write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        let mut buf = buf;
-        while !buf.is_empty() {
-            let n = self.async_write(buf).await?;
-            buf = &buf[n..];
+    fn async_write_all(&mut self, buf: &[u8]) -> impl Future<Output = std::io::Result<()>> + Send {
+        async move {
+            let mut buf = buf;
+            while !buf.is_empty() {
+                let n = self.async_write(buf).await?;
+                buf = &buf[n..];
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
