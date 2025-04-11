@@ -18,7 +18,7 @@ pub struct MountClient<IO> {
 
 impl<IO> MountClient<IO>
 where
-    IO: AsyncRead + AsyncWrite,
+    IO: AsyncRead + AsyncWrite + Send,
 {
     /// Create a new mount client.
     pub fn new(io: IO) -> Self {

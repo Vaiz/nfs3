@@ -14,7 +14,7 @@ pub struct PortmapperClient<IO> {
 
 impl<IO> PortmapperClient<IO>
 where
-    IO: AsyncRead + AsyncWrite,
+    IO: AsyncRead + AsyncWrite + Send,
 {
     pub fn new(io: IO) -> Self {
         Self {

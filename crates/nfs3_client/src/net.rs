@@ -3,9 +3,9 @@
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// Trait for connecting to a host and port.
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 pub trait Connector {
-    type Connection: AsyncRead + AsyncWrite;
+    type Connection: AsyncRead + AsyncWrite + Send;
 
     /// Connect to a host and port.
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection>;

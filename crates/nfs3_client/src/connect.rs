@@ -25,7 +25,7 @@ pub struct Nfs3Connection<IO> {
 
 impl<IO> Nfs3Connection<IO>
 where
-    IO: AsyncRead + AsyncWrite,
+    IO: AsyncRead + AsyncWrite + Send,
 {
     /// Returns the root file handle of the mounted filesystem.
     pub fn root_nfs_fh3(&self) -> nfs_fh3 {
@@ -80,7 +80,7 @@ pub struct Nfs3ConnectionBuilder<C> {
 impl<C, S> Nfs3ConnectionBuilder<C>
 where
     C: crate::net::Connector<Connection = S>,
-    S: AsyncRead + AsyncWrite + 'static,
+    S: AsyncRead + AsyncWrite + Send,
 {
     /// Creates a new `NFSv3` connection builder.
     /// The `mount_path` is the path to mount on the server.

@@ -20,20 +20,20 @@ impl<T> TokioIo<T> {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl<T> AsyncRead for TokioIo<T>
 where
-    T: TokioAsyncRead + Unpin,
+    T: TokioAsyncRead + Unpin + Send,
 {
     async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         tokio::io::AsyncReadExt::read(&mut self.0, buf).await
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl<T> AsyncWrite for TokioIo<T>
 where
-    T: TokioAsyncWrite + Unpin,
+    T: TokioAsyncWrite + Unpin + Send,
 {
     async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         tokio::io::AsyncWriteExt::write(&mut self.0, buf).await
@@ -45,7 +45,7 @@ where
 /// Connects to a host and port using Tokio's [`TcpStream`].
 pub struct TokioConnector;
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl Connector for TokioConnector {
     type Connection = TokioIo<TcpStream>;
 
