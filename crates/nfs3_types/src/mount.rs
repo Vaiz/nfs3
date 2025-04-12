@@ -38,6 +38,24 @@ pub enum mountstat3 {
     MNT3ERR_SERVERFAULT = 10006,
 }
 
+impl std::fmt::Display for mountstat3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            mountstat3::MNT3_OK => "MNT3_OK",
+            mountstat3::MNT3ERR_PERM => "MNT3ERR_PERM",
+            mountstat3::MNT3ERR_NOENT => "MNT3ERR_NOENT",
+            mountstat3::MNT3ERR_IO => "MNT3ERR_IO",
+            mountstat3::MNT3ERR_ACCES => "MNT3ERR_ACCES",
+            mountstat3::MNT3ERR_NOTDIR => "MNT3ERR_NOTDIR",
+            mountstat3::MNT3ERR_INVAL => "MNT3ERR_INVAL",
+            mountstat3::MNT3ERR_NAMETOOLONG => "MNT3ERR_NAMETOOLONG",
+            mountstat3::MNT3ERR_NOTSUPP => "MNT3ERR_NOTSUPP",
+            mountstat3::MNT3ERR_SERVERFAULT => "MNT3ERR_SERVERFAULT",
+        };
+        write!(f, "{value}")
+    }
+}
+
 // #[derive(Debug, XdrCodec)]
 // pub enum rpc_auth_flavor {
 // AUTH_NULL = 0,
@@ -145,5 +163,19 @@ impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
             5 => Ok(Self::MOUNTPROC3_EXPORT),
             _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
         }
+    }
+}
+
+impl std::fmt::Display for MOUNT_PROGRAM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            MOUNT_PROGRAM::MOUNTPROC3_NULL => "MOUNTPROC3_NULL",
+            MOUNT_PROGRAM::MOUNTPROC3_MNT => "MOUNTPROC3_MNT",
+            MOUNT_PROGRAM::MOUNTPROC3_DUMP => "MOUNTPROC3_DUMP",
+            MOUNT_PROGRAM::MOUNTPROC3_UMNT => "MOUNTPROC3_UMNT",
+            MOUNT_PROGRAM::MOUNTPROC3_UMNTALL => "MOUNTPROC3_UMNTALL",
+            MOUNT_PROGRAM::MOUNTPROC3_EXPORT => "MOUNTPROC3_EXPORT",
+        };
+        write!(f, "{value}")
     }
 }

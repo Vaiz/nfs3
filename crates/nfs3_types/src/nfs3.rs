@@ -811,6 +811,43 @@ pub enum nfsstat3 {
     NFS3ERR_JUKEBOX = 10008,
 }
 
+impl std::fmt::Display for nfsstat3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::NFS3_OK => "NFS3_OK",
+            Self::NFS3ERR_PERM => "NFS3ERR_PERM",
+            Self::NFS3ERR_NOENT => "NFS3ERR_NOENT",
+            Self::NFS3ERR_IO => "NFS3ERR_IO",
+            Self::NFS3ERR_NXIO => "NFS3ERR_NXIO",
+            Self::NFS3ERR_ACCES => "NFS3ERR_ACCES",
+            Self::NFS3ERR_EXIST => "NFS3ERR_EXIST",
+            Self::NFS3ERR_XDEV => "NFS3ERR_XDEV",
+            Self::NFS3ERR_NODEV => "NFS3ERR_NODEV",
+            Self::NFS3ERR_NOTDIR => "NFS3ERR_NOTDIR",
+            Self::NFS3ERR_ISDIR => "NFS3ERR_ISDIR",
+            Self::NFS3ERR_INVAL => "NFS3ERR_INVAL",
+            Self::NFS3ERR_FBIG => "NFS3ERR_FBIG",
+            Self::NFS3ERR_NOSPC => "NFS3ERR_NOSPC",
+            Self::NFS3ERR_ROFS => "NFS3ERR_ROFS",
+            Self::NFS3ERR_MLINK => "NFS3ERR_MLINK",
+            Self::NFS3ERR_NAMETOOLONG => "NFS3ERR_NAMETOOLONG",
+            Self::NFS3ERR_NOTEMPTY => "NFS3ERR_NOTEMPTY",
+            Self::NFS3ERR_DQUOT => "NFS3ERR_DQUOT",
+            Self::NFS3ERR_STALE => "NFS3ERR_STALE",
+            Self::NFS3ERR_REMOTE => "NFS3ERR_REMOTE",
+            Self::NFS3ERR_BADHANDLE => "NFS3ERR_BADHANDLE",
+            Self::NFS3ERR_NOT_SYNC => "NFS3ERR_NOT_SYNC",
+            Self::NFS3ERR_BAD_COOKIE => "NFS3ERR_BAD_COOKIE",
+            Self::NFS3ERR_NOTSUPP => "NFS3ERR_NOTSUPP",
+            Self::NFS3ERR_TOOSMALL => "NFS3ERR_TOOSMALL",
+            Self::NFS3ERR_SERVERFAULT => "NFS3ERR_SERVERFAULT",
+            Self::NFS3ERR_BADTYPE => "NFS3ERR_BADTYPE",
+            Self::NFS3ERR_JUKEBOX => "NFS3ERR_JUKEBOX",
+        };
+        write!(f, "{name}")
+    }
+}
+
 #[derive(Clone, Default, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfstime3 {
     pub seconds: u32,
@@ -1237,5 +1274,35 @@ impl std::convert::TryFrom<u32> for NFS_PROGRAM {
             21 => Ok(Self::NFSPROC3_COMMIT),
             _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
         }
+    }
+}
+
+impl std::fmt::Display for NFS_PROGRAM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::NFSPROC3_NULL => "NFSPROC3_NULL",
+            Self::NFSPROC3_GETATTR => "NFSPROC3_GETATTR",
+            Self::NFSPROC3_SETATTR => "NFSPROC3_SETATTR",
+            Self::NFSPROC3_LOOKUP => "NFSPROC3_LOOKUP",
+            Self::NFSPROC3_ACCESS => "NFSPROC3_ACCESS",
+            Self::NFSPROC3_READLINK => "NFSPROC3_READLINK",
+            Self::NFSPROC3_READ => "NFSPROC3_READ",
+            Self::NFSPROC3_WRITE => "NFSPROC3_WRITE",
+            Self::NFSPROC3_CREATE => "NFSPROC3_CREATE",
+            Self::NFSPROC3_MKDIR => "NFSPROC3_MKDIR",
+            Self::NFSPROC3_SYMLINK => "NFSPROC3_SYMLINK",
+            Self::NFSPROC3_MKNOD => "NFSPROC3_MKNOD",
+            Self::NFSPROC3_REMOVE => "NFSPROC3_REMOVE",
+            Self::NFSPROC3_RMDIR => "NFSPROC3_RMDIR",
+            Self::NFSPROC3_RENAME => "NFSPROC3_RENAME",
+            Self::NFSPROC3_LINK => "NFSPROC3_LINK",
+            Self::NFSPROC3_READDIR => "NFSPROC3_READDIR",
+            Self::NFSPROC3_READDIRPLUS => "NFSPROC3_READDIRPLUS",
+            Self::NFSPROC3_FSSTAT => "NFSPROC3_FSSTAT",
+            Self::NFSPROC3_FSINFO => "NFSPROC3_FSINFO",
+            Self::NFSPROC3_PATHCONF => "NFSPROC3_PATHCONF",
+            Self::NFSPROC3_COMMIT => "NFSPROC3_COMMIT",
+        };
+        write!(f, "{name}")
     }
 }
