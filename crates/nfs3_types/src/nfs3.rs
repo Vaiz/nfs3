@@ -289,7 +289,7 @@ pub struct FSSTAT3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSSTAT3resfail {
     pub obj_attributes: post_op_attr,
 }
