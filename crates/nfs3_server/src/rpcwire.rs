@@ -17,7 +17,7 @@ use crate::transaction_tracker::{TransactionError, TransactionLock};
 use crate::units::KIBIBYTE;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
-pub(crate) mod messages;
+pub mod messages;
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
@@ -26,7 +26,7 @@ const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
-pub(crate) enum HandleResult {
+pub enum HandleResult {
     Reply(CompleteRpcMessage),
     NoReply,
 }
@@ -39,9 +39,9 @@ impl TryFrom<OutgoingRpcMessage> for HandleResult {
         match pack_result {
             Err(e) => {
                 error!("Failed to pack RPC message: {e}");
-                return Err(anyhow!("Failed to pack RPC message"));
+                Err(anyhow!("Failed to pack RPC message"))
             }
-            Ok(msg) => Ok(HandleResult::Reply(msg)),
+            Ok(msg) => Ok(Self::Reply(msg)),
         }
     }
 }
@@ -52,14 +52,14 @@ impl TryFrom<Option<OutgoingRpcMessage>> for HandleResult {
     fn try_from(msg: Option<OutgoingRpcMessage>) -> Result<Self, Self::Error> {
         match msg {
             Some(msg) => msg.try_into(),
-            None => Ok(HandleResult::NoReply),
+            None => Ok(Self::NoReply),
         }
     }
 }
 
 impl From<CompleteRpcMessage> for HandleResult {
     fn from(msg: CompleteRpcMessage) -> Self {
-        HandleResult::Reply(msg)
+        Self::Reply(msg)
     }
 }
 
@@ -127,7 +127,7 @@ fn lock_transaction(
                 "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
                 context.client_addr
             );
-            return Err(None);
+            Err(None)
         }
         Err(TransactionError::TooManyRequests) => {
             warn!(

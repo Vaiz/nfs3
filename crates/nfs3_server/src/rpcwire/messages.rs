@@ -22,15 +22,15 @@ impl PackedRpcMessage {
     }
     pub async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
         match self {
-            PackedRpcMessage::Incomplete(incomplete) => {
+            Self::Incomplete(incomplete) => {
                 let eof = incomplete.recv(input).await?;
                 if eof {
                     let data = std::mem::take(incomplete);
-                    *self = PackedRpcMessage::Complete(CompleteRpcMessage(data.0));
+                    *self = Self::Complete(CompleteRpcMessage(data.0));
                 }
                 Ok(eof)
             }
-            PackedRpcMessage::Complete(_) => Ok(true),
+            Self::Complete(_) => Ok(true),
         }
     }
 }
@@ -70,7 +70,7 @@ pub struct IncomingRpcMessage {
 }
 
 impl CompleteRpcMessage {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub const fn new(data: Vec<u8>) -> Self {
         Self(data)
     }
 }
@@ -105,10 +105,10 @@ impl TryFrom<CompleteRpcMessage> for IncomingRpcMessage {
 }
 
 impl IncomingRpcMessage {
-    pub fn xid(&self) -> u32 {
+    pub const fn xid(&self) -> u32 {
         self.xid
     }
-    pub fn body(&self) -> &call_body<'static> {
+    pub const fn body(&self) -> &call_body<'static> {
         &self.body
     }
 
