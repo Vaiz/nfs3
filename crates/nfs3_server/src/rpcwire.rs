@@ -50,10 +50,7 @@ impl TryFrom<Option<OutgoingRpcMessage>> for HandleResult {
     type Error = anyhow::Error;
 
     fn try_from(msg: Option<OutgoingRpcMessage>) -> Result<Self, Self::Error> {
-        match msg {
-            Some(msg) => msg.try_into(),
-            None => Ok(Self::NoReply),
-        }
+        msg.map_or(Ok(Self::NoReply), |msg| msg.try_into())
     }
 }
 
