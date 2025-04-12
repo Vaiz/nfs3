@@ -52,6 +52,7 @@ pub async fn handle_nfs(
     match proc {
         NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(message)?.try_into(),
         NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(context, message).await?.try_into(),
+        NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(context, message).await?.try_into(),
         _ => {
             // deprecated way of handling NFS messages
             let mut input = Cursor::new(message.message_data());
@@ -72,7 +73,7 @@ async fn handle_nfs_old(
     match proc {
         // NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(xid, input, output)?,
         // NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(xid, input, output, context).await?,
+        // NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READ => nfsproc3_read(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_FSINFO => nfsproc3_fsinfo(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_ACCESS => nfsproc3_access(xid, input, output, context).await?,
@@ -107,6 +108,7 @@ fn nfsproc3_null(message: IncomingRpcMessage) -> Result<Option<OutgoingRpcMessag
     let _ = unpack_message!(message, Void);
     Ok(Some(message.into_success_reply(Box::new(Void))))
 }
+
 async fn nfsproc3_getattr(
     context: &RPCContext,
     message: IncomingRpcMessage,
@@ -134,53 +136,42 @@ async fn nfsproc3_getattr(
 
     Ok(Some(message.into_success_reply(Box::new(getattr3res))))
 }
-
-pub async fn nfsproc3_lookup(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
+async fn nfsproc3_lookup(
     context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let lookup3args = LOOKUP3args::unpack(input)?.0;
-    let lookup3res = lookup_impl(xid, lookup3args, context).await?;
-    make_success_reply(xid).pack(output)?;
-    lookup3res.pack(output)?;
-
-    Ok(())
-}
-
-async fn lookup_impl(
-    xid: u32,
-    lookup3args: LOOKUP3args<'_>,
-    context: &RPCContext,
-) -> anyhow::Result<LOOKUP3res> {
+    message: IncomingRpcMessage,
+) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
+    debug!("nfsproc3_lookup({})", message.xid());
+    let lookup3args = unpack_message!(message, LOOKUP3args);
     let dirops = lookup3args.what;
-    debug!("nfsproc3_lookup({:?},{:?}) ", xid, dirops);
 
     let dirid = context.vfs.fh_to_id(&dirops.dir);
-    // fail if unable to convert file handle
-    if let Err(stat) = dirid {
-        return Ok(LOOKUP3res::Err((stat, LOOKUP3resfail::default())));
-    }
-
-    let dirid = dirid.unwrap();
-    let dir_attributes = nfs_option_from_result(context.vfs.getattr(dirid).await);
-    match context.vfs.lookup(dirid, &dirops.name).await {
-        Ok(fid) => {
-            let obj_attributes = nfs_option_from_result(context.vfs.getattr(fid).await);
-
-            debug!("lookup success {:?} --> {:?}", xid, obj_attributes);
-            Ok(LOOKUP3res::Ok(LOOKUP3resok {
-                object: context.vfs.id_to_fh(fid),
-                obj_attributes,
-                dir_attributes,
-            }))
+    let lookup3res = if let Err(stat) = dirid {
+        LOOKUP3res::Err((stat, LOOKUP3resfail::default()))
+    } else {
+        let dirid = dirid.unwrap();
+        let dir_attributes = nfs_option_from_result(context.vfs.getattr(dirid).await);
+        match context.vfs.lookup(dirid, &dirops.name).await {
+            Ok(fid) => {
+                let obj_attributes = nfs_option_from_result(context.vfs.getattr(fid).await);
+                debug!("lookup success {} --> {:?}", message.xid(), obj_attributes);
+                LOOKUP3res::Ok(LOOKUP3resok {
+                    object: context.vfs.id_to_fh(fid),
+                    obj_attributes,
+                    dir_attributes,
+                })
+            }
+            Err(stat) => {
+                debug!(
+                    "lookup error {}({:?}) --> {stat:?}",
+                    message.xid(),
+                    dirops.name,
+                );
+                LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
+            }
         }
-        Err(stat) => {
-            debug!("lookup error {:?}({:?}) --> {:?}", xid, dirops.name, stat);
-            Ok(LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })))
-        }
-    }
+    };
+
+    Ok(Some(message.into_success_reply(Box::new(lookup3res))))
 }
 
 pub async fn nfsproc3_read(

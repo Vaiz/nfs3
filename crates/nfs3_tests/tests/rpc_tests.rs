@@ -170,7 +170,6 @@ async fn null_with_body() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore] // FIXME: This test is ignored because the server currently does not handle invalid bodies
 async fn invalid_body() -> anyhow::Result<()> {
     let mut client = RpcTestContext::setup();
 
