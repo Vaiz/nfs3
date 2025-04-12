@@ -3,14 +3,15 @@
 use std::io::{Cursor, Read, Write};
 
 use nfs3_types::nfs3::{
-    ACCESS3_LOOKUP, ACCESS3_READ, CREATE3args, FSSTAT3resok, GETATTR3args, GETATTR3res,
+    ACCESS3_LOOKUP, ACCESS3_READ, ACCESS3args, ACCESS3res, ACCESS3resfail, ACCESS3resok,
+    CREATE3args, FSINFO3args, FSINFO3res, FSINFO3resfail, FSSTAT3resok, GETATTR3args, GETATTR3res,
     GETATTR3resok, LOOKUP3args, LOOKUP3res, LOOKUP3resfail, LOOKUP3resok, MKDIR3args, NFS_PROGRAM,
-    Nfs3Option, Nfs3Result, PATHCONF3resok, READ3args, READ3res, READ3resfail, READ3resok,
-    READDIR3args, READDIR3res, READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res,
-    READDIRPLUS3resfail, READDIRPLUS3resok, SETATTR3args, SYMLINK3args, VERSION, WRITE3args,
-    WRITE3resok, cookieverf3, createhow3, dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3,
-    nfsstat3, post_op_attr, post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data,
-    writeverf3,
+    Nfs3Option, Nfs3Result, PATHCONF3res, PATHCONF3resfail, PATHCONF3resok, READ3args, READ3res,
+    READ3resfail, READ3resok, READDIR3args, READDIR3res, READDIR3resfail, READDIR3resok,
+    READDIRPLUS3args, READDIRPLUS3res, READDIRPLUS3resfail, READDIRPLUS3resok, SETATTR3args,
+    SYMLINK3args, VERSION, WRITE3args, WRITE3resok, cookieverf3, createhow3, dirlist3,
+    dirlistplus3, diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr, post_op_fh3, pre_op_attr,
+    sattrguard3, stable_how, wcc_attr, wcc_data, writeverf3,
 };
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
@@ -28,6 +29,8 @@ pub async fn handle_nfs(
     context: &RPCContext,
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult> {
+    use NFS_PROGRAM::*;
+
     let call = message.body();
     let xid = message.xid();
 
@@ -50,10 +53,13 @@ pub async fn handle_nfs(
     };
 
     match proc {
-        NFS_PROGRAM::NFSPROC3_NULL => handle(context, proc, &message, nfsproc3_null).await,
-        NFS_PROGRAM::NFSPROC3_GETATTR => handle(context, proc, &message, nfsproc3_getattr).await,
-        NFS_PROGRAM::NFSPROC3_LOOKUP => handle(context, proc, &message, nfsproc3_lookup).await,
-        NFS_PROGRAM::NFSPROC3_READ => handle(context, proc, &message, nfsproc3_read).await,
+        NFSPROC3_NULL => handle(context, proc, &message, nfsproc3_null).await,
+        NFSPROC3_GETATTR => handle(context, proc, &message, nfsproc3_getattr).await,
+        NFSPROC3_LOOKUP => handle(context, proc, &message, nfsproc3_lookup).await,
+        NFSPROC3_READ => handle(context, proc, &message, nfsproc3_read).await,
+        NFSPROC3_FSINFO => handle(context, proc, &message, nfsproc3_fsinfo).await,
+        NFSPROC3_ACCESS => handle(context, proc, &message, nfsproc3_access).await,
+        NFSPROC3_PATHCONF => handle(context, proc, &message, nfsproc3_pathconf).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = Cursor::new(message.message_data());
@@ -106,9 +112,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_FSINFO => nfsproc3_fsinfo(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_ACCESS => nfsproc3_access(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_PATHCONF => nfsproc3_pathconf(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_FSSTAT => nfsproc3_fsstat(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READDIR => nfsproc3_readdir(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READDIRPLUS => {
@@ -133,6 +136,7 @@ async fn handle_nfs_old(
     }
     Ok(())
 }
+
 async fn nfsproc3_null(_: &RPCContext, _: u32, _: Void) -> Void {
     Void
 }
@@ -233,94 +237,86 @@ async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> 
     }
 }
 
-pub async fn nfsproc3_fsinfo(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let handle = nfs_fh3::unpack(input)?.0;
-    debug!("nfsproc3_fsinfo({:?},{:?}) ", xid, handle);
-
-    let id = context.vfs.fh_to_id(&handle);
-    // fail if unable to convert file handle
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+async fn nfsproc3_fsinfo(context: &RPCContext, xid: u32, args: FSINFO3args) -> FSINFO3res {
+    let handle = args.fsroot;
+    let id = match context.vfs.fh_to_id(&handle) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("fsinfo error {xid} --> {stat:?}");
+            return FSINFO3res::Err((
+                stat,
+                FSINFO3resfail {
+                    obj_attributes: post_op_attr::None,
+                },
+            ));
+        }
+    };
 
     match context.vfs.fsinfo(id).await {
         Ok(fsinfo) => {
-            debug!(" {:?} --> {:?}", xid, fsinfo);
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            fsinfo.pack(output)?;
+            debug!("fsinfo success {xid} --> {fsinfo:?}");
+            FSINFO3res::Ok(fsinfo)
         }
         Err(stat) => {
-            error!("fsinfo error {:?} --> {:?}", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
+            warn!("fsinfo error {xid} --> {stat:?}");
+            FSINFO3res::Err((
+                stat,
+                FSINFO3resfail {
+                    obj_attributes: post_op_attr::None,
+                },
+            ))
         }
     }
-    Ok(())
 }
 
-pub async fn nfsproc3_access(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let handle = nfs_fh3::unpack(input)?.0;
-    let mut access: u32 = Unpack::unpack(input)?.0;
-    debug!("nfsproc3_access({:?},{:?},{:?})", xid, handle, access);
+async fn nfsproc3_access(context: &RPCContext, xid: u32, args: ACCESS3args) -> ACCESS3res {
+    let handle = args.object;
+    let mut access = args.access;
 
-    let id = context.vfs.fh_to_id(&handle);
-    // fail if unable to convert file handle
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+    let id = match context.vfs.fh_to_id(&handle) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("access error {xid} --> {stat:?}");
+            return ACCESS3res::Err((
+                stat,
+                ACCESS3resfail {
+                    obj_attributes: post_op_attr::None,
+                },
+            ));
+        }
+    };
 
-    let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
-    // TODO better checks here
+    let obj_attributes = nfs_option_from_result(context.vfs.getattr(id).await);
+
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         access &= ACCESS3_READ | ACCESS3_LOOKUP;
     }
-    debug!(" {:?} ---> {:?}", xid, access);
-    make_success_reply(xid).pack(output)?;
-    nfsstat3::NFS3_OK.pack(output)?;
-    obj_attr.pack(output)?;
-    access.pack(output)?;
-    Ok(())
+
+    debug!("access success {xid} --> {access:?}");
+    ACCESS3res::Ok(ACCESS3resok {
+        obj_attributes,
+        access,
+    })
 }
 
-pub async fn nfsproc3_pathconf(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let handle = nfs_fh3::unpack(input)?.0;
-    debug!("nfsproc3_pathconf({:?},{:?})", xid, handle);
+async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, handle: nfs_fh3) -> PATHCONF3res {
+    debug!("nfsproc3_pathconf({xid}, {handle:?})");
 
-    let id = context.vfs.fh_to_id(&handle);
-    // fail if unable to convert file handle
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        post_op_attr::None.pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+    let id = match context.vfs.fh_to_id(&handle) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("pathconf error {xid} --> {stat:?}");
+            return PATHCONF3res::Err((
+                stat,
+                PATHCONF3resfail {
+                    obj_attributes: post_op_attr::None,
+                },
+            ));
+        }
+    };
 
     let obj_attr = nfs_option_from_result(context.vfs.getattr(id).await);
+
     let res = PATHCONF3resok {
         obj_attributes: obj_attr,
         linkmax: 0,
@@ -330,11 +326,9 @@ pub async fn nfsproc3_pathconf(
         case_insensitive: false,
         case_preserving: true,
     };
-    debug!(" {:?} ---> {:?}", xid, res);
-    make_success_reply(xid).pack(output)?;
-    nfsstat3::NFS3_OK.pack(output)?;
-    res.pack(output)?;
-    Ok(())
+
+    debug!("pathconf success {xid} --> {res:?}");
+    PATHCONF3res::Ok(res)
 }
 
 pub async fn nfsproc3_fsstat(
