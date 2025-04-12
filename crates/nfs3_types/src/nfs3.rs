@@ -212,7 +212,7 @@ pub struct ACCESS3args {
     pub access: u32,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct ACCESS3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -264,7 +264,7 @@ pub struct FSINFO3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSINFO3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -392,7 +392,7 @@ pub struct PATHCONF3args {
     pub object: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct PATHCONF3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -416,7 +416,7 @@ pub struct READ3args {
     pub count: count3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct READ3resfail {
     pub file_attributes: post_op_attr,
 }

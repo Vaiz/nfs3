@@ -206,12 +206,7 @@ async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> 
         Ok(id) => id,
         Err(stat) => {
             warn!("read error {} --> {stat:?}", xid);
-            return READ3res::Err((
-                stat,
-                READ3resfail {
-                    file_attributes: post_op_attr::None,
-                },
-            ));
+            return READ3res::Err((stat, READ3resfail::default()));
         }
     };
 
@@ -243,12 +238,7 @@ async fn nfsproc3_fsinfo(context: &RPCContext, xid: u32, args: FSINFO3args) -> F
         Ok(id) => id,
         Err(stat) => {
             warn!("fsinfo error {xid} --> {stat:?}");
-            return FSINFO3res::Err((
-                stat,
-                FSINFO3resfail {
-                    obj_attributes: post_op_attr::None,
-                },
-            ));
+            return FSINFO3res::Err((stat, FSINFO3resfail::default()));
         }
     };
 
@@ -277,12 +267,7 @@ async fn nfsproc3_access(context: &RPCContext, xid: u32, args: ACCESS3args) -> A
         Ok(id) => id,
         Err(stat) => {
             warn!("access error {xid} --> {stat:?}");
-            return ACCESS3res::Err((
-                stat,
-                ACCESS3resfail {
-                    obj_attributes: post_op_attr::None,
-                },
-            ));
+            return ACCESS3res::Err((stat, ACCESS3resfail::default()));
         }
     };
 
@@ -308,9 +293,7 @@ async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, handle: nfs_fh3) -> P
             warn!("pathconf error {xid} --> {stat:?}");
             return PATHCONF3res::Err((
                 stat,
-                PATHCONF3resfail {
-                    obj_attributes: post_op_attr::None,
-                },
+                PATHCONF3resfail::default(),
             ));
         }
     };
