@@ -65,7 +65,7 @@ impl CompleteRpcMessage {
 pub struct IncomingRpcMessage {
     xid: u32,
     body: call_body<'static>,
-    data: Vec<u8>,
+    data: Option<Vec<u8>>,
     message_start: usize, // offset of the start of the message in the data buffer
 }
 
@@ -98,7 +98,7 @@ impl TryFrom<CompleteRpcMessage> for IncomingRpcMessage {
         Ok(Self {
             xid,
             body,
-            data: packed,
+            data: Some(packed),
             message_start: pos,
         })
     }
@@ -112,19 +112,17 @@ impl IncomingRpcMessage {
         &self.body
     }
 
-    // pub fn data(&self) -> &[u8] {
-    //     &self.data
-    // }
-
-    pub fn message_data(&self) -> &[u8] {
-        &self.data[self.message_start..]
+    pub fn take_data(&mut self) -> Cursor<Vec<u8>> {
+        let data = self.data.take().expect("Data already taken");
+        let mut cursor = Cursor::new(data);
+        cursor.set_position(self.message_start as u64);
+        cursor
     }
 
-    pub fn unpack_message<'a, T: Unpack<Cursor<&'a [u8]>>>(&'a self) -> Result<T, anyhow::Error> {
-        let slice = &self.data[self.message_start..];
-        let mut cursor = Cursor::new(slice);
-        let (msg, pos) = T::unpack(&mut cursor)?;
-        if pos != slice.len() {
+    pub fn unpack_message<T: Unpack<Cursor<Vec<u8>>>>(&mut self) -> Result<T, anyhow::Error> {
+        let mut cursor = self.take_data();
+        let (msg, _) = T::unpack(&mut cursor)?;
+        if cursor.position() != cursor.get_ref().len() as u64 {
             bail!("Unpacked message size does not match expected size");
         }
         Ok(msg)

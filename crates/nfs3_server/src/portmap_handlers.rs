@@ -53,7 +53,7 @@ pub fn handle_portmap(
 }
 
 pub fn pmapproc_null(
-    message: IncomingRpcMessage,
+    mut message: IncomingRpcMessage,
 ) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
     debug!("pmapproc_null({})", message.xid());
     let _ = unpack_message!(message, Void);
@@ -63,7 +63,7 @@ pub fn pmapproc_null(
 // We fake a portmapper here. And always direct back to the same host port
 pub fn pmapproc_getport(
     context: &RPCContext,
-    message: IncomingRpcMessage,
+    mut message: IncomingRpcMessage,
 ) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
     let mapping = unpack_message!(message, mapping);
 

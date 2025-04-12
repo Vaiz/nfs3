@@ -64,9 +64,10 @@ async fn handle_rpc_message(
     mut context: RPCContext,
     message: CompleteRpcMessage,
 ) -> anyhow::Result<HandleResult> {
-    let message = IncomingRpcMessage::try_from(message)?;
+    let mut message = IncomingRpcMessage::try_from(message)?;
     let xid = message.xid();
     let call = message.body();
+    let prog = call.prog;
 
     if call.rpcvers != RPC_VERSION_2 {
         warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
@@ -83,12 +84,12 @@ async fn handle_rpc_message(
         return msg.try_into();
     }
 
-    match call.prog {
+    match prog {
         portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message)?.try_into(),
         nfs3_types::mount::PROGRAM => {
-            let mut input = Cursor::new(message.message_data());
+            let mut input = message.take_data();
             let mut output = Cursor::<Vec<u8>>::default();
-            mount_handlers::handle_mount(xid, call, &mut input, &mut output, &context).await?;
+            mount_handlers::handle_mount(xid, message.body(), &mut input, &mut output, &context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
         }
         nfs::PROGRAM => nfs_handlers::handle_nfs(&context, message).await,
@@ -98,8 +99,7 @@ async fn handle_rpc_message(
         }
         _ => {
             warn!(
-                "Unknown RPC Program number {} != {}",
-                call.prog,
+                "Unknown RPC Program number {prog} != {}",
                 nfs::PROGRAM
             );
             OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()

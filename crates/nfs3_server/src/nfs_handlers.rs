@@ -28,7 +28,7 @@ use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
     context: &RPCContext,
-    message: IncomingRpcMessage,
+    mut message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult> {
     use NFS_PROGRAM::*;
 
@@ -54,17 +54,17 @@ pub async fn handle_nfs(
     };
 
     match proc {
-        NFSPROC3_NULL => handle(context, proc, &message, nfsproc3_null).await,
-        NFSPROC3_GETATTR => handle(context, proc, &message, nfsproc3_getattr).await,
-        NFSPROC3_LOOKUP => handle(context, proc, &message, nfsproc3_lookup).await,
-        NFSPROC3_READ => handle(context, proc, &message, nfsproc3_read).await,
-        NFSPROC3_FSINFO => handle(context, proc, &message, nfsproc3_fsinfo).await,
-        NFSPROC3_ACCESS => handle(context, proc, &message, nfsproc3_access).await,
-        NFSPROC3_PATHCONF => handle(context, proc, &message, nfsproc3_pathconf).await,
-        NFSPROC3_FSSTAT => handle(context, proc, &message, nfsproc3_fsstat).await,
+        NFSPROC3_NULL => handle(context, proc, message, nfsproc3_null).await,
+        NFSPROC3_GETATTR => handle(context, proc, message, nfsproc3_getattr).await,
+        NFSPROC3_LOOKUP => handle(context, proc, message, nfsproc3_lookup).await,
+        NFSPROC3_READ => handle(context, proc, message, nfsproc3_read).await,
+        NFSPROC3_FSINFO => handle(context, proc, message, nfsproc3_fsinfo).await,
+        NFSPROC3_ACCESS => handle(context, proc, message, nfsproc3_access).await,
+        NFSPROC3_PATHCONF => handle(context, proc, message, nfsproc3_pathconf).await,
+        NFSPROC3_FSSTAT => handle(context, proc, message, nfsproc3_fsstat).await,
         _ => {
             // deprecated way of handling NFS messages
-            let mut input = Cursor::new(message.message_data());
+            let mut input = message.take_data();
             let mut output = Cursor::<Vec<u8>>::default();
             handle_nfs_old(xid, proc, &mut input, &mut output, context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
@@ -75,18 +75,17 @@ pub async fn handle_nfs(
 async fn handle<'a, I, O>(
     context: &RPCContext,
     proc: NFS_PROGRAM,
-    message: &'a IncomingRpcMessage,
+    mut message: IncomingRpcMessage,
     handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
-    I: Unpack<Cursor<&'a [u8]>>,
+    I: Unpack<Cursor<Vec<u8>>>,
     O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
 {
     debug!("{proc:?}({})", message.xid());
 
-    let slice = message.message_data();
-    let mut cursor = Cursor::new(slice);
-    let (args, pos) = match I::unpack(&mut cursor) {
+    let mut cursor = message.take_data();
+    let (args, _) = match I::unpack(&mut cursor) {
         Ok(ok) => ok,
         Err(err) => {
             error!("Failed to unpack message: {err}");
@@ -95,7 +94,7 @@ where
                 .try_into();
         }
     };
-    if pos != slice.len() {
+    if cursor.position() != cursor.get_ref().len() as u64 {
         error!("Unpacked message size does not match expected size");
         return message
             .into_error_reply(accept_stat_data::GARBAGE_ARGS)
