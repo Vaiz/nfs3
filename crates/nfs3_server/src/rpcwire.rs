@@ -94,12 +94,7 @@ async fn handle_rpc_message(
             mount_handlers::handle_mount(xid, call, &mut input, &mut output, &mut context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
         }
-        nfs::PROGRAM => {
-            let mut input = Cursor::new(message.message_data());
-            let mut output = Cursor::<Vec<u8>>::default();
-            nfs_handlers::handle_nfs(xid, call, &mut input, &mut output, &mut context).await?;
-            Ok(CompleteRpcMessage::new(output.into_inner()).into())
-        }
+        nfs::PROGRAM => nfs_handlers::handle_nfs(&mut context, message).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()

@@ -13,19 +13,6 @@ pub fn proc_unavail_reply_message(xid: u32) -> rpc_msg<'static, 'static> {
         body: rpc_body::REPLY(reply),
     }
 }
-pub fn prog_mismatch_reply_message(xid: u32, accepted_ver: u32) -> rpc_msg<'static, 'static> {
-    let reply = reply_body::MSG_ACCEPTED(accepted_reply {
-        verf: opaque_auth::default(),
-        reply_data: accept_body::PROG_MISMATCH {
-            low: accepted_ver,
-            high: accepted_ver,
-        },
-    });
-    rpc_msg {
-        xid,
-        body: rpc_body::REPLY(reply),
-    }
-}
 pub fn garbage_args_reply_message(xid: u32) -> rpc_msg<'static, 'static> {
     let reply = reply_body::MSG_ACCEPTED(accepted_reply {
         verf: opaque_auth::default(),

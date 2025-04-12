@@ -112,9 +112,9 @@ impl IncomingRpcMessage {
         &self.body
     }
 
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
+    // pub fn data(&self) -> &[u8] {
+    //     &self.data
+    // }
 
     pub fn message_data(&self) -> &[u8] {
         &self.data[self.message_start..]

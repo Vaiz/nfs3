@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)] // FIXME: will fix this after some refactoring
 
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 
 use nfs3_types::nfs3::{
     ACCESS3_LOOKUP, ACCESS3_READ, CREATE3args, FSSTAT3resok, GETATTR3args, GETATTR3res,
@@ -11,41 +11,56 @@ use nfs3_types::nfs3::{
     createhow3, dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr,
     post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data, writeverf3,
 };
-use nfs3_types::rpc::call_body;
+use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
-use crate::rpc::{
-    garbage_args_reply_message, make_success_reply, proc_unavail_reply_message,
-    prog_mismatch_reply_message,
-};
+use crate::rpc::{garbage_args_reply_message, make_success_reply, proc_unavail_reply_message};
+use crate::rpcwire::HandleResult;
+use crate::rpcwire::messages::{CompleteRpcMessage, IncomingRpcMessage, OutgoingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
+    context: &RPCContext,
+    message: IncomingRpcMessage,
+) -> anyhow::Result<HandleResult> {
+    let call = message.body();
+    let xid = message.xid();
+
+    debug!("handle_nfs({xid}, {call:?}");
+    if call.vers != VERSION {
+        error!("Invalid NFSv3 Version number {} != {VERSION}", call.vers,);
+        return OutgoingRpcMessage::accept_error(
+            message.xid(),
+            accept_stat_data::PROG_MISMATCH {
+                low: VERSION,
+                high: VERSION,
+            },
+        )
+        .try_into();
+    }
+
+    let Ok(proc) = NFS_PROGRAM::try_from(call.proc) else {
+        error!("invalid NFS3 Program number {}", call.proc);
+        return OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROC_UNAVAIL).try_into();
+    };
+
+    let mut input = Cursor::new(message.message_data());
+    let mut output = Cursor::<Vec<u8>>::default();
+    handle_nfs_old(xid, proc, &mut input, &mut output, context).await?;
+    Ok(CompleteRpcMessage::new(output.into_inner()).into())
+}
+
+async fn handle_nfs_old(
     xid: u32,
-    call: &call_body<'_>,
+    proc: NFS_PROGRAM,
     input: &mut impl Read,
     output: &mut impl Write,
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
-    debug!("handle_nfs({xid}, {call:?}");
-    if call.vers != VERSION {
-        warn!("Invalid NFS Version number {} != {}", call.vers, VERSION);
-        prog_mismatch_reply_message(xid, VERSION).pack(output)?;
-        return Ok(());
-    }
-    let proc = NFS_PROGRAM::try_from(call.proc);
-    if proc.is_err() {
-        warn!("invalid NFS3 Program number {}", call.proc);
-        proc_unavail_reply_message(xid).pack(output)?;
-        return Ok(());
-    }
-
-    let proc = proc.unwrap();
-
     match proc {
         NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(xid, input, output)?,
         NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(xid, input, output, context).await?,
