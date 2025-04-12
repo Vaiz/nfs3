@@ -12,7 +12,7 @@ use nfs3_types::nfs3::{
     post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data, writeverf3,
 };
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack};
+use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
@@ -21,6 +21,7 @@ use crate::rpc::{garbage_args_reply_message, make_success_reply, proc_unavail_re
 use crate::rpcwire::HandleResult;
 use crate::rpcwire::messages::{CompleteRpcMessage, IncomingRpcMessage, OutgoingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
+use crate::unpack_message;
 use crate::vfs::{NextResult, VFSCapabilities};
 
 pub async fn handle_nfs(
@@ -48,10 +49,16 @@ pub async fn handle_nfs(
         return OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROC_UNAVAIL).try_into();
     };
 
-    let mut input = Cursor::new(message.message_data());
-    let mut output = Cursor::<Vec<u8>>::default();
-    handle_nfs_old(xid, proc, &mut input, &mut output, context).await?;
-    Ok(CompleteRpcMessage::new(output.into_inner()).into())
+    match proc {
+        NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(message)?.try_into(),
+        _ => {
+            // deprecated way of handling NFS messages
+            let mut input = Cursor::new(message.message_data());
+            let mut output = Cursor::<Vec<u8>>::default();
+            handle_nfs_old(xid, proc, &mut input, &mut output, context).await?;
+            Ok(CompleteRpcMessage::new(output.into_inner()).into())
+        }
+    }
 }
 
 async fn handle_nfs_old(
@@ -62,7 +69,7 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(xid, input, output)?,
+        // NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(xid, input, output)?,
         NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READ => nfsproc3_read(xid, input, output, context).await?,
@@ -84,7 +91,7 @@ async fn handle_nfs_old(
         NFS_PROGRAM::NFSPROC3_SYMLINK => nfsproc3_symlink(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READLINK => nfsproc3_readlink(xid, input, output, context).await?,
         _ => {
-            warn!("Unimplemented message {:?}", proc);
+            warn!("Unimplemented message {proc:?}");
             proc_unavail_reply_message(xid).pack(output)?;
         } /* NFSPROC3_MKNOD,
            * NFSPROC3_LINK,
@@ -95,15 +102,11 @@ async fn handle_nfs_old(
 }
 
 pub fn nfsproc3_null(
-    xid: u32,
-    _: &mut impl Read,
-    output: &mut impl Write,
-) -> Result<(), anyhow::Error> {
-    debug!("nfsproc3_null({:?}) ", xid);
-    let msg = make_success_reply(xid);
-    debug!("\t{:?} --> {:?}", xid, msg);
-    msg.pack(output)?;
-    Ok(())
+    message: IncomingRpcMessage,
+) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
+    debug!("nfsproc3_null({})", message.xid());
+    let _ = unpack_message!(message, Void);
+    Ok(Some(message.into_success_reply(Box::new(Void))))
 }
 
 pub async fn nfsproc3_getattr(
