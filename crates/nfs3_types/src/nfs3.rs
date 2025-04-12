@@ -95,8 +95,8 @@ where
     const PACKED_SIZE: Option<usize> = None;
 
     fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::Ok(v) => v.packed_size(),
+        match self {
+            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
             Self::Err((code, err)) => code.packed_size() + err.packed_size(),
         }
     }

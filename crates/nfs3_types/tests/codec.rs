@@ -3,7 +3,8 @@
 use std::borrow::Cow;
 use std::io::Cursor;
 
-use nfs3_types::xdr_codec::{List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
+use nfs3_types::nfs3::{Nfs3Option, Nfs3Result, nfsstat3};
+use nfs3_types::xdr_codec::{List, Opaque, Pack, PackedSize, Unpack, Void, XdrCodec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -330,4 +331,74 @@ fn test_rpc_call_len() {
     };
 
     assert_eq!(msg.packed_size(), 40);
+}
+
+#[test]
+fn test_nfs3_result() {
+    // Test for a successful result with no additional data
+    let original = Nfs3Result::<Void, Void>::Ok(Void);
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4);
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
+
+    // Test for an error result with no additional data
+    let original = Nfs3Result::<Void, Void>::Err((nfsstat3::NFS3ERR_IO, Void));
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4);
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x05]);
+
+    // Test for a successful result with additional data
+    let original = Nfs3Result::<u32, u32>::Ok(0x12345678u32);
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78]);
+
+    // Test for an error result with additional data
+    let original = Nfs3Result::<u32, u32>::Err((nfsstat3::NFS3ERR_IO, 0x87654321u32));
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x05, 0x87, 0x65, 0x43, 0x21]);
+}
+
+#[test]
+fn test_nfs3_option() {
+    // Test for a successful result with no additional data
+    let original = Nfs3Option::<Void>::Some(Void);
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4);
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x01]);
+
+    // Test for None result with Void
+    let original = Nfs3Option::<Void>::None;
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4);
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
+
+    // Test for a successful result with additional data
+    let original = Nfs3Option::<u32>::Some(0x12345678u32);
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x01, 0x12, 0x34, 0x56, 0x78]);
+
+    // Test for None result with additional u32
+    let original = Nfs3Option::<u32>::None;
+    let mut buffer = Vec::new();
+    let len = original.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4); // 4 bytes for the status
+    assert_eq!(original.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
 }
