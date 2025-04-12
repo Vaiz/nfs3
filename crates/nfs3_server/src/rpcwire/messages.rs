@@ -214,7 +214,7 @@ impl OutgoingRpcMessage {
             .checked_add(self.message.msg_packed_size())
             .expect("Failed to calculate size");
 
-        let mut packed = Vec::with_capacity(size);
+        let mut packed = vec![0u8; size];
         let pos = self.rpc.msg_pack(&mut packed[..])?;
         self.message.msg_pack(&mut packed[pos..])?;
         Ok(CompleteRpcMessage(packed))
