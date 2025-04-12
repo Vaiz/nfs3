@@ -87,14 +87,14 @@ async fn handle_rpc_message(
     }
 
     match call.prog {
-        portmap::PROGRAM => portmap_handlers::handle_portmap(&mut context, message)?.try_into(),
+        portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message)?.try_into(),
         nfs3_types::mount::PROGRAM => {
             let mut input = Cursor::new(message.message_data());
             let mut output = Cursor::<Vec<u8>>::default();
-            mount_handlers::handle_mount(xid, call, &mut input, &mut output, &mut context).await?;
+            mount_handlers::handle_mount(xid, call, &mut input, &mut output, &context).await?;
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
         }
-        nfs::PROGRAM => nfs_handlers::handle_nfs(&mut context, message).await,
+        nfs::PROGRAM => nfs_handlers::handle_nfs(&context, message).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()

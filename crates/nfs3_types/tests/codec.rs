@@ -352,7 +352,7 @@ fn test_nfs3_result() {
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x05]);
 
     // Test for a successful result with additional data
-    let original = Nfs3Result::<u32, u32>::Ok(0x12345678u32);
+    let original = Nfs3Result::<u32, u32>::Ok(0x1234_5678u32);
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
@@ -360,7 +360,7 @@ fn test_nfs3_result() {
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78]);
 
     // Test for an error result with additional data
-    let original = Nfs3Result::<u32, u32>::Err((nfsstat3::NFS3ERR_IO, 0x87654321u32));
+    let original = Nfs3Result::<u32, u32>::Err((nfsstat3::NFS3ERR_IO, 0x8765_4321u32));
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
@@ -387,7 +387,7 @@ fn test_nfs3_option() {
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
 
     // Test for a successful result with additional data
-    let original = Nfs3Option::<u32>::Some(0x12345678u32);
+    let original = Nfs3Option::<u32>::Some(0x1234_5678u32);
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
