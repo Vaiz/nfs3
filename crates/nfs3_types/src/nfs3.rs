@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Void, Write};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -107,7 +107,7 @@ pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
 pub type FSINFO3res = Nfs3Result<FSINFO3resok, FSINFO3resfail>;
 pub type FSSTAT3res = Nfs3Result<FSSTAT3resok, FSSTAT3resfail>;
-pub type GETATTR3res = Nfs3Result<GETATTR3resok, ()>;
+pub type GETATTR3res = Nfs3Result<GETATTR3resok, Void>;
 pub type LINK3res = Nfs3Result<LINK3resok, LINK3resfail>;
 pub type LOOKUP3res = Nfs3Result<LOOKUP3resok, LOOKUP3resfail>;
 pub type MKDIR3res = Nfs3Result<MKDIR3resok, MKDIR3resfail>;

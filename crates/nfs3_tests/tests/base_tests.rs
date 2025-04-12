@@ -41,6 +41,25 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
 }
 
 #[tokio::test]
+async fn test_getattr_bad_handle() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let invalid_handle = nfs_fh3::default();
+
+    let getattr = client
+        .getattr(GETATTR3args {
+            object: invalid_handle,
+        })
+        .await?;
+
+    tracing::info!("{getattr:?}");
+    if !matches!(getattr, Nfs3Result::Err((nfsstat3::NFS3ERR_BADHANDLE, _))) {
+        panic!("Expected NFS3ERR_BADHANDLE error");
+    }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
 async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();

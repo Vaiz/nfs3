@@ -51,6 +51,7 @@ pub async fn handle_nfs(
 
     match proc {
         NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(message)?.try_into(),
+        NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(context, message).await?.try_into(),
         _ => {
             // deprecated way of handling NFS messages
             let mut input = Cursor::new(message.message_data());
@@ -70,7 +71,7 @@ async fn handle_nfs_old(
 ) -> Result<(), anyhow::Error> {
     match proc {
         // NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(xid, input, output)?,
-        NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(xid, input, output, context).await?,
+        // NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READ => nfsproc3_read(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_FSINFO => nfsproc3_fsinfo(xid, input, output, context).await?,
@@ -101,52 +102,37 @@ async fn handle_nfs_old(
     Ok(())
 }
 
-pub fn nfsproc3_null(
-    message: IncomingRpcMessage,
-) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
+fn nfsproc3_null(message: IncomingRpcMessage) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
     debug!("nfsproc3_null({})", message.xid());
     let _ = unpack_message!(message, Void);
     Ok(Some(message.into_success_reply(Box::new(Void))))
 }
-
-pub async fn nfsproc3_getattr(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
+async fn nfsproc3_getattr(
     context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let getattr3args = GETATTR3args::unpack(input)?.0;
-    let getattr3res = getattr_impl(xid, getattr3args, context).await?;
-    make_success_reply(xid).pack(output)?;
-    getattr3res.pack(output)?;
-
-    Ok(())
-}
-
-async fn getattr_impl(
-    xid: u32,
-    getattr3args: GETATTR3args,
-    context: &RPCContext,
-) -> anyhow::Result<GETATTR3res> {
+    message: IncomingRpcMessage,
+) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
+    debug!("nfsproc3_getattr({})", message.xid());
+    let getattr3args = unpack_message!(message, GETATTR3args);
     let handle = getattr3args.object;
-    debug!("nfsproc3_getattr({},{:?}) ", xid, handle);
 
     let id = context.vfs.fh_to_id(&handle);
-    // fail if unable to convert file handle
-    if let Err(stat) = id {
-        return Ok(GETATTR3res::Err((stat, ())));
-    }
-    let id = id.unwrap();
-    match context.vfs.getattr(id).await {
-        Ok(obj_attributes) => {
-            debug!(" {} --> {:?}", xid, obj_attributes);
-            Ok(GETATTR3res::Ok(GETATTR3resok { obj_attributes }))
+    let getattr3res = if let Err(stat) = id {
+        GETATTR3res::Err((stat, Void))
+    } else {
+        let id = id.unwrap();
+        match context.vfs.getattr(id).await {
+            Ok(obj_attributes) => {
+                debug!(" {} --> {obj_attributes:?}", message.xid());
+                GETATTR3res::Ok(GETATTR3resok { obj_attributes })
+            }
+            Err(stat) => {
+                error!("getattr error {} --> {stat:?}", message.xid());
+                GETATTR3res::Err((stat, Void))
+            }
         }
-        Err(stat) => {
-            error!("getattr error {} --> {:?}", xid, stat);
-            Ok(GETATTR3res::Err((stat, ())))
-        }
-    }
+    };
+
+    Ok(Some(message.into_success_reply(Box::new(getattr3res))))
 }
 
 pub async fn nfsproc3_lookup(
