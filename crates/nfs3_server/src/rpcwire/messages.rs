@@ -130,14 +130,14 @@ impl IncomingRpcMessage {
         Ok(msg)
     }
 
-    pub fn into_success_reply<T>(self, message: Box<T>) -> OutgoingRpcMessage
+    pub fn into_success_reply<T>(&self, message: Box<T>) -> OutgoingRpcMessage
     where
         T: Message + PackedSize + 'static,
     {
         OutgoingRpcMessage::success(self.xid, message)
     }
 
-    pub fn into_error_reply(self, err: accept_stat_data) -> OutgoingRpcMessage {
+    pub fn into_error_reply(&self, err: accept_stat_data) -> OutgoingRpcMessage {
         OutgoingRpcMessage::accept_error(self.xid, err)
     }
 }

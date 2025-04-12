@@ -51,7 +51,7 @@ pub async fn handle_nfs(
     };
 
     match proc {
-        NFS_PROGRAM::NFSPROC3_NULL => nfsproc3_null(message)?.try_into(),
+        NFS_PROGRAM::NFSPROC3_NULL => handle(context, proc, &message, nfsproc3_null).await,
         NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(context, message).await?.try_into(),
         NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(context, message).await?.try_into(),
         NFS_PROGRAM::NFSPROC3_READ => nfsproc3_read(context, message).await?.try_into(),
@@ -63,6 +63,40 @@ pub async fn handle_nfs(
             Ok(CompleteRpcMessage::new(output.into_inner()).into())
         }
     }
+}
+
+async fn handle<'a, I, O>(
+    context: &RPCContext,
+    proc: NFS_PROGRAM,
+    message: &'a IncomingRpcMessage,
+    handler: impl AsyncFnOnce(&RPCContext, &IncomingRpcMessage, I) -> anyhow::Result<O, anyhow::Error>,
+) -> anyhow::Result<HandleResult>
+where
+    I: Unpack<Cursor<&'a [u8]>>,
+    O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
+{
+    debug!("{proc:?}({})", message.xid());
+
+    let slice = message.message_data();
+    let mut cursor = Cursor::new(slice);
+    let (args, pos) = match I::unpack(&mut cursor) {
+        Ok(ok) => ok,
+        Err(err) => {
+            error!("Failed to unpack message: {err}");
+            return message
+                .into_error_reply(accept_stat_data::GARBAGE_ARGS)
+                .try_into();
+        }
+    };
+    if pos != slice.len() {
+        error!("Unpacked message size does not match expected size");
+        return message
+            .into_error_reply(accept_stat_data::GARBAGE_ARGS)
+            .try_into();
+    }
+
+    let result = handler(context, &message, args).await?;
+    message.into_success_reply(Box::new(result)).try_into()
 }
 
 async fn handle_nfs_old(
@@ -101,10 +135,8 @@ async fn handle_nfs_old(
     Ok(())
 }
 
-fn nfsproc3_null(message: IncomingRpcMessage) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
-    debug!("nfsproc3_null({})", message.xid());
-    let _ = unpack_message!(message, Void);
-    Ok(Some(message.into_success_reply(Box::new(Void))))
+async fn nfsproc3_null(_: &RPCContext, _: &IncomingRpcMessage, _: Void) -> anyhow::Result<Void> {
+    Ok(Void)
 }
 
 async fn nfsproc3_getattr(
