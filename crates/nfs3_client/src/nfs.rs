@@ -24,7 +24,7 @@ pub struct Nfs3Client<IO> {
 
 impl<IO> Nfs3Client<IO>
 where
-    IO: AsyncRead + AsyncWrite,
+    IO: AsyncRead + AsyncWrite + Send,
 {
     /// Create a new `NFSv3` client.
     pub fn new(io: IO) -> Self {

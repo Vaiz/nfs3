@@ -28,7 +28,7 @@ impl<IO> Debug for RpcClient<IO> {
 
 impl<IO> RpcClient<IO>
 where
-    IO: AsyncRead + AsyncWrite,
+    IO: AsyncRead + AsyncWrite + Send,
 {
     /// Create a new RPC client. XID is initialized to a random value.
     pub fn new(io: IO) -> Self {
