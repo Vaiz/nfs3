@@ -52,7 +52,7 @@ pub async fn handle_nfs(
 
     match proc {
         NFS_PROGRAM::NFSPROC3_NULL => handle(context, proc, &message, nfsproc3_null).await,
-        NFS_PROGRAM::NFSPROC3_GETATTR => nfsproc3_getattr(context, message).await?.try_into(),
+        NFS_PROGRAM::NFSPROC3_GETATTR => handle(context, proc, &message, nfsproc3_getattr).await,
         NFS_PROGRAM::NFSPROC3_LOOKUP => nfsproc3_lookup(context, message).await?.try_into(),
         NFS_PROGRAM::NFSPROC3_READ => nfsproc3_read(context, message).await?.try_into(),
         _ => {
@@ -69,7 +69,7 @@ async fn handle<'a, I, O>(
     context: &RPCContext,
     proc: NFS_PROGRAM,
     message: &'a IncomingRpcMessage,
-    handler: impl AsyncFnOnce(&RPCContext, &IncomingRpcMessage, I) -> anyhow::Result<O, anyhow::Error>,
+    handler: impl AsyncFnOnce(&RPCContext, &IncomingRpcMessage, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
     I: Unpack<Cursor<&'a [u8]>>,
@@ -95,7 +95,7 @@ where
             .try_into();
     }
 
-    let result = handler(context, &message, args).await?;
+    let result = handler(context, &message, args).await;
     message.into_success_reply(Box::new(result)).try_into()
 }
 
@@ -135,20 +135,19 @@ async fn handle_nfs_old(
     Ok(())
 }
 
-async fn nfsproc3_null(_: &RPCContext, _: &IncomingRpcMessage, _: Void) -> anyhow::Result<Void> {
-    Ok(Void)
+async fn nfsproc3_null(_: &RPCContext, _: &IncomingRpcMessage, _: Void) -> Void {
+    Void
 }
 
 async fn nfsproc3_getattr(
     context: &RPCContext,
-    message: IncomingRpcMessage,
-) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
-    debug!("nfsproc3_getattr({})", message.xid());
-    let getattr3args = unpack_message!(message, GETATTR3args);
+    message: &IncomingRpcMessage,
+    getattr3args: GETATTR3args,
+) -> GETATTR3res {
     let handle = getattr3args.object;
 
     let id = context.vfs.fh_to_id(&handle);
-    let getattr3res = if let Err(stat) = id {
+    if let Err(stat) = id {
         GETATTR3res::Err((stat, Void))
     } else {
         let id = id.unwrap();
@@ -162,9 +161,7 @@ async fn nfsproc3_getattr(
                 GETATTR3res::Err((stat, Void))
             }
         }
-    };
-
-    Ok(Some(message.into_success_reply(Box::new(getattr3res))))
+    }
 }
 async fn nfsproc3_lookup(
     context: &RPCContext,
