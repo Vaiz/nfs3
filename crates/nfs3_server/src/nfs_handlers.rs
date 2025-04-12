@@ -68,7 +68,7 @@ async fn handle<'a, I, O>(
     context: &RPCContext,
     proc: NFS_PROGRAM,
     message: &'a IncomingRpcMessage,
-    handler: impl AsyncFnOnce(&RPCContext, &IncomingRpcMessage, I) -> O,
+    handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
     I: Unpack<Cursor<&'a [u8]>>,
@@ -94,7 +94,7 @@ where
             .try_into();
     }
 
-    let result = handler(context, &message, args).await;
+    let result = handler(context, message.xid(), args).await;
     message.into_success_reply(Box::new(result)).try_into()
 }
 
@@ -133,14 +133,13 @@ async fn handle_nfs_old(
     }
     Ok(())
 }
-
-async fn nfsproc3_null(_: &RPCContext, _: &IncomingRpcMessage, _: Void) -> Void {
+async fn nfsproc3_null(_: &RPCContext, _: u32, _: Void) -> Void {
     Void
 }
 
 async fn nfsproc3_getattr(
     context: &RPCContext,
-    message: &IncomingRpcMessage,
+    xid: u32,
     getattr3args: GETATTR3args,
 ) -> GETATTR3res {
     let handle = getattr3args.object;
@@ -148,18 +147,18 @@ async fn nfsproc3_getattr(
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("getattr error {} --> {stat:?}", message.xid());
+            warn!("getattr error {} --> {stat:?}", xid);
             return GETATTR3res::Err((stat, Void));
         }
     };
 
     match context.vfs.getattr(id).await {
         Ok(obj_attributes) => {
-            debug!(" {} --> {obj_attributes:?}", message.xid());
+            debug!(" {} --> {obj_attributes:?}", xid);
             GETATTR3res::Ok(GETATTR3resok { obj_attributes })
         }
         Err(stat) => {
-            warn!("getattr error {} --> {stat:?}", message.xid());
+            warn!("getattr error {} --> {stat:?}", xid);
             GETATTR3res::Err((stat, Void))
         }
     }
@@ -167,7 +166,7 @@ async fn nfsproc3_getattr(
 
 async fn nfsproc3_lookup<'a>(
     context: &RPCContext,
-    message: &IncomingRpcMessage,
+    xid: u32,
     lookup3args: LOOKUP3args<'a>,
 ) -> LOOKUP3res {
     let dirops = lookup3args.what;
@@ -175,11 +174,7 @@ async fn nfsproc3_lookup<'a>(
     let dirid = match context.vfs.fh_to_id(&dirops.dir) {
         Ok(dirid) => dirid,
         Err(stat) => {
-            warn!(
-                "lookup error {}({:?}) --> {stat:?}",
-                message.xid(),
-                dirops.name,
-            );
+            warn!("lookup error {}({:?}) --> {stat:?}", xid, dirops.name,);
             return LOOKUP3res::Err((stat, LOOKUP3resfail::default()));
         }
     };
@@ -187,7 +182,7 @@ async fn nfsproc3_lookup<'a>(
     match context.vfs.lookup(dirid, &dirops.name).await {
         Ok(fid) => {
             let obj_attributes = nfs_option_from_result(context.vfs.getattr(fid).await);
-            debug!("lookup success {} --> {:?}", message.xid(), obj_attributes);
+            debug!("lookup success {} --> {:?}", xid, obj_attributes);
             LOOKUP3res::Ok(LOOKUP3resok {
                 object: context.vfs.id_to_fh(fid),
                 obj_attributes,
@@ -195,26 +190,18 @@ async fn nfsproc3_lookup<'a>(
             })
         }
         Err(stat) => {
-            warn!(
-                "lookup error {}({:?}) --> {stat:?}",
-                message.xid(),
-                dirops.name,
-            );
+            warn!("lookup error {}({:?}) --> {stat:?}", xid, dirops.name,);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
         }
     }
 }
 
-async fn nfsproc3_read(
-    context: &RPCContext,
-    message: &IncomingRpcMessage,
-    read3args: READ3args,
-) -> READ3res<'static> {
+async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> READ3res<'static> {
     let handle = read3args.file;
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("read error {} --> {stat:?}", message.xid());
+            warn!("read error {} --> {stat:?}", xid);
             return READ3res::Err((
                 stat,
                 READ3resfail {
@@ -231,11 +218,7 @@ async fn nfsproc3_read(
         .await
     {
         Ok((bytes, eof)) => {
-            debug!(
-                " {} --> read {} bytes, eof: {eof}",
-                message.xid(),
-                bytes.len()
-            );
+            debug!(" {} --> read {} bytes, eof: {eof}", xid, bytes.len());
             READ3res::Ok(READ3resok {
                 file_attributes,
                 count: u32::try_from(bytes.len()).expect("buffer is too big"),
@@ -244,7 +227,7 @@ async fn nfsproc3_read(
             })
         }
         Err(stat) => {
-            error!("read error {} --> {stat:?}", message.xid());
+            error!("read error {} --> {stat:?}", xid);
             READ3res::Err((stat, READ3resfail { file_attributes }))
         }
     }
