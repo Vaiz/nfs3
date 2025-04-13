@@ -6,9 +6,9 @@ use nfs3_types::nfs3::{
     ACCESS3_LOOKUP, ACCESS3_READ, ACCESS3args, ACCESS3res, ACCESS3resfail, ACCESS3resok,
     CREATE3args, FSINFO3args, FSINFO3res, FSINFO3resfail, FSSTAT3args, FSSTAT3res, FSSTAT3resfail,
     FSSTAT3resok, GETATTR3args, GETATTR3res, GETATTR3resok, LOOKUP3args, LOOKUP3res,
-    LOOKUP3resfail, LOOKUP3resok, MKDIR3args, NFS_PROGRAM, Nfs3Option, Nfs3Result, PATHCONF3res,
-    PATHCONF3resfail, PATHCONF3resok, READ3args, READ3res, READ3resfail, READ3resok, READDIR3args,
-    READDIR3res, READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res,
+    LOOKUP3resfail, LOOKUP3resok, MKDIR3args, NFS_PROGRAM, Nfs3Option, Nfs3Result, PATHCONF3args,
+    PATHCONF3res, PATHCONF3resfail, PATHCONF3resok, READ3args, READ3res, READ3resfail, READ3resok,
+    READDIR3args, READDIR3res, READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res,
     READDIRPLUS3resfail, READDIRPLUS3resok, SETATTR3args, SYMLINK3args, VERSION, WRITE3args,
     WRITE3resok, cookieverf3, createhow3, dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3,
     nfsstat3, post_op_attr, post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data,
@@ -62,6 +62,8 @@ pub async fn handle_nfs(
         NFSPROC3_ACCESS => handle(context, proc, message, nfsproc3_access).await,
         NFSPROC3_PATHCONF => handle(context, proc, message, nfsproc3_pathconf).await,
         NFSPROC3_FSSTAT => handle(context, proc, message, nfsproc3_fsstat).await,
+        NFSPROC3_READDIR => handle(context, proc, message, nfsproc3_readdir).await,
+        NFSPROC3_READDIRPLUS => handle(context, proc, message, nfsproc3_readdirplus).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = message.take_data();
@@ -82,7 +84,7 @@ where
     I: Unpack<Cursor<Vec<u8>>>,
     O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
 {
-    debug!("{proc:?}({})", message.xid());
+    debug!("{proc}({})", message.xid());
 
     let mut cursor = message.take_data();
     let (args, _) = match I::unpack(&mut cursor) {
@@ -113,10 +115,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_READDIR => nfsproc3_readdir(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_READDIRPLUS => {
-            nfsproc3_readdirplus(xid, input, output, context).await?;
-        }
         NFS_PROGRAM::NFSPROC3_WRITE => nfsproc3_write(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_CREATE => nfsproc3_create(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_SETATTR => nfsproc3_setattr(xid, input, output, context).await?,
@@ -127,7 +125,7 @@ async fn handle_nfs_old(
         NFS_PROGRAM::NFSPROC3_SYMLINK => nfsproc3_symlink(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READLINK => nfsproc3_readlink(xid, input, output, context).await?,
         _ => {
-            warn!("Unimplemented message {proc:?}");
+            warn!("Unimplemented message {proc}");
             proc_unavail_reply_message(xid).pack(output)?;
         } /* NFSPROC3_MKNOD,
            * NFSPROC3_LINK,
@@ -284,7 +282,8 @@ async fn nfsproc3_access(context: &RPCContext, xid: u32, args: ACCESS3args) -> A
     })
 }
 
-async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, handle: nfs_fh3) -> PATHCONF3res {
+async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, args: PATHCONF3args) -> PATHCONF3res {
+    let handle = args.object;
     debug!("nfsproc3_pathconf({xid}, {handle:?})");
 
     let id = match context.vfs.fh_to_id(&handle) {
@@ -310,7 +309,8 @@ async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, handle: nfs_fh3) -> P
     debug!("pathconf success {xid} --> {res:?}");
     PATHCONF3res::Ok(res)
 }
-pub async fn nfsproc3_fsstat(context: &RPCContext, xid: u32, args: FSSTAT3args) -> FSSTAT3res {
+
+async fn nfsproc3_fsstat(context: &RPCContext, xid: u32, args: FSSTAT3args) -> FSSTAT3res {
     let handle = args.fsroot;
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
@@ -336,27 +336,11 @@ pub async fn nfsproc3_fsstat(context: &RPCContext, xid: u32, args: FSSTAT3args) 
     FSSTAT3res::Ok(fsstat)
 }
 
-pub async fn nfsproc3_readdirplus(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
+async fn nfsproc3_readdirplus(
     context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let args = READDIRPLUS3args::unpack(input)?.0;
-
-    let result = nfsproc3_readdirplus_impl(xid, args, context).await;
-    make_success_reply(xid).pack(output)?;
-    result.pack(output)?;
-    Ok(())
-}
-
-async fn nfsproc3_readdirplus_impl(
     xid: u32,
     args: READDIRPLUS3args,
-    context: &RPCContext,
-) -> READDIRPLUS3res {
-    debug!("nfsproc3_readdirplus({xid},{args:?})");
-
+) -> READDIRPLUS3res<'static> {
     let dirid = context.vfs.fh_to_id(&args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
@@ -501,30 +485,16 @@ async fn nfsproc3_readdirplus_impl(
     })
 }
 
-pub async fn nfsproc3_readdir(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let readdir3args = READDIR3args::unpack(input)?.0;
-    let readdir3res = readdir_impl(xid, readdir3args, context).await?;
-    make_success_reply(xid).pack(output)?;
-    readdir3res.pack(output)?;
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_lines)]
-async fn readdir_impl(
+async fn nfsproc3_readdir(
+    context: &RPCContext,
     xid: u32,
     readdir3args: READDIR3args,
-    context: &RPCContext,
-) -> anyhow::Result<READDIR3res> {
+) -> READDIR3res<'static> {
     let dirid = context.vfs.fh_to_id(&readdir3args.dir);
     // fail if unable to convert file handle
     if let Err(stat) = dirid {
-        return Ok(READDIR3res::Err((stat, READDIR3resfail::default())));
+        return READDIR3res::Err((stat, READDIR3resfail::default()));
     }
 
     let dirid = dirid.unwrap();
@@ -538,10 +508,7 @@ async fn readdir_impl(
                 " -- Invalid cookie. Expected 0, got {}",
                 readdir3args.cookie
             );
-            return Ok(READDIR3res::Err((
-                nfsstat3::NFS3ERR_BAD_COOKIE,
-                READDIR3resfail::default(),
-            )));
+            return READDIR3res::Err((nfsstat3::NFS3ERR_BAD_COOKIE, READDIR3resfail::default()));
         }
         debug!(" -- Start of readdir");
     } else if readdir3args.cookieverf != cookieverf {
@@ -549,10 +516,7 @@ async fn readdir_impl(
             " -- Dir version mismatch. Received {:?}, Expected: {:?}",
             readdir3args.cookieverf, cookieverf
         );
-        return Ok(READDIR3res::Err((
-            nfsstat3::NFS3ERR_BAD_COOKIE,
-            READDIR3resfail::default(),
-        )));
+        return READDIR3res::Err((nfsstat3::NFS3ERR_BAD_COOKIE, READDIR3resfail::default()));
     } else {
         debug!(" -- Resuming readdir. Cookie {}", readdir3args.cookie);
     }
@@ -569,23 +533,23 @@ async fn readdir_impl(
     let empty_len = xid.packed_size() + resok.packed_size();
     if empty_len > readdir3args.count as usize {
         // we have no space to write anything
-        return Ok(READDIR3res::Err((
+        return READDIR3res::Err((
             nfsstat3::NFS3ERR_TOOSMALL,
             READDIR3resfail {
                 dir_attributes: resok.dir_attributes,
             },
-        )));
+        ));
     }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
 
     let iter = context.vfs.readdir(dirid, readdir3args.cookie).await;
     if let Err(stat) = iter {
-        return Ok(READDIR3res::Err((
+        return READDIR3res::Err((
             stat,
             READDIR3resfail {
                 dir_attributes: resok.dir_attributes,
             },
-        )));
+        ));
     }
 
     let mut iter = iter.unwrap();
@@ -607,12 +571,12 @@ async fn readdir_impl(
             }
             NextResult::Err(stat) => {
                 error!("readdir error {xid} --> {stat:?}");
-                return Ok(READDIR3res::Err((
+                return READDIR3res::Err((
                     stat,
                     READDIR3resfail {
                         dir_attributes: resok.dir_attributes,
                     },
-                )));
+                ));
             }
         }
     }
@@ -621,17 +585,17 @@ async fn readdir_impl(
     if entries.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
         error!("readdir error {xid} --> {stat:?}");
-        return Ok(READDIR3res::Err((
+        return READDIR3res::Err((
             stat,
             READDIR3resfail {
                 dir_attributes: resok.dir_attributes,
             },
-        )));
+        ));
     }
 
     resok.reply.entries = entries;
     resok.reply.eof = eof;
-    Ok(Nfs3Result::Ok(resok))
+    Nfs3Result::Ok(resok)
 }
 
 pub async fn nfsproc3_write(
