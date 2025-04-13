@@ -507,7 +507,7 @@ pub struct RENAME3args<'a, 'b> {
     pub to: diropargs3<'b>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct RENAME3resfail {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,

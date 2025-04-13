@@ -57,6 +57,7 @@ pub async fn handle_nfs(
         NFSPROC3_CREATE => handle(context, proc, message, nfsproc3_create).await,
         NFSPROC3_SETATTR => handle(context, proc, message, nfsproc3_setattr).await,
         NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, proc, message, nfsproc3_remove).await,
+        NFSPROC3_RENAME => handle(context, proc, message, nfsproc3_rename).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = message.take_data();
@@ -108,7 +109,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_RENAME => nfsproc3_rename(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_MKDIR => nfsproc3_mkdir(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_SYMLINK => nfsproc3_symlink(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_READLINK => nfsproc3_readlink(xid, input, output, context).await?,
@@ -654,11 +654,7 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
 }
 
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
-pub async fn nfsproc3_create<'a>(
-    context: &RPCContext,
-    xid: u32,
-    args: CREATE3args<'a>,
-) -> CREATE3res {
+async fn nfsproc3_create<'a>(context: &RPCContext, xid: u32, args: CREATE3args<'a>) -> CREATE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return CREATE3res::Err((nfsstat3::NFS3ERR_ROFS, CREATE3resfail::default()));
@@ -737,7 +733,8 @@ pub async fn nfsproc3_create<'a>(
         }
     }
 }
-pub async fn nfsproc3_setattr(context: &RPCContext, xid: u32, args: SETATTR3args) -> SETATTR3res {
+
+async fn nfsproc3_setattr(context: &RPCContext, xid: u32, args: SETATTR3args) -> SETATTR3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return SETATTR3res::Err((nfsstat3::NFS3ERR_ROFS, SETATTR3resfail::default()));
@@ -808,7 +805,7 @@ pub async fn nfsproc3_setattr(context: &RPCContext, xid: u32, args: SETATTR3args
     }
 }
 
-pub async fn nfsproc3_remove(context: &RPCContext, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res {
+async fn nfsproc3_remove(context: &RPCContext, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return REMOVE3res::Err((nfsstat3::NFS3ERR_ROFS, REMOVE3resfail::default()));
@@ -855,131 +852,87 @@ pub async fn nfsproc3_remove(context: &RPCContext, xid: u32, args: REMOVE3args<'
     }
 }
 
-pub async fn nfsproc3_rename(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    // if we do not have write capabilities
+async fn nfsproc3_rename(context: &RPCContext, xid: u32, args: RENAME3args<'_, '_>) -> RENAME3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
+        return RENAME3res::Err((nfsstat3::NFS3ERR_ROFS, RENAME3resfail::default()));
     }
 
-    let fromdirops = diropargs3::unpack(input)?.0;
-    let todirops = diropargs3::unpack(input)?.0;
+    let from_dirid = match context.vfs.fh_to_id(&args.from.dir) {
+        Ok(from_dirid) => from_dirid,
+        Err(stat) => {
+            warn!("rename error {xid} --> {stat}");
+            return RENAME3res::Err((stat, RENAME3resfail::default()));
+        }
+    };
 
-    debug!(
-        "nfsproc3_rename({:?}, {:?}, {:?}) ",
-        xid, fromdirops, todirops
-    );
+    let to_dirid = match context.vfs.fh_to_id(&args.to.dir) {
+        Ok(to_dirid) => to_dirid,
+        Err(stat) => {
+            warn!("rename error {xid} --> {stat}");
+            return RENAME3res::Err((stat, RENAME3resfail::default()));
+        }
+    };
 
-    // find the from directory
-    let from_dirid = context.vfs.fh_to_id(&fromdirops.dir);
-    if let Err(stat) = from_dirid {
-        // directory does not exist
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        wcc_data::default().pack(output)?;
-        error!("Directory does not exist");
-        return Ok(());
-    }
-
-    // find the to directory
-    let to_dirid = context.vfs.fh_to_id(&todirops.dir);
-    if let Err(stat) = to_dirid {
-        // directory does not exist
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        wcc_data::default().pack(output)?;
-        error!("Directory does not exist");
-        return Ok(());
-    }
-
-    // found the directory, get the attributes
-    let from_dirid = from_dirid.unwrap();
-    let to_dirid = to_dirid.unwrap();
-
-    // get the object attributes before the write
     let pre_from_dir_attr = match context.vfs.getattr(from_dirid).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime,
-            };
-            pre_op_attr::Some(wccattr)
-        }
+        Ok(v) => pre_op_attr::Some(wcc_attr {
+            size: v.size,
+            mtime: v.mtime,
+            ctime: v.ctime,
+        }),
         Err(stat) => {
-            error!("Cannot stat directory");
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
-            return Ok(());
+            warn!("Cannot stat source directory {xid} --> {stat}");
+            return RENAME3res::Err((stat, RENAME3resfail::default()));
         }
     };
 
-    // get the object attributes before the write
     let pre_to_dir_attr = match context.vfs.getattr(to_dirid).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime,
-            };
-            pre_op_attr::Some(wccattr)
-        }
+        Ok(v) => pre_op_attr::Some(wcc_attr {
+            size: v.size,
+            mtime: v.mtime,
+            ctime: v.ctime,
+        }),
         Err(stat) => {
-            error!("Cannot stat directory");
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
-            return Ok(());
+            warn!("Cannot stat target directory {xid} --> {stat}");
+            return RENAME3res::Err((stat, RENAME3resfail::default()));
         }
     };
 
-    // rename!
-    let res = context
+    let result = context
         .vfs
-        .rename(from_dirid, &fromdirops.name, to_dirid, &todirops.name)
+        .rename(from_dirid, &args.from.name, to_dirid, &args.to.name)
         .await;
 
-    // Re-read dir attributes for post op attr
     let post_from_dir_attr = nfs_option_from_result(context.vfs.getattr(from_dirid).await);
     let post_to_dir_attr = nfs_option_from_result(context.vfs.getattr(to_dirid).await);
-    let from_wcc_res = wcc_data {
+
+    let fromdir_wcc = wcc_data {
         before: pre_from_dir_attr,
         after: post_from_dir_attr,
     };
-
-    let to_wcc_res = wcc_data {
+    let todir_wcc = wcc_data {
         before: pre_to_dir_attr,
         after: post_to_dir_attr,
     };
-
-    match res {
+    match result {
         Ok(()) => {
-            debug!("rename success");
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            from_wcc_res.pack(output)?;
-            to_wcc_res.pack(output)?;
+            debug!("rename success {xid}");
+            RENAME3res::Ok(RENAME3resok {
+                fromdir_wcc,
+                todir_wcc,
+            })
         }
-        Err(e) => {
-            error!("rename error {:?} --> {:?}", xid, e);
-            // serialize CREATE3resfail
-            make_success_reply(xid).pack(output)?;
-            e.pack(output)?;
-            from_wcc_res.pack(output)?;
-            to_wcc_res.pack(output)?;
+        Err(stat) => {
+            error!("rename error {xid} --> {stat}");
+            RENAME3res::Err((
+                stat,
+                RENAME3resfail {
+                    fromdir_wcc,
+                    todir_wcc,
+                },
+            ))
         }
     }
-
-    Ok(())
 }
 
 pub async fn nfsproc3_mkdir(
