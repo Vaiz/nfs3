@@ -578,7 +578,7 @@ pub struct WRITE3args<'a> {
     pub data: Opaque<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct WRITE3resfail {
     pub file_wcc: wcc_data,
 }
