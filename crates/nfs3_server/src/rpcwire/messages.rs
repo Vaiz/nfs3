@@ -47,7 +47,7 @@ impl IncompleteRpcMessage {
         self.0.resize(prev_length + fragment_length, 0);
         input.read_exact(&mut self.0[prev_length..]).await?;
 
-        if header.eof() { Ok(true) } else { Ok(false) }
+        Ok(header.eof())
     }
 }
 
@@ -111,14 +111,14 @@ impl IncomingRpcMessage {
         cursor
     }
 
-    pub fn into_success_reply<T>(&self, message: Box<T>) -> OutgoingRpcMessage
+    pub fn into_success_reply<T>(self, message: Box<T>) -> OutgoingRpcMessage
     where
         T: Message + PackedSize + 'static,
     {
         OutgoingRpcMessage::success(self.xid, message)
     }
 
-    pub fn into_error_reply(&self, err: accept_stat_data) -> OutgoingRpcMessage {
+    pub fn into_error_reply(self, err: accept_stat_data) -> OutgoingRpcMessage {
         OutgoingRpcMessage::accept_error(self.xid, err)
     }
 }
