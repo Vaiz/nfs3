@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.1...nfs3_types-v0.3.2) - 2025-04-13
+
+### Added
+
+- major rework of nfs3_server request handlers ([#69](https://github.com/Vaiz/nfs3/pull/69))
+- apply new clippy rules to nfs3_types, nfs3_macros ([#66](https://github.com/Vaiz/nfs3/pull/66))
+- add fragment_header type ([#61](https://github.com/Vaiz/nfs3/pull/61))
+
 ## [0.3.1](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.0...nfs3_types-v0.3.1) - 2025-03-23
 
 ### Changes

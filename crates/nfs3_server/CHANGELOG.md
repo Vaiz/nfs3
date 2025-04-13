@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.4.0...nfs3_server-v0.4.1) - 2025-04-13
+
+### Added
+
+- major rework of nfs3_server request handlers ([#69](https://github.com/Vaiz/nfs3/pull/69))
+- apply new clippy rules to nfs3_types, nfs3_macros ([#66](https://github.com/Vaiz/nfs3/pull/66))
+- embrace clippy ([#64](https://github.com/Vaiz/nfs3/pull/64))
+- add fragment_header type ([#61](https://github.com/Vaiz/nfs3/pull/61))
+
+### Other
+
+- add rpc tests ([#62](https://github.com/Vaiz/nfs3/pull/62))
+- limit number of tracked requests ([#60](https://github.com/Vaiz/nfs3/pull/60))
+- improve transaction tracker performance ([#58](https://github.com/Vaiz/nfs3/pull/58))
+
 ## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.3.0...nfs3_server-v0.4.0) - 2025-03-23
 
 ### Changes

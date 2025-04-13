@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.1...nfs3_macros-v0.3.2) - 2025-04-13
+
+### Added
+
+- apply new clippy rules to nfs3_types, nfs3_macros ([#66](https://github.com/Vaiz/nfs3/pull/66))
+
 ## [0.3.1](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.0...nfs3_macros-v0.3.1) - 2025-03-23
 
 ### Other
