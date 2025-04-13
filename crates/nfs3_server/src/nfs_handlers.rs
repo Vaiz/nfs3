@@ -2,6 +2,7 @@
 
 use std::io::Cursor;
 
+#[allow(clippy::wildcard_imports)]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
@@ -14,6 +15,7 @@ use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
+#[allow(clippy::enum_glob_use)]
 pub async fn handle_nfs(
     context: &RPCContext,
     message: IncomingRpcMessage,
@@ -131,10 +133,10 @@ async fn nfsproc3_getattr(
     }
 }
 
-async fn nfsproc3_lookup<'a>(
+async fn nfsproc3_lookup(
     context: &RPCContext,
     xid: u32,
-    lookup3args: LOOKUP3args<'a>,
+    lookup3args: LOOKUP3args<'_>,
 ) -> LOOKUP3res {
     let dirops = lookup3args.what;
 
@@ -631,7 +633,7 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
 }
 
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
-async fn nfsproc3_create<'a>(context: &RPCContext, xid: u32, args: CREATE3args<'a>) -> CREATE3res {
+async fn nfsproc3_create(context: &RPCContext, xid: u32, args: CREATE3args<'_>) -> CREATE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return CREATE3res::Err((nfsstat3::NFS3ERR_ROFS, CREATE3resfail::default()));
