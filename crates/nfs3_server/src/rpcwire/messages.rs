@@ -156,12 +156,6 @@ pub enum HandleResult {
     NoReply,
 }
 
-impl From<CompleteRpcMessage> for HandleResult {
-    fn from(msg: CompleteRpcMessage) -> Self {
-        Self::Reply(msg)
-    }
-}
-
 fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<CompleteRpcMessage>
 where
     T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
