@@ -2,9 +2,7 @@ use std::io::Cursor;
 use std::time::Instant;
 
 use anyhow::anyhow;
-use messages::{
-    CompleteRpcMessage, HandleResult, IncomingRpcMessage, OutgoingRpcMessage, PackedRpcMessage,
-};
+use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMessage};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header,
 };
@@ -39,7 +37,7 @@ async fn handle_rpc_message(
 
     if call.rpcvers != RPC_VERSION_2 {
         warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
-        return OutgoingRpcMessage::rpc_mismatch(xid).try_into();
+        return message.into_rpc_mismatch();
     }
 
     if call.cred.flavor == auth_flavor::AUTH_UNIX {
@@ -49,7 +47,13 @@ async fn handle_rpc_message(
 
     let transaction = lock_transaction(&context, xid, call);
     if let Err(msg) = transaction {
-        return msg.try_into();
+        match msg {
+            Some(err) => return message.into_error_reply(err),
+            None => {
+                // This is a retransmission, so we don't need to do anything
+                return Ok(HandleResult::NoReply);
+            }
+        }
     }
 
     match prog {
@@ -58,11 +62,11 @@ async fn handle_rpc_message(
         nfs::PROGRAM => nfs_handlers::handle_nfs(&context, message).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
-            OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()
+            message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
         }
         _ => {
             warn!("Unknown RPC Program number {prog} != {}", nfs::PROGRAM);
-            OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()
+            message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
         }
     }
 }
@@ -91,14 +95,14 @@ where
     }
 
     let result = handler(context, message.xid(), args).await;
-    message.into_success_reply(Box::new(result))
+    message.into_success_reply(result)
 }
 
 fn lock_transaction(
     context: &RPCContext,
     xid: u32,
     call: &call_body<'_>,
-) -> Result<TransactionLock, Option<OutgoingRpcMessage>> {
+) -> Result<TransactionLock, Option<accept_stat_data>> {
     let transaction =
         context
             .transaction_tracker
@@ -119,10 +123,7 @@ fn lock_transaction(
                 context.client_addr
             );
 
-            Err(Some(OutgoingRpcMessage::accept_error(
-                xid,
-                accept_stat_data::SYSTEM_ERR,
-            )))
+            Err(Some(accept_stat_data::SYSTEM_ERR))
         }
     }
 }

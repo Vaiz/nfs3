@@ -8,7 +8,7 @@ use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 
 #[allow(clippy::enum_glob_use)]
 pub async fn handle_mount(
@@ -23,19 +23,15 @@ pub async fn handle_mount(
     debug!("handle_nfs({xid}, {call:?}");
     if call.vers != VERSION {
         warn!("Invalid Mount Version number {} != {VERSION}", call.vers);
-        return OutgoingRpcMessage::accept_error(
-            message.xid(),
-            accept_stat_data::PROG_MISMATCH {
-                low: VERSION,
-                high: VERSION,
-            },
-        )
-        .try_into();
+        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
+            low: VERSION,
+            high: VERSION,
+        });
     }
 
     let Ok(proc) = MOUNT_PROGRAM::try_from(call.proc) else {
         error!("invalid Mount Program number {}", call.proc);
-        return OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROC_UNAVAIL).try_into();
+        return message.into_error_reply(accept_stat_data::PROC_UNAVAIL);
     };
 
     debug!("{proc}({})", message.xid());

@@ -7,7 +7,6 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tracing::error;
 
 #[derive(Debug)]
 pub enum PackedRpcMessage {
@@ -112,97 +111,43 @@ impl IncomingRpcMessage {
         cursor
     }
 
-    pub fn into_success_reply<T>(self, message: Box<T>) -> anyhow::Result<HandleResult>
+    pub fn into_success_reply<T>(self, message: T) -> anyhow::Result<HandleResult>
     where
-        T: Message + PackedSize + 'static,
-    {
-        OutgoingRpcMessage::success(self.xid, message).try_into()
-    }
-
-    pub fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
-        OutgoingRpcMessage::accept_error(self.xid, err).try_into()
-    }
-}
-
-pub trait Message: Send {
-    fn msg_packed_size(&self) -> usize;
-    fn msg_pack(&self, cursor: Cursor<Vec<u8>>) -> anyhow::Result<Cursor<Vec<u8>>>;
-}
-
-impl<T> Message for T
-where
-    T: Pack<Cursor<Vec<u8>>> + PackedSize + Send,
-{
-    fn msg_packed_size(&self) -> usize {
-        self.packed_size()
-    }
-
-    fn msg_pack(&self, mut cursor: Cursor<Vec<u8>>) -> anyhow::Result<Cursor<Vec<u8>>> {
-        let _ = self.pack(&mut cursor)?;
-        Ok(cursor)
-    }
-}
-
-pub struct OutgoingRpcMessage {
-    rpc: rpc_msg<'static, 'static>,
-    message: Box<dyn Message>,
-}
-
-impl OutgoingRpcMessage {
-    pub fn success<T>(xid: u32, message: Box<T>) -> Self
-    where
-        T: Message + PackedSize + 'static,
+        T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
     {
         let rpc = rpc_msg {
-            xid,
+            xid: self.xid,
             body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
                 verf: opaque_auth::default(),
                 reply_data: accept_stat_data::SUCCESS,
             })),
         };
 
-        Self { rpc, message }
+        pack(rpc, message).map(HandleResult::Reply)
     }
 
-    pub fn rpc_mismatch(xid: u32) -> Self {
+    pub fn into_rpc_mismatch(self) -> anyhow::Result<HandleResult> {
         use nfs3_types::rpc::RPC_VERSION_2;
 
         let reply =
             reply_body::MSG_DENIED(rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2));
-        Self {
-            rpc: rpc_msg {
-                xid,
-                body: msg_body::REPLY(reply),
-            },
-            message: Box::new(Void),
-        }
+
+        let rpc = rpc_msg {
+            xid: self.xid,
+            body: msg_body::REPLY(reply),
+        };
+        pack(rpc, Void).map(HandleResult::Reply)
     }
 
-    pub fn accept_error(xid: u32, err: accept_stat_data) -> Self {
+    pub fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
         let rpc = rpc_msg {
-            xid,
+            xid: self.xid,
             body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
                 verf: opaque_auth::default(),
                 reply_data: err,
             })),
         };
-        Self {
-            rpc,
-            message: Box::new(Void),
-        }
-    }
-
-    pub fn pack(self) -> anyhow::Result<CompleteRpcMessage> {
-        let size = self
-            .rpc
-            .packed_size()
-            .checked_add(self.message.msg_packed_size())
-            .expect("Failed to calculate size");
-
-        let cursor = Cursor::new(Vec::with_capacity(size));
-        let cursor = self.rpc.msg_pack(cursor)?;
-        let cursor = self.message.msg_pack(cursor)?;
-        Ok(CompleteRpcMessage(cursor.into_inner()))
+        pack(rpc, Void).map(HandleResult::Reply)
     }
 }
 
@@ -211,31 +156,23 @@ pub enum HandleResult {
     NoReply,
 }
 
-impl TryFrom<OutgoingRpcMessage> for HandleResult {
-    type Error = anyhow::Error;
-
-    fn try_from(msg: OutgoingRpcMessage) -> Result<Self, Self::Error> {
-        let pack_result = msg.pack();
-        match pack_result {
-            Err(e) => {
-                error!("Failed to pack RPC message: {e}");
-                Err(anyhow::anyhow!("Failed to pack RPC message: {e}"))
-            }
-            Ok(msg) => Ok(Self::Reply(msg)),
-        }
-    }
-}
-
-impl TryFrom<Option<OutgoingRpcMessage>> for HandleResult {
-    type Error = anyhow::Error;
-
-    fn try_from(msg: Option<OutgoingRpcMessage>) -> Result<Self, Self::Error> {
-        msg.map_or(Ok(Self::NoReply), std::convert::TryInto::try_into)
-    }
-}
-
 impl From<CompleteRpcMessage> for HandleResult {
     fn from(msg: CompleteRpcMessage) -> Self {
         Self::Reply(msg)
     }
+}
+
+fn pack<T>(rpc: rpc_msg, message: T) -> anyhow::Result<CompleteRpcMessage>
+where
+    T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
+{
+    let size = rpc
+        .packed_size()
+        .checked_add(message.packed_size())
+        .expect("Failed to calculate size");
+
+    let mut cursor = Cursor::new(Vec::with_capacity(size));
+    rpc.pack(&mut cursor)?;
+    message.pack(&mut cursor)?;
+    Ok(CompleteRpcMessage(cursor.into_inner()))
 }

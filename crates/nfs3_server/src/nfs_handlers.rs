@@ -9,7 +9,7 @@ use tracing::{debug, error, trace, warn};
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
@@ -26,19 +26,15 @@ pub async fn handle_nfs(
     debug!("handle_nfs({xid}, {call:?}");
     if call.vers != VERSION {
         error!("Invalid NFSv3 Version number {} != {VERSION}", call.vers,);
-        return OutgoingRpcMessage::accept_error(
-            message.xid(),
-            accept_stat_data::PROG_MISMATCH {
-                low: VERSION,
-                high: VERSION,
-            },
-        )
-        .try_into();
+        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
+            low: VERSION,
+            high: VERSION,
+        });
     }
 
     let Ok(proc) = NFS_PROGRAM::try_from(call.proc) else {
         error!("invalid NFS3 Program number {}", call.proc);
-        return OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROC_UNAVAIL).try_into();
+        return message.into_error_reply(accept_stat_data::PROC_UNAVAIL);
     };
 
     debug!("{proc}({})", message.xid());

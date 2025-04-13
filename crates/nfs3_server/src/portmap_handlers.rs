@@ -5,7 +5,7 @@ use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 
 pub async fn handle_portmap(
     context: &RPCContext,
@@ -18,14 +18,10 @@ pub async fn handle_portmap(
             call.vers,
             portmap::VERSION
         );
-        return OutgoingRpcMessage::accept_error(
-            message.xid(),
-            accept_stat_data::PROG_MISMATCH {
-                low: portmap::VERSION,
-                high: portmap::VERSION,
-            },
-        )
-        .try_into();
+        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
+            low: portmap::VERSION,
+            high: portmap::VERSION,
+        });
     }
 
     let proc = PMAP_PROG::try_from(call.proc);
