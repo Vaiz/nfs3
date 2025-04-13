@@ -125,23 +125,20 @@ impl IncomingRpcMessage {
 
 pub trait Message: Send {
     fn msg_packed_size(&self) -> usize;
-    fn msg_pack(&self, buf: &mut [u8]) -> anyhow::Result<usize>;
+    fn msg_pack(&self, cursor: Cursor<Vec<u8>>) -> anyhow::Result<Cursor<Vec<u8>>>;
 }
 
 impl<T> Message for T
 where
-    T: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send,
+    T: Pack<Cursor<Vec<u8>>> + PackedSize + Send,
 {
     fn msg_packed_size(&self) -> usize {
         self.packed_size()
     }
 
-    fn msg_pack(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
-        // Safety: This is safe because pack doesn't hold any references to the buffer
-        let buf: &'static mut [u8] = unsafe { std::mem::transmute(buf) };
-        let mut cursor = Cursor::new(buf);
-        let pos = self.pack(&mut cursor)?;
-        Ok(pos)
+    fn msg_pack(&self, mut cursor: Cursor<Vec<u8>>) -> anyhow::Result<Cursor<Vec<u8>>> {
+        let _ = self.pack(&mut cursor)?;
+        Ok(cursor)
     }
 }
 
@@ -201,9 +198,9 @@ impl OutgoingRpcMessage {
             .checked_add(self.message.msg_packed_size())
             .expect("Failed to calculate size");
 
-        let mut packed = vec![0u8; size];
-        let pos = self.rpc.msg_pack(&mut packed[..])?;
-        self.message.msg_pack(&mut packed[pos..])?;
-        Ok(CompleteRpcMessage(packed))
+        let cursor = Cursor::new(Vec::with_capacity(size));
+        let cursor = self.rpc.msg_pack(cursor)?;
+        let cursor = self.message.msg_pack(cursor)?;
+        Ok(CompleteRpcMessage(cursor.into_inner()))
     }
 }

@@ -107,7 +107,7 @@ pub async fn handle<'a, I, O>(
 ) -> anyhow::Result<HandleResult>
 where
     I: Unpack<Cursor<Vec<u8>>>,
-    O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
+    O: Pack<Cursor<Vec<u8>>> + PackedSize + Send + 'static,
 {
     let mut cursor = message.take_data();
     let (args, _) = match I::unpack(&mut cursor) {
