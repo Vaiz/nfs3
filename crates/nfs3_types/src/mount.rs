@@ -109,8 +109,8 @@ impl PackedSize for mountres3<'_> {
     const PACKED_SIZE: Option<usize> = None;
 
     fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::Ok(ok) => ok.packed_size(),
+        match self {
+            Self::Ok(ok) => mountstat3::MNT3_OK.packed_size() + ok.packed_size(),
             Self::Err(err) => err.packed_size(),
         }
     }

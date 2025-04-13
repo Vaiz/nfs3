@@ -402,3 +402,38 @@ fn test_nfs3_option() {
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
 }
+
+#[test]
+fn test_mount3res_packed_size() {
+    use nfs3_types::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
+
+    // Test for a successful mountres3 with no additional data
+    let res = mountres3::Ok(mountres3_ok {
+        fhandle: fhandle3(Opaque(Cow::Borrowed(&[0x12, 0x34, 0x56, 0x78]))),
+        auth_flavors: vec![1, 2, 3],
+    });
+    let mut buffer = Vec::new();
+    let len = res.pack(&mut buffer).unwrap();
+    assert_eq!(len, 28); // 4 bytes for the status + 8 bytes for fhandle + 16 bytes for auth_flavors
+    assert_eq!(res.packed_size(), len); // 4 bytes for the status + 4 bytes for fhandle + 4 bytes for auth_flavors
+    assert_eq!(
+        buffer,
+        [
+            0x00, 0x00, 0x00, 0x00, // mountstat3::MNT3_OK
+            0x00, 0x00, 0x00, 0x04, // fhandle length
+            0x12, 0x34, 0x56, 0x78, // fhandle data
+            0x00, 0x00, 0x00, 0x03, // number of auth flavors
+            0x00, 0x00, 0x00, 0x01, // auth flavor 1
+            0x00, 0x00, 0x00, 0x02, // auth flavor 2
+            0x00, 0x00, 0x00, 0x03, // auth flavor 3
+        ]
+    );
+
+    // Test for an error mountres3 with no additional data
+    let res = mountres3::Err(mountstat3::MNT3ERR_PERM);
+    let mut buffer = Vec::new();
+    let len = res.pack(&mut buffer).unwrap();
+    assert_eq!(len, 4); // 4 bytes for the status
+    assert_eq!(res.packed_size(), len); // 4 bytes for the status
+    assert_eq!(buffer, [0x00, 0x00, 0x00, 0x01]); // mountstat3::MNT3ERR_PERM    
+}
