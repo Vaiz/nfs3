@@ -7,8 +7,8 @@ use nfs3_types::xdr_codec::{List, Opaque, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
-use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
-use crate::rpcwire::{HandleResult, handle};
+use crate::rpcwire::handle;
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
 
 #[allow(clippy::enum_glob_use)]
 pub async fn handle_mount(
@@ -47,9 +47,7 @@ pub async fn handle_mount(
         MOUNTPROC3_EXPORT => handle(context, message, mountproc3_export).await,
         MOUNTPROC3_DUMP => {
             warn!("Unimplemented message {proc}");
-            message
-                .into_error_reply(accept_stat_data::PROC_UNAVAIL)
-                .try_into()
+            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
     }
 }

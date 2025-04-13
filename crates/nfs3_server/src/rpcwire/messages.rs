@@ -7,6 +7,7 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
+use tracing::error;
 
 #[derive(Debug)]
 pub enum PackedRpcMessage {
@@ -111,15 +112,15 @@ impl IncomingRpcMessage {
         cursor
     }
 
-    pub fn into_success_reply<T>(self, message: Box<T>) -> OutgoingRpcMessage
+    pub fn into_success_reply<T>(self, message: Box<T>) -> anyhow::Result<HandleResult>
     where
         T: Message + PackedSize + 'static,
     {
-        OutgoingRpcMessage::success(self.xid, message)
+        OutgoingRpcMessage::success(self.xid, message).try_into()
     }
 
-    pub fn into_error_reply(self, err: accept_stat_data) -> OutgoingRpcMessage {
-        OutgoingRpcMessage::accept_error(self.xid, err)
+    pub fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
+        OutgoingRpcMessage::accept_error(self.xid, err).try_into()
     }
 }
 
@@ -202,5 +203,39 @@ impl OutgoingRpcMessage {
         let cursor = self.rpc.msg_pack(cursor)?;
         let cursor = self.message.msg_pack(cursor)?;
         Ok(CompleteRpcMessage(cursor.into_inner()))
+    }
+}
+
+pub enum HandleResult {
+    Reply(CompleteRpcMessage),
+    NoReply,
+}
+
+impl TryFrom<OutgoingRpcMessage> for HandleResult {
+    type Error = anyhow::Error;
+
+    fn try_from(msg: OutgoingRpcMessage) -> Result<Self, Self::Error> {
+        let pack_result = msg.pack();
+        match pack_result {
+            Err(e) => {
+                error!("Failed to pack RPC message: {e}");
+                Err(anyhow::anyhow!("Failed to pack RPC message: {e}"))
+            }
+            Ok(msg) => Ok(Self::Reply(msg)),
+        }
+    }
+}
+
+impl TryFrom<Option<OutgoingRpcMessage>> for HandleResult {
+    type Error = anyhow::Error;
+
+    fn try_from(msg: Option<OutgoingRpcMessage>) -> Result<Self, Self::Error> {
+        msg.map_or(Ok(Self::NoReply), std::convert::TryInto::try_into)
+    }
+}
+
+impl From<CompleteRpcMessage> for HandleResult {
+    fn from(msg: CompleteRpcMessage) -> Self {
+        Self::Reply(msg)
     }
 }

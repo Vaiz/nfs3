@@ -8,8 +8,8 @@ use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
-use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
-use crate::rpcwire::{HandleResult, handle};
+use crate::rpcwire::handle;
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
@@ -63,9 +63,7 @@ pub async fn handle_nfs(
         NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
         NFSPROC3_MKNOD | NFSPROC3_LINK | NFSPROC3_COMMIT => {
             warn!("Unimplemented message {proc}");
-            message
-                .into_error_reply(accept_stat_data::PROC_UNAVAIL)
-                .try_into()
+            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
     }
 }

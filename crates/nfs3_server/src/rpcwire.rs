@@ -2,7 +2,9 @@ use std::io::Cursor;
 use std::time::Instant;
 
 use anyhow::anyhow;
-use messages::{CompleteRpcMessage, IncomingRpcMessage, OutgoingRpcMessage, PackedRpcMessage};
+use messages::{
+    CompleteRpcMessage, HandleResult, IncomingRpcMessage, OutgoingRpcMessage, PackedRpcMessage,
+};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header,
 };
@@ -25,40 +27,6 @@ pub mod messages;
 const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
-
-pub enum HandleResult {
-    Reply(CompleteRpcMessage),
-    NoReply,
-}
-
-impl TryFrom<OutgoingRpcMessage> for HandleResult {
-    type Error = anyhow::Error;
-
-    fn try_from(msg: OutgoingRpcMessage) -> Result<Self, Self::Error> {
-        let pack_result = msg.pack();
-        match pack_result {
-            Err(e) => {
-                error!("Failed to pack RPC message: {e}");
-                Err(anyhow!("Failed to pack RPC message"))
-            }
-            Ok(msg) => Ok(Self::Reply(msg)),
-        }
-    }
-}
-
-impl TryFrom<Option<OutgoingRpcMessage>> for HandleResult {
-    type Error = anyhow::Error;
-
-    fn try_from(msg: Option<OutgoingRpcMessage>) -> Result<Self, Self::Error> {
-        msg.map_or(Ok(Self::NoReply), std::convert::TryInto::try_into)
-    }
-}
-
-impl From<CompleteRpcMessage> for HandleResult {
-    fn from(msg: CompleteRpcMessage) -> Self {
-        Self::Reply(msg)
-    }
-}
 
 async fn handle_rpc_message(
     mut context: RPCContext,
@@ -114,20 +82,16 @@ where
         Ok(ok) => ok,
         Err(err) => {
             error!("Failed to unpack message: {err}");
-            return message
-                .into_error_reply(accept_stat_data::GARBAGE_ARGS)
-                .try_into();
+            return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
         }
     };
     if cursor.position() != cursor.get_ref().len() as u64 {
         error!("Unpacked message size does not match expected size");
-        return message
-            .into_error_reply(accept_stat_data::GARBAGE_ARGS)
-            .try_into();
+        return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
     }
 
     let result = handler(context, message.xid(), args).await;
-    message.into_success_reply(Box::new(result)).try_into()
+    message.into_success_reply(Box::new(result))
 }
 
 fn lock_transaction(

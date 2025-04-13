@@ -4,8 +4,8 @@ use nfs3_types::xdr_codec::Void;
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
-use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
-use crate::rpcwire::{HandleResult, handle};
+use crate::rpcwire::handle;
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage, OutgoingRpcMessage};
 
 pub async fn handle_portmap(
     context: &RPCContext,
@@ -34,9 +34,7 @@ pub async fn handle_portmap(
         Ok(PMAP_PROG::PMAPPROC_GETPORT) => handle(context, message, pmapproc_getport).await,
         _ => {
             warn!("Unimplemented message {}", call.proc);
-            message
-                .into_error_reply(accept_stat_data::PROC_UNAVAIL)
-                .try_into()
+            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
     }
 }
