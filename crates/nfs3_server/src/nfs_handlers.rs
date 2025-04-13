@@ -55,6 +55,8 @@ pub async fn handle_nfs(
         NFSPROC3_READDIRPLUS => handle(context, proc, message, nfsproc3_readdirplus).await,
         NFSPROC3_WRITE => handle(context, proc, message, nfsproc3_write).await,
         NFSPROC3_CREATE => handle(context, proc, message, nfsproc3_create).await,
+        NFSPROC3_SETATTR => handle(context, proc, message, nfsproc3_setattr).await,
+        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, proc, message, nfsproc3_remove).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = message.take_data();
@@ -106,9 +108,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_SETATTR => nfsproc3_setattr(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_REMOVE => nfsproc3_remove(xid, input, output, context).await?,
-        NFS_PROGRAM::NFSPROC3_RMDIR => nfsproc3_remove(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_RENAME => nfsproc3_rename(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_MKDIR => nfsproc3_mkdir(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_SYMLINK => nfsproc3_symlink(xid, input, output, context).await?,
@@ -610,7 +609,7 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
         }
     };
 
-    let pre_obj_attr = context
+    let before = context
         .vfs
         .getattr(id)
         .await
@@ -631,7 +630,7 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
             debug!("write success {xid} --> {fattr:?}");
             WRITE3res::Ok(WRITE3resok {
                 file_wcc: wcc_data {
-                    before: pre_obj_attr,
+                    before,
                     after: post_op_attr::Some(fattr),
                 },
                 count: write3args.count,
@@ -645,7 +644,7 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
                 stat,
                 WRITE3resfail {
                     file_wcc: wcc_data {
-                        before: pre_obj_attr,
+                        before,
                         after: post_op_attr::None,
                     },
                 },
@@ -679,7 +678,7 @@ pub async fn nfsproc3_create<'a>(
     };
 
     // get the object attributes before the write
-    let pre_dir_attr = match context.vfs.getattr(dirid).await {
+    let before = match context.vfs.getattr(dirid).await {
         Ok(v) => pre_op_attr::Some(wcc_attr {
             size: v.size,
             mtime: v.mtime,
@@ -693,14 +692,11 @@ pub async fn nfsproc3_create<'a>(
 
     if matches!(&createhow, createhow3::GUARDED(_)) {
         if context.vfs.lookup(dirid, &dirops.name).await.is_ok() {
-            let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
+            let after = nfs_option_from_result(context.vfs.getattr(dirid).await);
             return CREATE3res::Err((
                 nfsstat3::NFS3ERR_EXIST,
                 CREATE3resfail {
-                    dir_wcc: wcc_data {
-                        before: pre_dir_attr,
-                        after: post_dir_attr,
-                    },
+                    dir_wcc: wcc_data { before, after },
                 },
             ));
         }
@@ -723,11 +719,8 @@ pub async fn nfsproc3_create<'a>(
         }
     };
 
-    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
-    let dir_wcc = wcc_data {
-        before: pre_dir_attr,
-        after: post_dir_attr,
-    };
+    let after = nfs_option_from_result(context.vfs.getattr(dirid).await);
+    let dir_wcc = wcc_data { before, after };
 
     match fid {
         Ok(fid) => {
@@ -744,35 +737,22 @@ pub async fn nfsproc3_create<'a>(
         }
     }
 }
-
-pub async fn nfsproc3_setattr(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
+pub async fn nfsproc3_setattr(context: &RPCContext, xid: u32, args: SETATTR3args) -> SETATTR3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
+        return SETATTR3res::Err((nfsstat3::NFS3ERR_ROFS, SETATTR3resfail::default()));
     }
-    let args = SETATTR3args::unpack(input)?.0;
-    debug!("nfsproc3_setattr({:?},{:?}) ", xid, args);
 
-    let id = context.vfs.fh_to_id(&args.object);
-    // fail if unable to convert file handle
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+    let id = match context.vfs.fh_to_id(&args.object) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("setattr error {xid} --> {stat}");
+            return SETATTR3res::Err((stat, SETATTR3resfail::default()));
+        }
+    };
 
     let ctime;
-
-    let pre_op_attr = match context.vfs.getattr(id).await {
+    let before = match context.vfs.getattr(id).await {
         Ok(v) => {
             let wccattr = wcc_attr {
                 size: v.size,
@@ -783,122 +763,96 @@ pub async fn nfsproc3_setattr(
             pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
-            return Ok(());
+            warn!("Cannot stat object {xid} --> {stat}");
+            return SETATTR3res::Err((stat, SETATTR3resfail::default()));
         }
     };
-    // handle the guard
-    match args.guard {
-        sattrguard3::None => {}
-        sattrguard3::Some(c) => {
-            if c.seconds != ctime.seconds || c.nseconds != ctime.nseconds {
-                make_success_reply(xid).pack(output)?;
-                nfsstat3::NFS3ERR_NOT_SYNC.pack(output)?;
-                wcc_data::default().pack(output)?;
-            }
+
+    if let sattrguard3::Some(guard) = args.guard {
+        if guard != ctime {
+            warn!("setattr guard mismatch {xid}");
+            return SETATTR3res::Err((
+                nfsstat3::NFS3ERR_NOT_SYNC,
+                SETATTR3resfail {
+                    obj_wcc: wcc_data {
+                        before,
+                        after: post_op_attr::None,
+                    },
+                },
+            ));
         }
     }
 
     match context.vfs.setattr(id, args.new_attributes).await {
         Ok(post_op_attr) => {
-            debug!(" setattr success {:?} --> {:?}", xid, post_op_attr);
-            let wcc_res = wcc_data {
-                before: pre_op_attr,
-                after: post_op_attr::Some(post_op_attr),
-            };
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            wcc_res.pack(output)?;
+            debug!("setattr success {xid} --> {post_op_attr:?}");
+            SETATTR3res::Ok(SETATTR3resok {
+                obj_wcc: wcc_data {
+                    before,
+                    after: post_op_attr::Some(post_op_attr),
+                },
+            })
         }
         Err(stat) => {
-            error!("setattr error {:?} --> {:?}", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
+            error!("setattr error {xid} --> {stat}");
+            SETATTR3res::Err((
+                stat,
+                SETATTR3resfail {
+                    obj_wcc: wcc_data {
+                        before,
+                        after: post_op_attr::None,
+                    },
+                },
+            ))
         }
     }
-    Ok(())
 }
 
-pub async fn nfsproc3_remove(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    // if we do not have write capabilities
+pub async fn nfsproc3_remove(context: &RPCContext, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
+        return REMOVE3res::Err((nfsstat3::NFS3ERR_ROFS, REMOVE3resfail::default()));
     }
 
-    let dirops = diropargs3::unpack(input)?.0;
+    let dirid = match context.vfs.fh_to_id(&args.object.dir) {
+        Ok(dirid) => dirid,
+        Err(stat) => {
+            warn!("remove error {xid} --> {stat}");
+            return REMOVE3res::Err((stat, REMOVE3resfail::default()));
+        }
+    };
 
-    debug!("nfsproc3_remove({:?}, {:?}) ", xid, dirops);
+    let before = match context.vfs.getattr(dirid).await {
+        Ok(v) => pre_op_attr::Some(wcc_attr {
+            size: v.size,
+            mtime: v.mtime,
+            ctime: v.ctime,
+        }),
+        Err(stat) => {
+            warn!("Cannot stat directory {xid} -> {stat}");
+            return REMOVE3res::Err((stat, REMOVE3resfail::default()));
+        }
+    };
 
-    // find the directory with the file
-    let dirid = context.vfs.fh_to_id(&dirops.dir);
-    if let Err(stat) = dirid {
-        // directory does not exist
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        wcc_data::default().pack(output)?;
-        error!("Directory does not exist");
-        return Ok(());
-    }
-    let dirid = dirid.unwrap();
-
-    // get the object attributes before the write
-    let pre_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime,
-            };
-            pre_op_attr::Some(wccattr)
+    match context.vfs.remove(dirid, &args.object.name).await {
+        Ok(()) => {
+            let after = nfs_option_from_result(context.vfs.getattr(dirid).await);
+            debug!("remove success {xid}");
+            REMOVE3res::Ok(REMOVE3resok {
+                dir_wcc: wcc_data { before, after },
+            })
         }
         Err(stat) => {
-            error!("Cannot stat directory");
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
-            return Ok(());
-        }
-    };
-
-    // delete!
-    let res = context.vfs.remove(dirid, &dirops.name).await;
-
-    // Re-read dir attributes for post op attr
-    let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
-    let wcc_res = wcc_data {
-        before: pre_dir_attr,
-        after: post_dir_attr,
-    };
-
-    match res {
-        Ok(()) => {
-            debug!("remove success");
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            wcc_res.pack(output)?;
-        }
-        Err(e) => {
-            error!("remove error {:?} --> {:?}", xid, e);
-            // serialize CREATE3resfail
-            make_success_reply(xid).pack(output)?;
-            e.pack(output)?;
-            wcc_res.pack(output)?;
+            let after = nfs_option_from_result(context.vfs.getattr(dirid).await);
+            error!("remove error {xid} --> {stat}");
+            REMOVE3res::Err((
+                stat,
+                REMOVE3resfail {
+                    dir_wcc: wcc_data { before, after },
+                },
+            ))
         }
     }
-
-    Ok(())
 }
 
 pub async fn nfsproc3_rename(

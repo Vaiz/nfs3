@@ -491,7 +491,7 @@ pub struct REMOVE3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct REMOVE3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -541,7 +541,7 @@ pub struct SETATTR3args {
     pub guard: sattrguard3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SETATTR3resfail {
     pub obj_wcc: wcc_data,
 }
