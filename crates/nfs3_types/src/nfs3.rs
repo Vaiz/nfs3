@@ -247,7 +247,7 @@ pub struct CREATE3args<'a> {
     pub how: createhow3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct CREATE3resfail {
     pub dir_wcc: wcc_data,
 }

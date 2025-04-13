@@ -2,18 +2,7 @@
 
 use std::io::{Cursor, Read, Write};
 
-use nfs3_types::nfs3::{
-    ACCESS3_LOOKUP, ACCESS3_READ, ACCESS3args, ACCESS3res, ACCESS3resfail, ACCESS3resok,
-    CREATE3args, FSINFO3args, FSINFO3res, FSINFO3resfail, FSSTAT3args, FSSTAT3res, FSSTAT3resfail,
-    FSSTAT3resok, GETATTR3args, GETATTR3res, GETATTR3resok, LOOKUP3args, LOOKUP3res,
-    LOOKUP3resfail, LOOKUP3resok, MKDIR3args, NFS_PROGRAM, Nfs3Option, Nfs3Result, PATHCONF3args,
-    PATHCONF3res, PATHCONF3resfail, PATHCONF3resok, READ3args, READ3res, READ3resfail, READ3resok,
-    READDIR3args, READDIR3res, READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res,
-    READDIRPLUS3resfail, READDIRPLUS3resok, SETATTR3args, SYMLINK3args, VERSION, WRITE3args,
-    WRITE3res, WRITE3resfail, WRITE3resok, cookieverf3, createhow3, dirlist3, dirlistplus3,
-    diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr, post_op_fh3, pre_op_attr, sattrguard3,
-    stable_how, wcc_attr, wcc_data, writeverf3,
-};
+use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
 use tracing::{debug, error, trace, warn};
@@ -65,6 +54,7 @@ pub async fn handle_nfs(
         NFSPROC3_READDIR => handle(context, proc, message, nfsproc3_readdir).await,
         NFSPROC3_READDIRPLUS => handle(context, proc, message, nfsproc3_readdirplus).await,
         NFSPROC3_WRITE => handle(context, proc, message, nfsproc3_write).await,
+        NFSPROC3_CREATE => handle(context, proc, message, nfsproc3_create).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = message.take_data();
@@ -116,7 +106,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_CREATE => nfsproc3_create(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_SETATTR => nfsproc3_setattr(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_REMOVE => nfsproc3_remove(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_RMDIR => nfsproc3_remove(xid, input, output, context).await?,
@@ -666,136 +655,94 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
 }
 
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
-pub async fn nfsproc3_create(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
+pub async fn nfsproc3_create<'a>(
     context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    // if we do not have write capabilities
+    xid: u32,
+    args: CREATE3args<'a>,
+) -> CREATE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
+        return CREATE3res::Err((nfsstat3::NFS3ERR_ROFS, CREATE3resfail::default()));
     }
 
-    let args = CREATE3args::unpack(input)?.0;
     let dirops = args.where_;
     let createhow = args.how;
 
-    debug!("nfsproc3_create({:?}, {:?}, {:?}) ", xid, dirops, createhow);
+    debug!("nfsproc3_create({xid}, {dirops:?}, {createhow:?})");
 
-    // find the directory we are supposed to create the
-    // new file in
-    let dirid = context.vfs.fh_to_id(&dirops.dir);
-    if let Err(stat) = dirid {
-        // directory does not exist
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        wcc_data::default().pack(output)?;
-        error!("Directory does not exist");
-        return Ok(());
-    }
-    // found the directory, get the attributes
-    let dirid = dirid.unwrap();
+    let dirid = match context.vfs.fh_to_id(&dirops.dir) {
+        Ok(dirid) => dirid,
+        Err(stat) => {
+            warn!("create error {xid} --> {stat}");
+            return CREATE3res::Err((stat, CREATE3resfail::default()));
+        }
+    };
 
     // get the object attributes before the write
     let pre_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime,
-            };
-            pre_op_attr::Some(wccattr)
-        }
+        Ok(v) => pre_op_attr::Some(wcc_attr {
+            size: v.size,
+            mtime: v.mtime,
+            ctime: v.ctime,
+        }),
         Err(stat) => {
-            error!("Cannot stat directory");
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
-            return Ok(());
+            warn!("Cannot stat directory {xid} -> {stat}");
+            return CREATE3res::Err((stat, CREATE3resfail::default()));
         }
     };
 
     if matches!(&createhow, createhow3::GUARDED(_)) {
         if context.vfs.lookup(dirid, &dirops.name).await.is_ok() {
-            // file exists. Fail with NFS3ERR_EXIST.
-            // Re-read dir attributes
-            // for post op attr
             let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
-
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3ERR_EXIST.pack(output)?;
-            wcc_data {
-                before: pre_dir_attr,
-                after: post_dir_attr,
-            }
-            .pack(output)?;
-            return Ok(());
+            return CREATE3res::Err((
+                nfsstat3::NFS3ERR_EXIST,
+                CREATE3resfail {
+                    dir_wcc: wcc_data {
+                        before: pre_dir_attr,
+                        after: post_dir_attr,
+                    },
+                },
+            ));
         }
     }
 
-    let fid: Result<fileid3, nfsstat3>;
-    let postopattr: post_op_attr;
-    // fill in the fid and post op attr here
-    match createhow {
+    let (fid, postopattr) = match createhow {
         createhow3::EXCLUSIVE(_) => {
-            // the API for exclusive is very slightly different
-            // We are not returning a post op attribute
-            fid = context.vfs.create_exclusive(dirid, &dirops.name).await;
-            postopattr = post_op_attr::None;
+            let fid = context.vfs.create_exclusive(dirid, &dirops.name).await;
+            (fid, post_op_attr::None)
         }
         createhow3::UNCHECKED(target_attributes) | createhow3::GUARDED(target_attributes) => {
-            // create!
-            let res = context
+            match context
                 .vfs
                 .create(dirid, &dirops.name, target_attributes)
-                .await;
-
-            match res {
-                Ok((fid_, fattr)) => {
-                    fid = Ok(fid_);
-                    postopattr = post_op_attr::Some(fattr);
-                }
-                Err(e) => {
-                    fid = Err(e);
-                    postopattr = post_op_attr::None;
-                }
+                .await
+            {
+                Ok((fid, fattr)) => (Ok(fid), post_op_attr::Some(fattr)),
+                Err(e) => (Err(e), post_op_attr::None),
             }
         }
-    }
+    };
 
-    // Re-read dir attributes for post op attr
     let post_dir_attr = nfs_option_from_result(context.vfs.getattr(dirid).await);
-    let wcc_res = wcc_data {
+    let dir_wcc = wcc_data {
         before: pre_dir_attr,
         after: post_dir_attr,
     };
 
     match fid {
         Ok(fid) => {
-            debug!("create success --> {:?}, {:?}", fid, postopattr);
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            // serialize CREATE3resok
-            let fh = context.vfs.id_to_fh(fid);
-            post_op_fh3::Some(fh).pack(output)?;
-            postopattr.pack(output)?;
-            wcc_res.pack(output)?;
+            debug!("create success {xid} --> {fid:?}, {postopattr:?}");
+            CREATE3res::Ok(CREATE3resok {
+                obj: post_op_fh3::Some(context.vfs.id_to_fh(fid)),
+                obj_attributes: postopattr,
+                dir_wcc,
+            })
         }
-        Err(e) => {
-            error!("create error --> {:?}", e);
-            // serialize CREATE3resfail
-            make_success_reply(xid).pack(output)?;
-            e.pack(output)?;
-            wcc_res.pack(output)?;
+        Err(stat) => {
+            error!("create error {xid} --> {stat}");
+            CREATE3res::Err((stat, CREATE3resfail { dir_wcc }))
         }
     }
-
-    Ok(())
 }
 
 pub async fn nfsproc3_setattr(
