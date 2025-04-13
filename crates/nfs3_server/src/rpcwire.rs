@@ -64,7 +64,7 @@ async fn handle_rpc_message(
     mut context: RPCContext,
     message: CompleteRpcMessage,
 ) -> anyhow::Result<HandleResult> {
-    let mut message = IncomingRpcMessage::try_from(message)?;
+    let message = IncomingRpcMessage::try_from(message)?;
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
@@ -86,13 +86,7 @@ async fn handle_rpc_message(
 
     match prog {
         portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message).await,
-        nfs3_types::mount::PROGRAM => {
-            let mut input = message.take_data();
-            let mut output = Cursor::<Vec<u8>>::default();
-            mount_handlers::handle_mount(xid, message.body(), &mut input, &mut output, &context)
-                .await?;
-            Ok(CompleteRpcMessage::new(output.into_inner()).into())
-        }
+        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(&context, message).await,
         nfs::PROGRAM => nfs_handlers::handle_nfs(&context, message).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");

@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{Error, List, Opaque, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{Error, List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -102,6 +102,17 @@ where
             Self::Err(err) => err.pack(output)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for mountres3<'_> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        4 + match self {
+            Self::Ok(ok) => ok.packed_size(),
+            Self::Err(err) => err.packed_size(),
+        }
     }
 }
 

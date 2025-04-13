@@ -69,12 +69,6 @@ pub struct IncomingRpcMessage {
     message_start: usize, // offset of the start of the message in the data buffer
 }
 
-impl CompleteRpcMessage {
-    pub const fn new(data: Vec<u8>) -> Self {
-        Self(data)
-    }
-}
-
 impl TryFrom<CompleteRpcMessage> for IncomingRpcMessage {
     type Error = anyhow::Error;
 
