@@ -588,17 +588,9 @@ async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'
         }
     };
 
-    let before = context
-        .vfs
-        .getattr(id)
+    let before = get_wcc_attr(context, id)
         .await
-        .map_or(pre_op_attr::None, |v| {
-            pre_op_attr::Some(wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime,
-            })
-        });
+        .map_or(pre_op_attr::None, pre_op_attr::Some);
 
     match context
         .vfs
@@ -653,12 +645,8 @@ async fn nfsproc3_create(context: &RPCContext, xid: u32, args: CREATE3args<'_>) 
     };
 
     // get the object attributes before the write
-    let before = match context.vfs.getattr(dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let before = match get_wcc_attr(context, dirid).await {
+        Ok(wccattr) => pre_op_attr::Some(wccattr),
         Err(stat) => {
             warn!("Cannot stat directory {xid} -> {stat}");
             return CREATE3res::Err((stat, CREATE3resfail::default()));
@@ -728,14 +716,9 @@ async fn nfsproc3_setattr(context: &RPCContext, xid: u32, args: SETATTR3args) ->
     };
 
     let ctime;
-    let before = match context.vfs.getattr(id).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
-                size: v.size,
-                mtime: v.mtime,
-                ctime: v.ctime.clone(),
-            };
-            ctime = v.ctime;
+    let before = match get_wcc_attr(context, id).await {
+        Ok(wccattr) => {
+            ctime = wccattr.ctime.clone();
             pre_op_attr::Some(wccattr)
         }
         Err(stat) => {
@@ -798,12 +781,8 @@ async fn nfsproc3_remove(context: &RPCContext, xid: u32, args: REMOVE3args<'_>) 
         }
     };
 
-    let before = match context.vfs.getattr(dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let before = match get_wcc_attr(context, dirid).await {
+        Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} -> {stat}");
             return REMOVE3res::Err((stat, REMOVE3resfail::default()));
@@ -853,24 +832,16 @@ async fn nfsproc3_rename(context: &RPCContext, xid: u32, args: RENAME3args<'_, '
         }
     };
 
-    let pre_from_dir_attr = match context.vfs.getattr(from_dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let pre_from_dir_attr = match get_wcc_attr(context, from_dirid).await {
+        Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat source directory {xid} --> {stat}");
             return RENAME3res::Err((stat, RENAME3resfail::default()));
         }
     };
 
-    let pre_to_dir_attr = match context.vfs.getattr(to_dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let pre_to_dir_attr = match get_wcc_attr(context, to_dirid).await {
+        Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat target directory {xid} --> {stat}");
             return RENAME3res::Err((stat, RENAME3resfail::default()));
@@ -927,12 +898,8 @@ async fn nfsproc3_mkdir(context: &RPCContext, xid: u32, args: MKDIR3args<'_>) ->
         }
     };
 
-    let before = match context.vfs.getattr(dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let before = match get_wcc_attr(context, dirid).await {
+        Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} --> {stat}");
             return MKDIR3res::Err((stat, MKDIR3resfail::default()));
@@ -973,12 +940,8 @@ async fn nfsproc3_symlink(context: &RPCContext, xid: u32, args: SYMLINK3args<'_>
         }
     };
 
-    let pre_dir_attr = match context.vfs.getattr(dirid).await {
-        Ok(v) => pre_op_attr::Some(wcc_attr {
-            size: v.size,
-            mtime: v.mtime,
-            ctime: v.ctime,
-        }),
+    let pre_dir_attr = match get_wcc_attr(context, dirid).await {
+        Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} --> {stat}");
             return SYMLINK3res::Err((stat, SYMLINK3resfail::default()));
@@ -1053,4 +1016,12 @@ async fn nfsproc3_readlink(
 
 fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
     result.map_or(Nfs3Option::None, Nfs3Option::Some)
+}
+
+async fn get_wcc_attr(context: &RPCContext, object_id: fileid3) -> Result<wcc_attr, nfsstat3> {
+    context.vfs.getattr(object_id).await.map(|v| wcc_attr {
+        size: v.size,
+        mtime: v.mtime,
+        ctime: v.ctime,
+    })
 }
