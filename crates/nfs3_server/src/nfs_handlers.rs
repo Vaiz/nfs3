@@ -41,25 +41,26 @@ pub async fn handle_nfs(
         return OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROC_UNAVAIL).try_into();
     };
 
+    debug!("{proc}({})", message.xid());
     match proc {
-        NFSPROC3_NULL => handle(context, proc, message, nfsproc3_null).await,
-        NFSPROC3_GETATTR => handle(context, proc, message, nfsproc3_getattr).await,
-        NFSPROC3_LOOKUP => handle(context, proc, message, nfsproc3_lookup).await,
-        NFSPROC3_READ => handle(context, proc, message, nfsproc3_read).await,
-        NFSPROC3_FSINFO => handle(context, proc, message, nfsproc3_fsinfo).await,
-        NFSPROC3_ACCESS => handle(context, proc, message, nfsproc3_access).await,
-        NFSPROC3_PATHCONF => handle(context, proc, message, nfsproc3_pathconf).await,
-        NFSPROC3_FSSTAT => handle(context, proc, message, nfsproc3_fsstat).await,
-        NFSPROC3_READDIR => handle(context, proc, message, nfsproc3_readdir).await,
-        NFSPROC3_READDIRPLUS => handle(context, proc, message, nfsproc3_readdirplus).await,
-        NFSPROC3_WRITE => handle(context, proc, message, nfsproc3_write).await,
-        NFSPROC3_CREATE => handle(context, proc, message, nfsproc3_create).await,
-        NFSPROC3_SETATTR => handle(context, proc, message, nfsproc3_setattr).await,
-        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, proc, message, nfsproc3_remove).await,
-        NFSPROC3_RENAME => handle(context, proc, message, nfsproc3_rename).await,
-        NFSPROC3_MKDIR => handle(context, proc, message, nfsproc3_mkdir).await,
-        NFSPROC3_SYMLINK => handle(context, proc, message, nfsproc3_symlink).await,
-        NFSPROC3_READLINK => handle(context, proc, message, nfsproc3_readlink).await,
+        NFSPROC3_NULL => handle(context, message, nfsproc3_null).await,
+        NFSPROC3_GETATTR => handle(context, message, nfsproc3_getattr).await,
+        NFSPROC3_LOOKUP => handle(context, message, nfsproc3_lookup).await,
+        NFSPROC3_READ => handle(context, message, nfsproc3_read).await,
+        NFSPROC3_FSINFO => handle(context, message, nfsproc3_fsinfo).await,
+        NFSPROC3_ACCESS => handle(context, message, nfsproc3_access).await,
+        NFSPROC3_PATHCONF => handle(context, message, nfsproc3_pathconf).await,
+        NFSPROC3_FSSTAT => handle(context, message, nfsproc3_fsstat).await,
+        NFSPROC3_READDIR => handle(context, message, nfsproc3_readdir).await,
+        NFSPROC3_READDIRPLUS => handle(context, message, nfsproc3_readdirplus).await,
+        NFSPROC3_WRITE => handle(context, message, nfsproc3_write).await,
+        NFSPROC3_CREATE => handle(context, message, nfsproc3_create).await,
+        NFSPROC3_SETATTR => handle(context, message, nfsproc3_setattr).await,
+        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, message, nfsproc3_remove).await,
+        NFSPROC3_RENAME => handle(context, message, nfsproc3_rename).await,
+        NFSPROC3_MKDIR => handle(context, message, nfsproc3_mkdir).await,
+        NFSPROC3_SYMLINK => handle(context, message, nfsproc3_symlink).await,
+        NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
         NFSPROC3_MKNOD | NFSPROC3_LINK | NFSPROC3_COMMIT => {
             warn!("Unimplemented message {proc}");
             message
@@ -71,7 +72,6 @@ pub async fn handle_nfs(
 
 async fn handle<'a, I, O>(
     context: &RPCContext,
-    proc: NFS_PROGRAM,
     mut message: IncomingRpcMessage,
     handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
@@ -79,8 +79,6 @@ where
     I: Unpack<Cursor<Vec<u8>>>,
     O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
 {
-    debug!("{proc}({})", message.xid());
-
     let mut cursor = message.take_data();
     let (args, _) = match I::unpack(&mut cursor) {
         Ok(ok) => ok,
