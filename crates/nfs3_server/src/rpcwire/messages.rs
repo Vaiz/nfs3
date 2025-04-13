@@ -3,12 +3,10 @@ use std::io::Cursor;
 use anyhow::bail;
 use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, call_body, fragment_header, msg_body, opaque_auth,
-    reply_body, rpc_msg,
+    rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
-
-use crate::rpc::rpc_vers_mismatch;
 
 #[derive(Debug)]
 pub enum PackedRpcMessage {
@@ -169,9 +167,15 @@ impl OutgoingRpcMessage {
     }
 
     pub fn rpc_mismatch(xid: u32) -> Self {
-        let rpc = rpc_vers_mismatch(xid);
+        use nfs3_types::rpc::RPC_VERSION_2;
+
+        let reply =
+            reply_body::MSG_DENIED(rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2));
         Self {
-            rpc,
+            rpc: rpc_msg {
+                xid,
+                body: msg_body::REPLY(reply),
+            },
             message: Box::new(Void),
         }
     }
