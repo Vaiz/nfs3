@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{Error, List, Opaque, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{Error, List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -36,6 +36,24 @@ pub enum mountstat3 {
     MNT3ERR_NAMETOOLONG = 63,
     MNT3ERR_NOTSUPP = 10004,
     MNT3ERR_SERVERFAULT = 10006,
+}
+
+impl std::fmt::Display for mountstat3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::MNT3_OK => "MNT3_OK",
+            Self::MNT3ERR_PERM => "MNT3ERR_PERM",
+            Self::MNT3ERR_NOENT => "MNT3ERR_NOENT",
+            Self::MNT3ERR_IO => "MNT3ERR_IO",
+            Self::MNT3ERR_ACCES => "MNT3ERR_ACCES",
+            Self::MNT3ERR_NOTDIR => "MNT3ERR_NOTDIR",
+            Self::MNT3ERR_INVAL => "MNT3ERR_INVAL",
+            Self::MNT3ERR_NAMETOOLONG => "MNT3ERR_NAMETOOLONG",
+            Self::MNT3ERR_NOTSUPP => "MNT3ERR_NOTSUPP",
+            Self::MNT3ERR_SERVERFAULT => "MNT3ERR_SERVERFAULT",
+        };
+        write!(f, "{value}")
+    }
 }
 
 // #[derive(Debug, XdrCodec)]
@@ -84,6 +102,17 @@ where
             Self::Err(err) => err.pack(output)?,
         };
         Ok(len)
+    }
+}
+
+impl PackedSize for mountres3<'_> {
+    const PACKED_SIZE: Option<usize> = None;
+
+    fn count_packed_size(&self) -> usize {
+        match self {
+            Self::Ok(ok) => mountstat3::MNT3_OK.packed_size() + ok.packed_size(),
+            Self::Err(err) => err.packed_size(),
+        }
     }
 }
 
@@ -145,5 +174,19 @@ impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
             5 => Ok(Self::MOUNTPROC3_EXPORT),
             _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
         }
+    }
+}
+
+impl std::fmt::Display for MOUNT_PROGRAM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::MOUNTPROC3_NULL => "MOUNTPROC3_NULL",
+            Self::MOUNTPROC3_MNT => "MOUNTPROC3_MNT",
+            Self::MOUNTPROC3_DUMP => "MOUNTPROC3_DUMP",
+            Self::MOUNTPROC3_UMNT => "MOUNTPROC3_UMNT",
+            Self::MOUNTPROC3_UMNTALL => "MOUNTPROC3_UMNTALL",
+            Self::MOUNTPROC3_EXPORT => "MOUNTPROC3_EXPORT",
+        };
+        write!(f, "{value}")
     }
 }

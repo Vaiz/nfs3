@@ -1,70 +1,58 @@
-use std::io::{Read, Write};
-
 use nfs3_types::mount::{
-    MOUNT_PROGRAM, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok, mountstat3,
+    MOUNT_PROGRAM, VERSION, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok,
+    mountstat3,
 };
-use nfs3_types::rpc::{auth_flavor, call_body};
-use nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack};
-use tracing::debug;
+use nfs3_types::rpc::{accept_stat_data, auth_flavor};
+use nfs3_types::xdr_codec::{List, Opaque, Void};
+use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
-use crate::rpc::{garbage_args_reply_message, make_success_reply, proc_unavail_reply_message};
+use crate::rpcwire::handle;
+use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 
+#[allow(clippy::enum_glob_use)]
 pub async fn handle_mount(
-    xid: u32,
-    call: call_body<'_>,
-    input: &mut impl Read,
-    output: &mut impl Write,
     context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let prog = MOUNT_PROGRAM::try_from(call.proc);
+    message: IncomingRpcMessage,
+) -> anyhow::Result<HandleResult> {
+    use MOUNT_PROGRAM::*;
 
-    match prog {
-        Ok(MOUNT_PROGRAM::MOUNTPROC3_NULL) => mountproc3_null(xid, input, output)?,
-        Ok(MOUNT_PROGRAM::MOUNTPROC3_MNT) => mountproc3_mnt(xid, input, output, context).await?,
-        Ok(MOUNT_PROGRAM::MOUNTPROC3_UMNT) => mountproc3_umnt(xid, input, output, context).await?,
-        Ok(MOUNT_PROGRAM::MOUNTPROC3_UMNTALL) => {
-            mountproc3_umnt_all(xid, input, output, context).await?;
-        }
-        Ok(MOUNT_PROGRAM::MOUNTPROC3_EXPORT) => mountproc3_export(xid, input, output, context)?,
-        _ => {
-            proc_unavail_reply_message(xid).pack(output)?;
+    let call = message.body();
+    let xid = message.xid();
+
+    debug!("handle_nfs({xid}, {call:?}");
+    if call.vers != VERSION {
+        warn!("Invalid Mount Version number {} != {VERSION}", call.vers);
+        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
+            low: VERSION,
+            high: VERSION,
+        });
+    }
+
+    let Ok(proc) = MOUNT_PROGRAM::try_from(call.proc) else {
+        error!("invalid Mount Program number {}", call.proc);
+        return message.into_error_reply(accept_stat_data::PROC_UNAVAIL);
+    };
+
+    debug!("{proc}({})", message.xid());
+    match proc {
+        MOUNTPROC3_NULL => handle(context, message, mountproc3_null).await,
+        MOUNTPROC3_MNT => handle(context, message, mountproc3_mnt).await,
+        MOUNTPROC3_UMNT => handle(context, message, mountproc3_umnt).await,
+        MOUNTPROC3_UMNTALL => handle(context, message, mountproc3_umnt_all).await,
+        MOUNTPROC3_EXPORT => handle(context, message, mountproc3_export).await,
+        MOUNTPROC3_DUMP => {
+            warn!("Unimplemented message {proc}");
+            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
     }
-    Ok(())
 }
 
-pub fn mountproc3_null(
-    xid: u32,
-    _: &mut impl Read,
-    output: &mut impl Write,
-) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_null({xid})");
-    // build an RPC reply
-    let msg = make_success_reply(xid);
-    debug!("\t{xid} --> {msg:?}");
-    msg.pack(output)?;
-    Ok(())
+async fn mountproc3_null(_: &RPCContext, _: u32, _: Void) -> Void {
+    Void
 }
 
-pub async fn mountproc3_mnt(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let path = dirpath::unpack(input)?.0;
-    let result = mountproc3_mount_impl(xid, path, context).await;
-    make_success_reply(xid).pack(output)?;
-    result.pack(output)?;
-    Ok(())
-}
-
-async fn mountproc3_mount_impl(
-    xid: u32,
-    path: dirpath<'_>,
-    context: &RPCContext,
-) -> mountres3<'static> {
+async fn mountproc3_mnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> mountres3<'static> {
     let path = std::str::from_utf8(&path.0);
     let utf8path = match path {
         Ok(path) => path,
@@ -102,70 +90,51 @@ async fn mountproc3_mount_impl(
     }
 }
 
-// exports MOUNTPROC3_EXPORT(void) = 5;
-//
-// typedef struct groupnode *groups;
-//
-// struct groupnode {
-// name     gr_name;
-// groups   gr_next;
-// };
-//
-// typedef struct exportnode *exports;
-//
-// struct exportnode {
-// dirpath  ex_dir;
+/// exports `MOUNTPROC3_EXPORT(void)` = 5;
+///
+/// typedef struct groupnode *groups;
+///
+/// struct groupnode {
+/// name     `gr_name`;
+/// groups   `gr_next`;
+/// };
+///
+/// typedef struct exportnode *exports;
+///
+/// struct exportnode {
+/// dirpath  `ex_dir`;
 // groups   ex_groups;
 // exports  ex_next;
-// };
-//
-// DESCRIPTION
-//
-// Procedure EXPORT returns a list of all the exported file
-// systems and which clients are allowed to mount each one.
-// The names in the group list are implementation-specific
-// and cannot be directly interpreted by clients. These names
-// can represent hosts or groups of hosts.
-//
-// IMPLEMENTATION
-//
-// This procedure generally returns the contents of a list of
-// shared or exported file systems. These are the file
-// systems which are made available to NFS version 3 protocol
-// clients.
-
-pub fn mountproc3_export(
-    xid: u32,
-    _: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    debug!("mountproc3_export({xid})");
-
-    let response: exports = List(vec![export_node {
-        ex_dir: dirpath(Opaque::borrowed(context.export_name.as_bytes())),
+/// };
+///
+/// DESCRIPTION
+///
+/// Procedure EXPORT returns a list of all the exported file
+/// systems and which clients are allowed to mount each one.
+/// The names in the group list are implementation-specific
+/// and cannot be directly interpreted by clients. These names
+/// can represent hosts or groups of hosts.
+///
+/// IMPLEMENTATION
+///
+/// This procedure generally returns the contents of a list of
+/// shared or exported file systems. These are the file
+/// systems which are made available to NFS version 3 protocol
+/// clients.
+async fn mountproc3_export(context: &RPCContext, _: u32, _: Void) -> exports<'static, 'static> {
+    let export_name = context.export_name.as_bytes().to_vec();
+    List(vec![export_node {
+        ex_dir: dirpath(Opaque::owned(export_name)),
         ex_groups: List::default(),
-    }]);
-
-    make_success_reply(xid).pack(output)?;
-    response.pack(output)?;
-
-    Ok(())
+    }])
 }
 
-pub async fn mountproc3_umnt(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    let path = dirpath::unpack(input)?.0;
+async fn mountproc3_umnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> Void {
     let utf8path = match std::str::from_utf8(&path.0) {
         Ok(path) => path,
         Err(e) => {
-            tracing::error!("{xid} --> invalid mount path: {e}");
-            garbage_args_reply_message(xid).pack(output)?;
-            return Ok(());
+            tracing::warn!("{xid} --> invalid mount path: {e}");
+            return Void;
         }
     };
 
@@ -173,20 +142,13 @@ pub async fn mountproc3_umnt(
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
-    make_success_reply(xid).pack(output)?;
-    Ok(())
+    Void
 }
 
-pub async fn mountproc3_umnt_all(
-    xid: u32,
-    _input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
+pub async fn mountproc3_umnt_all(context: &RPCContext, xid: u32, _: Void) -> Void {
     debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;
     }
-    make_success_reply(xid).pack(output)?;
-    Ok(())
+    Void
 }

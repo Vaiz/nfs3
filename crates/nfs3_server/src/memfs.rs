@@ -562,11 +562,12 @@ impl NFSFileSystem for MemFs {
         let file = entry.as_file()?;
         Ok(file.read(offset, count))
     }
+
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
         let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry.as_file_mut()?;
+        let file = entry.as_file_mut().map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
         file.write(offset, data)
     }
 

@@ -1,5 +1,6 @@
 use super::{Pack, PackedSize, Unpack};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Void;
 
 impl<Out: std::io::Write> Pack<Out> for Void {

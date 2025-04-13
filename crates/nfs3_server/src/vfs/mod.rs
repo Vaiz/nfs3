@@ -144,6 +144,13 @@ pub trait NFSFileSystem: Sync {
     /// in that case, the file is extended.
     /// If not supported due to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
+    ///
+    /// # NFS3ERR_INVAL:
+    ///
+    /// Some NFS version 2 protocol server implementations
+    /// incorrectly returned `NFSERR_ISDIR` if the file system
+    /// object type was not a regular file. The correct return
+    /// value for the NFS version 3 protocol is `NFS3ERR_INVAL`.
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3>;
 
     /// Creates a file with the following attributes.

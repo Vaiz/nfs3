@@ -42,6 +42,30 @@ fn check_reply_header(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<()> {
     }
 }
 
+fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<()> {
+    if msg.xid != xid {
+        bail!("XID mismatch: expected {xid}, got {}", msg.xid);
+    }
+    match &msg.body {
+        msg_body::REPLY(reply) => match reply {
+            reply_body::MSG_ACCEPTED(accepted) => {
+                if matches!(
+                    accepted.reply_data,
+                    nfs3_types::rpc::accept_stat_data::GARBAGE_ARGS
+                ) {
+                    Ok(())
+                } else {
+                    bail!("RPC call failed with status: {:?}", accepted.reply_data);
+                }
+            }
+            reply_body::MSG_DENIED(denied) => {
+                bail!("RPC call denied with status: {denied:?}");
+            }
+        },
+        _ => bail!("Expected REPLY message, got: {:?}", msg.body),
+    }
+}
+
 #[tokio::test]
 async fn sequential_requests() -> anyhow::Result<()> {
     let mut client = RpcTestContext::setup();
@@ -130,7 +154,6 @@ async fn out_of_order_requests() -> anyhow::Result<()> {
     client.shutdown().await
 }
 
-/// Server should ignore the body of the NULL request
 #[tokio::test]
 async fn null_with_body() -> anyhow::Result<()> {
     let mut client = RpcTestContext::setup();
@@ -140,14 +163,13 @@ async fn null_with_body() -> anyhow::Result<()> {
     client.send_call(&rpc_msg, &null_body).await?;
 
     let (msg, body) = client.recv_reply::<Void>().await?;
-    check_reply_header(1, &msg)?;
-    assert!(body.is_some());
+    check_garbage_args_reply(1, &msg)?;
+    assert_eq!(body, None);
 
     client.shutdown().await
 }
 
 #[tokio::test]
-#[ignore] // FIXME: This test is ignored because the server currently does not handle invalid bodies
 async fn invalid_body() -> anyhow::Result<()> {
     let mut client = RpcTestContext::setup();
 
@@ -155,8 +177,8 @@ async fn invalid_body() -> anyhow::Result<()> {
     client.send_call(&rpc_msg, &Void).await?;
 
     let (msg, body) = client.recv_reply::<LOOKUP3res>().await?;
-    check_reply_header(1, &msg)?;
-    assert!(body.is_some());
+    check_garbage_args_reply(1, &msg)?;
+    assert!(body.is_none());
 
     client.shutdown().await
 }

@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Void, Write};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -95,8 +95,8 @@ where
     const PACKED_SIZE: Option<usize> = None;
 
     fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::Ok(v) => v.packed_size(),
+        match self {
+            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
             Self::Err((code, err)) => code.packed_size() + err.packed_size(),
         }
     }
@@ -107,7 +107,7 @@ pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
 pub type FSINFO3res = Nfs3Result<FSINFO3resok, FSINFO3resfail>;
 pub type FSSTAT3res = Nfs3Result<FSSTAT3resok, FSSTAT3resfail>;
-pub type GETATTR3res = Nfs3Result<GETATTR3resok, ()>;
+pub type GETATTR3res = Nfs3Result<GETATTR3resok, Void>;
 pub type LINK3res = Nfs3Result<LINK3resok, LINK3resfail>;
 pub type LOOKUP3res = Nfs3Result<LOOKUP3resok, LOOKUP3resfail>;
 pub type MKDIR3res = Nfs3Result<MKDIR3resok, MKDIR3resfail>;
@@ -212,7 +212,7 @@ pub struct ACCESS3args {
     pub access: u32,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct ACCESS3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -247,7 +247,7 @@ pub struct CREATE3args<'a> {
     pub how: createhow3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct CREATE3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -264,7 +264,7 @@ pub struct FSINFO3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSINFO3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -289,7 +289,7 @@ pub struct FSSTAT3args {
     pub fsroot: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSSTAT3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -357,7 +357,7 @@ pub struct MKDIR3args<'a> {
     pub attributes: sattr3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct MKDIR3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -392,7 +392,7 @@ pub struct PATHCONF3args {
     pub object: nfs_fh3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct PATHCONF3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -416,7 +416,7 @@ pub struct READ3args {
     pub count: count3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct READ3resfail {
     pub file_attributes: post_op_attr,
 }
@@ -491,7 +491,7 @@ pub struct REMOVE3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct REMOVE3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -507,7 +507,7 @@ pub struct RENAME3args<'a, 'b> {
     pub to: diropargs3<'b>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct RENAME3resfail {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,
@@ -541,7 +541,7 @@ pub struct SETATTR3args {
     pub guard: sattrguard3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SETATTR3resfail {
     pub obj_wcc: wcc_data,
 }
@@ -557,7 +557,7 @@ pub struct SYMLINK3args<'a> {
     pub symlink: symlinkdata3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SYMLINK3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -578,7 +578,7 @@ pub struct WRITE3args<'a> {
     pub data: Opaque<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct WRITE3resfail {
     pub file_wcc: wcc_data,
 }
@@ -770,6 +770,10 @@ impl nfspath3<'_> {
     pub fn clone_to_owned(&self) -> nfspath3<'static> {
         self.0.to_vec().into()
     }
+    #[must_use]
+    pub fn into_owned(self) -> nfspath3<'static> {
+        nfspath3(Opaque::owned(self.0.0.into_owned()))
+    }
 }
 
 impl PartialEq<[u8]> for nfspath3<'_> {
@@ -809,6 +813,43 @@ pub enum nfsstat3 {
     NFS3ERR_SERVERFAULT = 10006,
     NFS3ERR_BADTYPE = 10007,
     NFS3ERR_JUKEBOX = 10008,
+}
+
+impl std::fmt::Display for nfsstat3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::NFS3_OK => "NFS3_OK",
+            Self::NFS3ERR_PERM => "NFS3ERR_PERM",
+            Self::NFS3ERR_NOENT => "NFS3ERR_NOENT",
+            Self::NFS3ERR_IO => "NFS3ERR_IO",
+            Self::NFS3ERR_NXIO => "NFS3ERR_NXIO",
+            Self::NFS3ERR_ACCES => "NFS3ERR_ACCES",
+            Self::NFS3ERR_EXIST => "NFS3ERR_EXIST",
+            Self::NFS3ERR_XDEV => "NFS3ERR_XDEV",
+            Self::NFS3ERR_NODEV => "NFS3ERR_NODEV",
+            Self::NFS3ERR_NOTDIR => "NFS3ERR_NOTDIR",
+            Self::NFS3ERR_ISDIR => "NFS3ERR_ISDIR",
+            Self::NFS3ERR_INVAL => "NFS3ERR_INVAL",
+            Self::NFS3ERR_FBIG => "NFS3ERR_FBIG",
+            Self::NFS3ERR_NOSPC => "NFS3ERR_NOSPC",
+            Self::NFS3ERR_ROFS => "NFS3ERR_ROFS",
+            Self::NFS3ERR_MLINK => "NFS3ERR_MLINK",
+            Self::NFS3ERR_NAMETOOLONG => "NFS3ERR_NAMETOOLONG",
+            Self::NFS3ERR_NOTEMPTY => "NFS3ERR_NOTEMPTY",
+            Self::NFS3ERR_DQUOT => "NFS3ERR_DQUOT",
+            Self::NFS3ERR_STALE => "NFS3ERR_STALE",
+            Self::NFS3ERR_REMOTE => "NFS3ERR_REMOTE",
+            Self::NFS3ERR_BADHANDLE => "NFS3ERR_BADHANDLE",
+            Self::NFS3ERR_NOT_SYNC => "NFS3ERR_NOT_SYNC",
+            Self::NFS3ERR_BAD_COOKIE => "NFS3ERR_BAD_COOKIE",
+            Self::NFS3ERR_NOTSUPP => "NFS3ERR_NOTSUPP",
+            Self::NFS3ERR_TOOSMALL => "NFS3ERR_TOOSMALL",
+            Self::NFS3ERR_SERVERFAULT => "NFS3ERR_SERVERFAULT",
+            Self::NFS3ERR_BADTYPE => "NFS3ERR_BADTYPE",
+            Self::NFS3ERR_JUKEBOX => "NFS3ERR_JUKEBOX",
+        };
+        write!(f, "{name}")
+    }
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, XdrCodec)]
@@ -1237,5 +1278,35 @@ impl std::convert::TryFrom<u32> for NFS_PROGRAM {
             21 => Ok(Self::NFSPROC3_COMMIT),
             _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
         }
+    }
+}
+
+impl std::fmt::Display for NFS_PROGRAM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::NFSPROC3_NULL => "NFSPROC3_NULL",
+            Self::NFSPROC3_GETATTR => "NFSPROC3_GETATTR",
+            Self::NFSPROC3_SETATTR => "NFSPROC3_SETATTR",
+            Self::NFSPROC3_LOOKUP => "NFSPROC3_LOOKUP",
+            Self::NFSPROC3_ACCESS => "NFSPROC3_ACCESS",
+            Self::NFSPROC3_READLINK => "NFSPROC3_READLINK",
+            Self::NFSPROC3_READ => "NFSPROC3_READ",
+            Self::NFSPROC3_WRITE => "NFSPROC3_WRITE",
+            Self::NFSPROC3_CREATE => "NFSPROC3_CREATE",
+            Self::NFSPROC3_MKDIR => "NFSPROC3_MKDIR",
+            Self::NFSPROC3_SYMLINK => "NFSPROC3_SYMLINK",
+            Self::NFSPROC3_MKNOD => "NFSPROC3_MKNOD",
+            Self::NFSPROC3_REMOVE => "NFSPROC3_REMOVE",
+            Self::NFSPROC3_RMDIR => "NFSPROC3_RMDIR",
+            Self::NFSPROC3_RENAME => "NFSPROC3_RENAME",
+            Self::NFSPROC3_LINK => "NFSPROC3_LINK",
+            Self::NFSPROC3_READDIR => "NFSPROC3_READDIR",
+            Self::NFSPROC3_READDIRPLUS => "NFSPROC3_READDIRPLUS",
+            Self::NFSPROC3_FSSTAT => "NFSPROC3_FSSTAT",
+            Self::NFSPROC3_FSINFO => "NFSPROC3_FSINFO",
+            Self::NFSPROC3_PATHCONF => "NFSPROC3_PATHCONF",
+            Self::NFSPROC3_COMMIT => "NFSPROC3_COMMIT",
+        };
+        write!(f, "{name}")
     }
 }
