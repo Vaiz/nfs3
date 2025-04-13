@@ -111,7 +111,7 @@ impl IncomingRpcMessage {
         cursor
     }
 
-    pub fn into_success_reply<T>(self, message: T) -> anyhow::Result<HandleResult>
+    pub fn into_success_reply<T>(self, message: &T) -> anyhow::Result<HandleResult>
     where
         T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
     {
@@ -123,7 +123,7 @@ impl IncomingRpcMessage {
             })),
         };
 
-        pack(rpc, message).map(HandleResult::Reply)
+        pack(&rpc, message).map(HandleResult::Reply)
     }
 
     pub fn into_rpc_mismatch(self) -> anyhow::Result<HandleResult> {
@@ -136,7 +136,7 @@ impl IncomingRpcMessage {
             xid: self.xid,
             body: msg_body::REPLY(reply),
         };
-        pack(rpc, Void).map(HandleResult::Reply)
+        pack(&rpc, &Void).map(HandleResult::Reply)
     }
 
     pub fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
@@ -147,7 +147,7 @@ impl IncomingRpcMessage {
                 reply_data: err,
             })),
         };
-        pack(rpc, Void).map(HandleResult::Reply)
+        pack(&rpc, &Void).map(HandleResult::Reply)
     }
 }
 
@@ -162,7 +162,7 @@ impl From<CompleteRpcMessage> for HandleResult {
     }
 }
 
-fn pack<T>(rpc: rpc_msg, message: T) -> anyhow::Result<CompleteRpcMessage>
+fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<CompleteRpcMessage>
 where
     T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
 {

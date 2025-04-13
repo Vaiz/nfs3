@@ -95,7 +95,7 @@ where
     }
 
     let result = handler(context, message.xid(), args).await;
-    message.into_success_reply(result)
+    message.into_success_reply(&result)
 }
 
 fn lock_transaction(
