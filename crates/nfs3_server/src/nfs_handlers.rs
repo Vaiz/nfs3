@@ -1,17 +1,15 @@
 #![allow(clippy::unwrap_used)] // FIXME: will fix this after some refactoring
 
-use std::io::Cursor;
-
 #[allow(clippy::wildcard_imports)]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{BoundedList, Opaque, PackedSize, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
-use crate::rpcwire::HandleResult;
 use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
+use crate::rpcwire::{HandleResult, handle};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, VFSCapabilities};
 
@@ -72,36 +70,6 @@ pub async fn handle_nfs(
     }
 }
 
-async fn handle<'a, I, O>(
-    context: &RPCContext,
-    mut message: IncomingRpcMessage,
-    handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
-) -> anyhow::Result<HandleResult>
-where
-    I: Unpack<Cursor<Vec<u8>>>,
-    O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
-{
-    let mut cursor = message.take_data();
-    let (args, _) = match I::unpack(&mut cursor) {
-        Ok(ok) => ok,
-        Err(err) => {
-            error!("Failed to unpack message: {err}");
-            return message
-                .into_error_reply(accept_stat_data::GARBAGE_ARGS)
-                .try_into();
-        }
-    };
-    if cursor.position() != cursor.get_ref().len() as u64 {
-        error!("Unpacked message size does not match expected size");
-        return message
-            .into_error_reply(accept_stat_data::GARBAGE_ARGS)
-            .try_into();
-    }
-
-    let result = handler(context, message.xid(), args).await;
-    message.into_success_reply(Box::new(result)).try_into()
-}
-
 macro_rules! fh_to_id {
     ($context:expr, $fh:expr) => {
         match $context.vfs.fh_to_id($fh) {
@@ -157,7 +125,7 @@ async fn nfsproc3_lookup(
             })
         }
         Err(stat) => {
-            warn!("lookup error {}({:?}) --> {stat}", xid, dirops.name,);
+            warn!("lookup error {xid}({:?}) --> {stat}", dirops.name,);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
         }
     }
@@ -173,7 +141,7 @@ async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> 
         .await
     {
         Ok((bytes, eof)) => {
-            debug!(" {} --> read {} bytes, eof: {eof}", xid, bytes.len());
+            debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());
             READ3res::Ok(READ3resok {
                 file_attributes,
                 count: u32::try_from(bytes.len()).expect("buffer is too big"),
@@ -430,8 +398,8 @@ async fn nfsproc3_readdir(
         debug!(" -- Start of readdir");
     } else if readdir3args.cookieverf != cookieverf {
         warn!(
-            " -- Dir version mismatch. Received {:?}, Expected: {:?}",
-            readdir3args.cookieverf, cookieverf
+            " -- Dir version mismatch. Received {:?}, Expected: {cookieverf:?}",
+            readdir3args.cookieverf,
         );
         return READDIR3res::Err((nfsstat3::NFS3ERR_BAD_COOKIE, READDIR3resfail::default()));
     } else {

@@ -6,7 +6,7 @@ use messages::{CompleteRpcMessage, IncomingRpcMessage, OutgoingRpcMessage, Packe
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header,
 };
-use nfs3_types::xdr_codec::Unpack;
+use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::sync::mpsc;
@@ -85,7 +85,7 @@ async fn handle_rpc_message(
     }
 
     match prog {
-        portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message)?.try_into(),
+        portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message).await,
         nfs3_types::mount::PROGRAM => {
             let mut input = message.take_data();
             let mut output = Cursor::<Vec<u8>>::default();
@@ -103,6 +103,37 @@ async fn handle_rpc_message(
             OutgoingRpcMessage::accept_error(xid, accept_stat_data::PROG_UNAVAIL).try_into()
         }
     }
+}
+
+/// Handles the RPC message and returns a result. The handler is an async function
+pub(crate) async fn handle<'a, I, O>(
+    context: &RPCContext,
+    mut message: IncomingRpcMessage,
+    handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
+) -> anyhow::Result<HandleResult>
+where
+    I: Unpack<Cursor<Vec<u8>>>,
+    O: Pack<Cursor<&'static mut [u8]>> + PackedSize + Send + 'static,
+{
+    let mut cursor = message.take_data();
+    let (args, _) = match I::unpack(&mut cursor) {
+        Ok(ok) => ok,
+        Err(err) => {
+            error!("Failed to unpack message: {err}");
+            return message
+                .into_error_reply(accept_stat_data::GARBAGE_ARGS)
+                .try_into();
+        }
+    };
+    if cursor.position() != cursor.get_ref().len() as u64 {
+        error!("Unpacked message size does not match expected size");
+        return message
+            .into_error_reply(accept_stat_data::GARBAGE_ARGS)
+            .try_into();
+    }
+
+    let result = handler(context, message.xid(), args).await;
+    message.into_success_reply(Box::new(result)).try_into()
 }
 
 fn lock_transaction(

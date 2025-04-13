@@ -119,15 +119,6 @@ impl IncomingRpcMessage {
         cursor
     }
 
-    pub fn unpack_message<T: Unpack<Cursor<Vec<u8>>>>(&mut self) -> Result<T, anyhow::Error> {
-        let mut cursor = self.take_data();
-        let (msg, _) = T::unpack(&mut cursor)?;
-        if cursor.position() != cursor.get_ref().len() as u64 {
-            bail!("Unpacked message size does not match expected size");
-        }
-        Ok(msg)
-    }
-
     pub fn into_success_reply<T>(&self, message: Box<T>) -> OutgoingRpcMessage
     where
         T: Message + PackedSize + 'static,

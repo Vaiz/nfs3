@@ -1,30 +1,16 @@
 use nfs3_types::portmap::{self, PMAP_PROG, mapping};
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::Void;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
 use crate::rpcwire::messages::{IncomingRpcMessage, OutgoingRpcMessage};
+use crate::rpcwire::{HandleResult, handle};
 
-#[macro_export]
-macro_rules! unpack_message {
-    ($message:expr, $type:ty) => {
-        match $message.unpack_message::<$type>() {
-            Ok(unpacked) => unpacked,
-            Err(err) => {
-                error!("Failed to unpack message: {err}");
-                return Ok(Some(
-                    $message.into_error_reply(accept_stat_data::GARBAGE_ARGS),
-                ));
-            }
-        }
-    };
-}
-
-pub fn handle_portmap(
+pub async fn handle_portmap(
     context: &RPCContext,
     message: IncomingRpcMessage,
-) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
+) -> anyhow::Result<HandleResult> {
     let call = message.body();
     if call.vers != portmap::VERSION {
         error!(
@@ -32,43 +18,38 @@ pub fn handle_portmap(
             call.vers,
             portmap::VERSION
         );
-        return Ok(Some(OutgoingRpcMessage::accept_error(
+        return OutgoingRpcMessage::accept_error(
             message.xid(),
             accept_stat_data::PROG_MISMATCH {
                 low: portmap::VERSION,
                 high: portmap::VERSION,
             },
-        )));
+        )
+        .try_into();
     }
 
-    let prog = PMAP_PROG::try_from(call.proc);
-    match prog {
-        Ok(PMAP_PROG::PMAPPROC_NULL) => pmapproc_null(message),
-        Ok(PMAP_PROG::PMAPPROC_GETPORT) => pmapproc_getport(context, message),
-        _ => Ok(Some(OutgoingRpcMessage::accept_error(
-            message.xid(),
-            accept_stat_data::PROC_UNAVAIL,
-        ))),
+    let proc = PMAP_PROG::try_from(call.proc);
+    match proc {
+        Ok(PMAP_PROG::PMAPPROC_NULL) => handle(context, message, pmapproc_null).await,
+        Ok(PMAP_PROG::PMAPPROC_GETPORT) => handle(context, message, pmapproc_getport).await,
+        _ => {
+            warn!("Unimplemented message {}", call.proc);
+            message
+                .into_error_reply(accept_stat_data::PROC_UNAVAIL)
+                .try_into()
+        }
     }
 }
 
-pub fn pmapproc_null(
-    mut message: IncomingRpcMessage,
-) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
-    debug!("pmapproc_null({})", message.xid());
-    let _ = unpack_message!(message, Void);
-    Ok(Some(message.into_success_reply(Box::new(Void))))
+async fn pmapproc_null(_: &RPCContext, xid: u32, _: Void) -> Void {
+    debug!("pmapproc_null({})", xid);
+    Void
 }
 
 // We fake a portmapper here. And always direct back to the same host port
-pub fn pmapproc_getport(
-    context: &RPCContext,
-    mut message: IncomingRpcMessage,
-) -> Result<Option<OutgoingRpcMessage>, anyhow::Error> {
-    let mapping = unpack_message!(message, mapping);
-
-    debug!("pmapproc_getport({}, {mapping:?})", message.xid());
+async fn pmapproc_getport(context: &RPCContext, xid: u32, m: mapping) -> u32 {
+    debug!("pmapproc_getport({xid}, {m:?})");
     let port = u32::from(context.local_port);
-    debug!("\t{} --> {}", message.xid(), port);
-    Ok(Some(message.into_success_reply(Box::new(port))))
+    debug!("\t{xid} --> {port}");
+    port
 }
