@@ -357,7 +357,7 @@ pub struct MKDIR3args<'a> {
     pub attributes: sattr3,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct MKDIR3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -557,7 +557,7 @@ pub struct SYMLINK3args<'a> {
     pub symlink: symlinkdata3<'a>,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SYMLINK3resfail {
     pub dir_wcc: wcc_data,
 }
@@ -769,6 +769,10 @@ impl nfspath3<'_> {
     #[must_use]
     pub fn clone_to_owned(&self) -> nfspath3<'static> {
         self.0.to_vec().into()
+    }
+    #[must_use]
+    pub fn into_owned(self) -> nfspath3<'static> {
+        nfspath3(Opaque::owned(self.0.0.into_owned()))
     }
 }
 
