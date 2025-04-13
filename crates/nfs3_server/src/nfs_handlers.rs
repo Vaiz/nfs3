@@ -114,18 +114,18 @@ async fn nfsproc3_getattr(
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("getattr error {} --> {stat}", xid);
+            warn!("getattr error {xid} --> {stat}");
             return GETATTR3res::Err((stat, Void));
         }
     };
 
     match context.vfs.getattr(id).await {
         Ok(obj_attributes) => {
-            debug!(" {} --> {obj_attributes:?}", xid);
+            debug!(" {xid} --> {obj_attributes:?}");
             GETATTR3res::Ok(GETATTR3resok { obj_attributes })
         }
         Err(stat) => {
-            warn!("getattr error {} --> {stat}", xid);
+            warn!("getattr error {xid} --> {stat}");
             GETATTR3res::Err((stat, Void))
         }
     }

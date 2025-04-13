@@ -41,16 +41,16 @@ pub enum mountstat3 {
 impl std::fmt::Display for mountstat3 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            mountstat3::MNT3_OK => "MNT3_OK",
-            mountstat3::MNT3ERR_PERM => "MNT3ERR_PERM",
-            mountstat3::MNT3ERR_NOENT => "MNT3ERR_NOENT",
-            mountstat3::MNT3ERR_IO => "MNT3ERR_IO",
-            mountstat3::MNT3ERR_ACCES => "MNT3ERR_ACCES",
-            mountstat3::MNT3ERR_NOTDIR => "MNT3ERR_NOTDIR",
-            mountstat3::MNT3ERR_INVAL => "MNT3ERR_INVAL",
-            mountstat3::MNT3ERR_NAMETOOLONG => "MNT3ERR_NAMETOOLONG",
-            mountstat3::MNT3ERR_NOTSUPP => "MNT3ERR_NOTSUPP",
-            mountstat3::MNT3ERR_SERVERFAULT => "MNT3ERR_SERVERFAULT",
+            Self::MNT3_OK => "MNT3_OK",
+            Self::MNT3ERR_PERM => "MNT3ERR_PERM",
+            Self::MNT3ERR_NOENT => "MNT3ERR_NOENT",
+            Self::MNT3ERR_IO => "MNT3ERR_IO",
+            Self::MNT3ERR_ACCES => "MNT3ERR_ACCES",
+            Self::MNT3ERR_NOTDIR => "MNT3ERR_NOTDIR",
+            Self::MNT3ERR_INVAL => "MNT3ERR_INVAL",
+            Self::MNT3ERR_NAMETOOLONG => "MNT3ERR_NAMETOOLONG",
+            Self::MNT3ERR_NOTSUPP => "MNT3ERR_NOTSUPP",
+            Self::MNT3ERR_SERVERFAULT => "MNT3ERR_SERVERFAULT",
         };
         write!(f, "{value}")
     }
@@ -169,12 +169,12 @@ impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
 impl std::fmt::Display for MOUNT_PROGRAM {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            MOUNT_PROGRAM::MOUNTPROC3_NULL => "MOUNTPROC3_NULL",
-            MOUNT_PROGRAM::MOUNTPROC3_MNT => "MOUNTPROC3_MNT",
-            MOUNT_PROGRAM::MOUNTPROC3_DUMP => "MOUNTPROC3_DUMP",
-            MOUNT_PROGRAM::MOUNTPROC3_UMNT => "MOUNTPROC3_UMNT",
-            MOUNT_PROGRAM::MOUNTPROC3_UMNTALL => "MOUNTPROC3_UMNTALL",
-            MOUNT_PROGRAM::MOUNTPROC3_EXPORT => "MOUNTPROC3_EXPORT",
+            Self::MOUNTPROC3_NULL => "MOUNTPROC3_NULL",
+            Self::MOUNTPROC3_MNT => "MOUNTPROC3_MNT",
+            Self::MOUNTPROC3_DUMP => "MOUNTPROC3_DUMP",
+            Self::MOUNTPROC3_UMNT => "MOUNTPROC3_UMNT",
+            Self::MOUNTPROC3_UMNTALL => "MOUNTPROC3_UMNTALL",
+            Self::MOUNTPROC3_EXPORT => "MOUNTPROC3_EXPORT",
         };
         write!(f, "{value}")
     }

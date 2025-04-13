@@ -69,12 +69,12 @@ impl std::convert::TryFrom<u32> for PMAP_PROG {
 impl std::fmt::Display for PMAP_PROG {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            PMAP_PROG::PMAPPROC_NULL => "PMAPPROC_NULL",
-            PMAP_PROG::PMAPPROC_SET => "PMAPPROC_SET",
-            PMAP_PROG::PMAPPROC_UNSET => "PMAPPROC_UNSET",
-            PMAP_PROG::PMAPPROC_GETPORT => "PMAPPROC_GETPORT",
-            PMAP_PROG::PMAPPROC_DUMP => "PMAPPROC_DUMP",
-            PMAP_PROG::PMAPPROC_CALLIT => "PMAPPROC_CALLIT",
+            Self::PMAPPROC_NULL => "PMAPPROC_NULL",
+            Self::PMAPPROC_SET => "PMAPPROC_SET",
+            Self::PMAPPROC_UNSET => "PMAPPROC_UNSET",
+            Self::PMAPPROC_GETPORT => "PMAPPROC_GETPORT",
+            Self::PMAPPROC_DUMP => "PMAPPROC_DUMP",
+            Self::PMAPPROC_CALLIT => "PMAPPROC_CALLIT",
         };
         write!(f, "{name}")
     }
