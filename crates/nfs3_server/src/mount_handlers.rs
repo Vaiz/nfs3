@@ -1,8 +1,9 @@
-use std::io::{Read, Write};
-
-use nfs3_types::mount::*;
-use nfs3_types::rpc::{accept_stat_data, auth_flavor, call_body};
-use nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack, Void};
+use nfs3_types::mount::{
+    MOUNT_PROGRAM, VERSION, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok,
+    mountstat3,
+};
+use nfs3_types::rpc::{accept_stat_data, auth_flavor};
+use nfs3_types::xdr_codec::{List, Opaque, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
@@ -44,7 +45,7 @@ pub async fn handle_mount(
         MOUNTPROC3_UMNT => handle(context, message, mountproc3_umnt).await,
         MOUNTPROC3_UMNTALL => handle(context, message, mountproc3_umnt_all).await,
         MOUNTPROC3_EXPORT => handle(context, message, mountproc3_export).await,
-        _ => {
+        MOUNTPROC3_DUMP => {
             warn!("Unimplemented message {proc}");
             message
                 .into_error_reply(accept_stat_data::PROC_UNAVAIL)
@@ -95,19 +96,19 @@ async fn mountproc3_mnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> mo
     }
 }
 
-/// exports MOUNTPROC3_EXPORT(void) = 5;
+/// exports `MOUNTPROC3_EXPORT(void)` = 5;
 ///
 /// typedef struct groupnode *groups;
 ///
 /// struct groupnode {
-/// name     gr_name;
-/// groups   gr_next;
+/// name     `gr_name`;
+/// groups   `gr_next`;
 /// };
 ///
 /// typedef struct exportnode *exports;
 ///
 /// struct exportnode {
-/// dirpath  ex_dir;
+/// dirpath  `ex_dir`;
 // groups   ex_groups;
 // exports  ex_next;
 /// };
@@ -134,9 +135,7 @@ async fn mountproc3_export(context: &RPCContext, _: u32, _: Void) -> exports<'st
     }])
 }
 
-async fn mountproc3_umnt(
-    context: &RPCContext, xid: u32, path: dirpath<'_>
-) -> Void {
+async fn mountproc3_umnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> Void {
     let utf8path = match std::str::from_utf8(&path.0) {
         Ok(path) => path,
         Err(e) => {
@@ -152,9 +151,7 @@ async fn mountproc3_umnt(
     Void
 }
 
-pub async fn mountproc3_umnt_all(
-    context: &RPCContext, xid: u32, _: Void
-) -> Void {
+pub async fn mountproc3_umnt_all(context: &RPCContext, xid: u32, _: Void) -> Void {
     debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;

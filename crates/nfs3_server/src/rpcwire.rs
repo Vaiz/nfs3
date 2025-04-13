@@ -100,7 +100,7 @@ async fn handle_rpc_message(
 }
 
 /// Handles the RPC message and returns a result. The handler is an async function
-pub(crate) async fn handle<'a, I, O>(
+pub async fn handle<'a, I, O>(
     context: &RPCContext,
     mut message: IncomingRpcMessage,
     handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
