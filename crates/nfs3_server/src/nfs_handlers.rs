@@ -10,9 +10,9 @@ use nfs3_types::nfs3::{
     PATHCONF3res, PATHCONF3resfail, PATHCONF3resok, READ3args, READ3res, READ3resfail, READ3resok,
     READDIR3args, READDIR3res, READDIR3resfail, READDIR3resok, READDIRPLUS3args, READDIRPLUS3res,
     READDIRPLUS3resfail, READDIRPLUS3resok, SETATTR3args, SYMLINK3args, VERSION, WRITE3args,
-    WRITE3resok, cookieverf3, createhow3, dirlist3, dirlistplus3, diropargs3, fileid3, nfs_fh3,
-    nfsstat3, post_op_attr, post_op_fh3, pre_op_attr, sattrguard3, stable_how, wcc_attr, wcc_data,
-    writeverf3,
+    WRITE3res, WRITE3resfail, WRITE3resok, cookieverf3, createhow3, dirlist3, dirlistplus3,
+    diropargs3, fileid3, nfs_fh3, nfsstat3, post_op_attr, post_op_fh3, pre_op_attr, sattrguard3,
+    stable_how, wcc_attr, wcc_data, writeverf3,
 };
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, PackedSize, Unpack, Void};
@@ -20,7 +20,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
-use crate::rpc::{garbage_args_reply_message, make_success_reply, proc_unavail_reply_message};
+use crate::rpc::{make_success_reply, proc_unavail_reply_message};
 use crate::rpcwire::HandleResult;
 use crate::rpcwire::messages::{CompleteRpcMessage, IncomingRpcMessage, OutgoingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
@@ -64,6 +64,7 @@ pub async fn handle_nfs(
         NFSPROC3_FSSTAT => handle(context, proc, message, nfsproc3_fsstat).await,
         NFSPROC3_READDIR => handle(context, proc, message, nfsproc3_readdir).await,
         NFSPROC3_READDIRPLUS => handle(context, proc, message, nfsproc3_readdirplus).await,
+        NFSPROC3_WRITE => handle(context, proc, message, nfsproc3_write).await,
         _ => {
             // deprecated way of handling NFS messages
             let mut input = message.take_data();
@@ -115,7 +116,6 @@ async fn handle_nfs_old(
     context: &RPCContext,
 ) -> Result<(), anyhow::Error> {
     match proc {
-        NFS_PROGRAM::NFSPROC3_WRITE => nfsproc3_write(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_CREATE => nfsproc3_create(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_SETATTR => nfsproc3_setattr(xid, input, output, context).await?,
         NFS_PROGRAM::NFSPROC3_REMOVE => nfsproc3_remove(xid, input, output, context).await?,
@@ -149,7 +149,7 @@ async fn nfsproc3_getattr(
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("getattr error {} --> {stat:?}", xid);
+            warn!("getattr error {} --> {stat}", xid);
             return GETATTR3res::Err((stat, Void));
         }
     };
@@ -160,7 +160,7 @@ async fn nfsproc3_getattr(
             GETATTR3res::Ok(GETATTR3resok { obj_attributes })
         }
         Err(stat) => {
-            warn!("getattr error {} --> {stat:?}", xid);
+            warn!("getattr error {} --> {stat}", xid);
             GETATTR3res::Err((stat, Void))
         }
     }
@@ -176,7 +176,7 @@ async fn nfsproc3_lookup<'a>(
     let dirid = match context.vfs.fh_to_id(&dirops.dir) {
         Ok(dirid) => dirid,
         Err(stat) => {
-            warn!("lookup error {}({:?}) --> {stat:?}", xid, dirops.name,);
+            warn!("lookup error {}({:?}) --> {stat}", xid, dirops.name,);
             return LOOKUP3res::Err((stat, LOOKUP3resfail::default()));
         }
     };
@@ -192,7 +192,7 @@ async fn nfsproc3_lookup<'a>(
             })
         }
         Err(stat) => {
-            warn!("lookup error {}({:?}) --> {stat:?}", xid, dirops.name,);
+            warn!("lookup error {}({:?}) --> {stat}", xid, dirops.name,);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
         }
     }
@@ -203,7 +203,7 @@ async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> 
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("read error {} --> {stat:?}", xid);
+            warn!("read error {} --> {stat}", xid);
             return READ3res::Err((stat, READ3resfail::default()));
         }
     };
@@ -224,7 +224,7 @@ async fn nfsproc3_read(context: &RPCContext, xid: u32, read3args: READ3args) -> 
             })
         }
         Err(stat) => {
-            error!("read error {} --> {stat:?}", xid);
+            error!("read error {} --> {stat}", xid);
             READ3res::Err((stat, READ3resfail { file_attributes }))
         }
     }
@@ -235,7 +235,7 @@ async fn nfsproc3_fsinfo(context: &RPCContext, xid: u32, args: FSINFO3args) -> F
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("fsinfo error {xid} --> {stat:?}");
+            warn!("fsinfo error {xid} --> {stat}");
             return FSINFO3res::Err((stat, FSINFO3resfail::default()));
         }
     };
@@ -246,7 +246,7 @@ async fn nfsproc3_fsinfo(context: &RPCContext, xid: u32, args: FSINFO3args) -> F
             FSINFO3res::Ok(fsinfo)
         }
         Err(stat) => {
-            warn!("fsinfo error {xid} --> {stat:?}");
+            warn!("fsinfo error {xid} --> {stat}");
             FSINFO3res::Err((
                 stat,
                 FSINFO3resfail {
@@ -264,7 +264,7 @@ async fn nfsproc3_access(context: &RPCContext, xid: u32, args: ACCESS3args) -> A
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("access error {xid} --> {stat:?}");
+            warn!("access error {xid} --> {stat}");
             return ACCESS3res::Err((stat, ACCESS3resfail::default()));
         }
     };
@@ -289,7 +289,7 @@ async fn nfsproc3_pathconf(context: &RPCContext, xid: u32, args: PATHCONF3args) 
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("pathconf error {xid} --> {stat:?}");
+            warn!("pathconf error {xid} --> {stat}");
             return PATHCONF3res::Err((stat, PATHCONF3resfail::default()));
         }
     };
@@ -315,7 +315,7 @@ async fn nfsproc3_fsstat(context: &RPCContext, xid: u32, args: FSSTAT3args) -> F
     let id = match context.vfs.fh_to_id(&handle) {
         Ok(id) => id,
         Err(stat) => {
-            warn!("fsstat error {xid} --> {stat:?}");
+            warn!("fsstat error {xid} --> {stat}");
             return FSSTAT3res::Err((stat, FSSTAT3resfail::default()));
         }
     };
@@ -421,7 +421,7 @@ async fn nfsproc3_readdirplus(
     if args.maxcount < 128 {
         // we have no space to write anything
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
-        error!("readdirplus error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
     let max_bytes_allowed = args.maxcount as usize - 128;
@@ -429,7 +429,7 @@ async fn nfsproc3_readdirplus(
     let iter = context.vfs.readdirplus(dirid, args.cookie).await;
 
     if let Err(stat) = iter {
-        error!("readdirplus error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
@@ -457,7 +457,7 @@ async fn nfsproc3_readdirplus(
                 break;
             }
             NextResult::Err(stat) => {
-                error!("readdirplus error {xid} --> {stat:?}");
+                error!("readdirplus error {xid} --> {stat}");
                 return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
             }
         }
@@ -466,7 +466,7 @@ async fn nfsproc3_readdirplus(
     let entries = entries_result.into_inner();
     if entries.0.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
-        error!("readdirplus error {xid} --> {stat:?}");
+        error!("readdirplus error {xid} --> {stat}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
 
@@ -570,7 +570,7 @@ async fn nfsproc3_readdir(
                 break;
             }
             NextResult::Err(stat) => {
-                error!("readdir error {xid} --> {stat:?}");
+                error!("readdir error {xid} --> {stat}");
                 return READDIR3res::Err((
                     stat,
                     READDIR3resfail {
@@ -584,7 +584,7 @@ async fn nfsproc3_readdir(
     let entries = entries.into_inner();
     if entries.is_empty() && !eof {
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
-        error!("readdir error {xid} --> {stat:?}");
+        error!("readdir error {xid} --> {stat}");
         return READDIR3res::Err((
             stat,
             READDIR3resfail {
@@ -598,75 +598,71 @@ async fn nfsproc3_readdir(
     Nfs3Result::Ok(resok)
 }
 
-pub async fn nfsproc3_write(
-    xid: u32,
-    input: &mut impl Read,
-    output: &mut impl Write,
-    context: &RPCContext,
-) -> Result<(), anyhow::Error> {
-    // if we do not have write capabilities
+async fn nfsproc3_write(context: &RPCContext, xid: u32, write3args: WRITE3args<'_>) -> WRITE3res {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
-        make_success_reply(xid).pack(output)?;
-        nfsstat3::NFS3ERR_ROFS.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
+        return WRITE3res::Err((nfsstat3::NFS3ERR_ROFS, WRITE3resfail::default()));
     }
 
-    let args = WRITE3args::unpack(input)?.0;
-    debug!("nfsproc3_write({:?},...) ", xid);
-    // sanity check the length
-    if args.data.len() != args.count as usize {
-        garbage_args_reply_message(xid).pack(output)?;
-        return Ok(());
+    if write3args.data.len() != write3args.count as usize {
+        error!(
+            "Data length mismatch: expected {}, got {}",
+            write3args.count,
+            write3args.data.len()
+        );
+        return WRITE3res::Err((nfsstat3::NFS3ERR_INVAL, WRITE3resfail::default()));
     }
 
-    let id = context.vfs.fh_to_id(&args.file);
-    if let Err(stat) = id {
-        make_success_reply(xid).pack(output)?;
-        stat.pack(output)?;
-        wcc_data::default().pack(output)?;
-        return Ok(());
-    }
-    let id = id.unwrap();
+    let id = match context.vfs.fh_to_id(&write3args.file) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("write error {xid} --> {stat}");
+            return WRITE3res::Err((stat, WRITE3resfail::default()));
+        }
+    };
 
-    // get the object attributes before the write
-    let pre_obj_attr = match context.vfs.getattr(id).await {
-        Ok(v) => {
-            let wccattr = wcc_attr {
+    let pre_obj_attr = context
+        .vfs
+        .getattr(id)
+        .await
+        .map_or(pre_op_attr::None, |v| {
+            pre_op_attr::Some(wcc_attr {
                 size: v.size,
                 mtime: v.mtime,
                 ctime: v.ctime,
-            };
-            pre_op_attr::Some(wccattr)
-        }
-        Err(_) => pre_op_attr::None,
-    };
+            })
+        });
 
-    match context.vfs.write(id, args.offset, &args.data).await {
+    match context
+        .vfs
+        .write(id, write3args.offset, &write3args.data)
+        .await
+    {
         Ok(fattr) => {
-            debug!("write success {:?} --> {:?}", xid, fattr);
-            let res = WRITE3resok {
+            debug!("write success {xid} --> {fattr:?}");
+            WRITE3res::Ok(WRITE3resok {
                 file_wcc: wcc_data {
                     before: pre_obj_attr,
                     after: post_op_attr::Some(fattr),
                 },
-                count: args.count,
+                count: write3args.count,
                 committed: stable_how::FILE_SYNC,
                 verf: writeverf3(context.vfs.serverid().0),
-            };
-            make_success_reply(xid).pack(output)?;
-            nfsstat3::NFS3_OK.pack(output)?;
-            res.pack(output)?;
+            })
         }
         Err(stat) => {
-            error!("write error {:?} --> {:?}", xid, stat);
-            make_success_reply(xid).pack(output)?;
-            stat.pack(output)?;
-            wcc_data::default().pack(output)?;
+            error!("write error {xid} --> {stat}");
+            WRITE3res::Err((
+                stat,
+                WRITE3resfail {
+                    file_wcc: wcc_data {
+                        before: pre_obj_attr,
+                        after: post_op_attr::None,
+                    },
+                },
+            ))
         }
     }
-    Ok(())
 }
 
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
