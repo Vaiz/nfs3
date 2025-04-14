@@ -9,12 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.3.0...nfs3_client-v0.4.0) - 2025-04-13
 
-### Added
+### Changes
 
-- feat! make nfs3_client operations work with default tokio scheduler ([#68](https://github.com/Vaiz/nfs3/pull/68))
-- apply new clippy rules to nfs3_types, nfs3_macros ([#66](https://github.com/Vaiz/nfs3/pull/66))
-- apply new clippy rules to nfs3_client crate ([#65](https://github.com/Vaiz/nfs3/pull/65))
-- add fragment_header type ([#61](https://github.com/Vaiz/nfs3/pull/61))
+- make nfs3_client operations work with default tokio scheduler ([#68](https://github.com/Vaiz/nfs3/pull/68))
+- apply new clippy rules ([#65](https://github.com/Vaiz/nfs3/pull/65))
 
 ## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.2.0...nfs3_client-v0.3.0) - 2025-03-23
 
