@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.4.0...nfs3_server-v0.4.1) - 2025-04-13
+
+### Changes
+
+- improve transaction tracker performance ([#58](https://github.com/Vaiz/nfs3/pull/58))
+- major rework of nfs3_server request handlers ([#69](https://github.com/Vaiz/nfs3/pull/69))
+- return `GARBAGE_ARGS` if RPC request cannot be parsed ([#63](https://github.com/Vaiz/nfs3/pull/63))
+- apply new clippy rules ([#64](https://github.com/Vaiz/nfs3/pull/64))
+
 ## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.3.0...nfs3_server-v0.4.0) - 2025-03-23
 
 ### Changes

@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.1...nfs3_macros-v0.3.2) - 2025-04-13
+
+### Changes
+
+- apply new clippy rules ([#66](https://github.com/Vaiz/nfs3/pull/66))
+
 ## [0.3.1](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.0...nfs3_macros-v0.3.1) - 2025-03-23
 
-### Other
+### Changes
 
 - update Cargo.toml dependencies
 
 ## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.2.0...nfs3_macros-v0.3.0) - 2025-03-02
 
-### Other
+### Changes
 
 - [**breaking**] update to Rust 2024 ([#32](https://github.com/Vaiz/nfs3/pull/32))

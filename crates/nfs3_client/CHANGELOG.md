@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.3.0...nfs3_client-v0.4.0) - 2025-04-13
+
+### Changes
+
+- make nfs3_client operations work with default tokio scheduler ([#68](https://github.com/Vaiz/nfs3/pull/68))
+- apply new clippy rules ([#65](https://github.com/Vaiz/nfs3/pull/65))
+
 ## [0.3.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.2.0...nfs3_client-v0.3.0) - 2025-03-23
 
 ### Changes
