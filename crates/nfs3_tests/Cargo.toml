@@ -14,7 +14,6 @@ nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["__test_
 nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
 
 anyhow.workspace = true
-async-trait.workspace = true
 intaglio.workspace = true
 tokio = { workspace = true, default-features = false, features = ["rt", "sync", "io-util"] }
 tracing.workspace = true

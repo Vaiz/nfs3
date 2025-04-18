@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
-use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -100,7 +99,6 @@ where
     }
 }
 
-#[async_trait]
 pub trait NFSTcp: Send + Sync {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16;
@@ -113,7 +111,7 @@ pub trait NFSTcp: Send + Sync {
     fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>);
 
     /// Loops forever and never returns handling all incoming connections.
-    async fn handle_forever(&self) -> io::Result<()>;
+    fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
 impl<T: NFSFileSystem + 'static> NFSTcpListener<T> {
@@ -212,7 +210,6 @@ impl<T: NFSFileSystem + 'static> NFSTcpListener<T> {
     }
 }
 
-#[async_trait]
 impl<T: NFSFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16 {
