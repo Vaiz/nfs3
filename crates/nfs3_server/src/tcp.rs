@@ -17,7 +17,7 @@ use crate::units::KIBIBYTE;
 use crate::vfs::NFSFileSystem;
 
 /// A NFS Tcp Connection Handler
-pub struct NFSTcpListener<T: NFSFileSystem + Send + Sync + 'static> {
+pub struct NFSTcpListener<T: NFSFileSystem + 'static> {
     listener: TcpListener,
     port: u16,
     arcfs: Arc<T>,
@@ -27,7 +27,7 @@ pub struct NFSTcpListener<T: NFSFileSystem + Send + Sync + 'static> {
     stop_notify: Arc<tokio::sync::Notify>,
 }
 
-impl<T: NFSFileSystem + Send + Sync + 'static> Drop for NFSTcpListener<T> {
+impl<T: NFSFileSystem + 'static> Drop for NFSTcpListener<T> {
     fn drop(&mut self) {
         self.stop_notify.notify_waiters();
     }
@@ -43,14 +43,16 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 }
 
 /// processes an established socket
-pub(crate) async fn process_socket<IO>(
+pub(crate) async fn process_socket<IO, T>(
     mut socket: IO,
-    context: RPCContext,
+    context: RPCContext<T>,
 ) -> Result<(), anyhow::Error>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    T: NFSFileSystem + 'static,
 {
-    let (mut message_handler, mut socksend, mut msgrecvchan) = SocketMessageHandler::new(&context);
+    let (mut message_handler, mut socksend, mut msgrecvchan) =
+        SocketMessageHandler::new(context.clone());
 
     tokio::spawn(async move {
         loop {
@@ -114,7 +116,7 @@ pub trait NFSTcp: Send + Sync {
     async fn handle_forever(&self) -> io::Result<()>;
 }
 
-impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
+impl<T: NFSFileSystem + 'static> NFSTcpListener<T> {
     /// Binds to a ipstr of the form [ip address]:port. For instance
     /// "127.0.0.1:12000". fs is an instance of an implementation
     /// of `NFSFileSystem`.
@@ -211,7 +213,7 @@ impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcpListener<T> {
 }
 
 #[async_trait]
-impl<T: NFSFileSystem + Send + Sync + 'static> NFSTcp for NFSTcpListener<T> {
+impl<T: NFSFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16 {
         let addr = self

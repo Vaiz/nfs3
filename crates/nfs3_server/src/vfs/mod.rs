@@ -110,7 +110,7 @@ pub enum VFSCapabilities {
 //
 ///  The 0 fileid is reserved and should not be used
 #[async_trait]
-pub trait NFSFileSystem: Sync {
+pub trait NFSFileSystem: Send + Sync {
     /// Returns the set of capabilities supported
     fn capabilities(&self) -> VFSCapabilities;
     /// Returns the ID the of the root directory "/"

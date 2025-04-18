@@ -9,12 +9,16 @@ use tracing::{debug, error, warn};
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::vfs::NFSFileSystem;
 
 #[allow(clippy::enum_glob_use)]
-pub async fn handle_mount(
-    context: &RPCContext,
+pub async fn handle_mount<T>(
+    context: &RPCContext<T>,
     message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult> {
+) -> anyhow::Result<HandleResult>
+where
+    T: NFSFileSystem,
+{
     use MOUNT_PROGRAM::*;
 
     let call = message.body();
@@ -48,11 +52,18 @@ pub async fn handle_mount(
     }
 }
 
-async fn mountproc3_null(_: &RPCContext, _: u32, _: Void) -> Void {
+async fn mountproc3_null<T>(_: &RPCContext<T>, _: u32, _: Void) -> Void {
     Void
 }
 
-async fn mountproc3_mnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> mountres3<'static> {
+async fn mountproc3_mnt<T>(
+    context: &RPCContext<T>,
+    xid: u32,
+    path: dirpath<'_>,
+) -> mountres3<'static>
+where
+    T: NFSFileSystem,
+{
     let path = std::str::from_utf8(&path.0);
     let utf8path = match path {
         Ok(path) => path,
@@ -121,7 +132,11 @@ async fn mountproc3_mnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> mo
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export(context: &RPCContext, _: u32, _: Void) -> exports<'static, 'static> {
+async fn mountproc3_export<T>(
+    context: &RPCContext<T>,
+    _: u32,
+    _: Void,
+) -> exports<'static, 'static> {
     let export_name = context.export_name.as_bytes().to_vec();
     List(vec![export_node {
         ex_dir: dirpath(Opaque::owned(export_name)),
@@ -129,7 +144,7 @@ async fn mountproc3_export(context: &RPCContext, _: u32, _: Void) -> exports<'st
     }])
 }
 
-async fn mountproc3_umnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> Void {
+async fn mountproc3_umnt<T>(context: &RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void {
     let utf8path = match std::str::from_utf8(&path.0) {
         Ok(path) => path,
         Err(e) => {
@@ -145,7 +160,7 @@ async fn mountproc3_umnt(context: &RPCContext, xid: u32, path: dirpath<'_>) -> V
     Void
 }
 
-pub async fn mountproc3_umnt_all(context: &RPCContext, xid: u32, _: Void) -> Void {
+pub async fn mountproc3_umnt_all<T>(context: &RPCContext<T>, xid: u32, _: Void) -> Void {
     debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;

@@ -6,11 +6,15 @@ use tracing::{debug, error, warn};
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::vfs::NFSFileSystem;
 
-pub async fn handle_portmap(
-    context: &RPCContext,
+pub async fn handle_portmap<T>(
+    context: &RPCContext<T>,
     message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult> {
+) -> anyhow::Result<HandleResult>
+where
+    T: NFSFileSystem,
+{
     let call = message.body();
     if call.vers != portmap::VERSION {
         error!(
@@ -35,13 +39,13 @@ pub async fn handle_portmap(
     }
 }
 
-async fn pmapproc_null(_: &RPCContext, xid: u32, _: Void) -> Void {
+async fn pmapproc_null<T>(_: &RPCContext<T>, xid: u32, _: Void) -> Void {
     debug!("pmapproc_null({})", xid);
     Void
 }
 
 // We fake a portmapper here. And always direct back to the same host port
-async fn pmapproc_getport(context: &RPCContext, xid: u32, m: mapping) -> u32 {
+async fn pmapproc_getport<T>(context: &RPCContext<T>, xid: u32, m: mapping) -> u32 {
     debug!("pmapproc_getport({xid}, {m:?})");
     let port = u32::from(context.local_port);
     debug!("\t{xid} --> {port}");
