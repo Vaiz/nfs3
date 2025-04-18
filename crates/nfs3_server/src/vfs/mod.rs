@@ -3,7 +3,6 @@ mod iterator;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
-use async_trait::async_trait;
 pub use iterator::*;
 use nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3, fattr3,
@@ -109,7 +108,6 @@ pub enum VFSCapabilities {
 ///  getattr needs to be fast. NFS uses that a lot
 //
 ///  The 0 fileid is reserved and should not be used
-#[async_trait]
 pub trait NFSFileSystem: Send + Sync {
     /// Returns the set of capabilities supported
     fn capabilities(&self) -> VFSCapabilities;
@@ -122,22 +120,34 @@ pub trait NFSFileSystem: Send + Sync {
     /// and this should return the id of the file "dir/a.txt"
     ///
     /// This method should be fast as it is used very frequently.
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3>;
+    fn lookup<'a>(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'a>,
+    ) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send;
 
     /// Returns the attributes of an id.
     /// This method should be fast as it is used very frequently.
-    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3>;
+    fn getattr(&self, id: fileid3) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
     /// Sets the attributes of an id
     /// this should return Err(nfsstat3::NFS3ERR_ROFS) if readonly
-    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3>;
+    fn setattr(
+        &self,
+        id: fileid3,
+        setattr: sattr3,
+    ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
     /// Reads the contents of a file returning (bytes, EOF)
     /// Note that offset/count may go past the end of the file and that
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
-    async fn read(&self, id: fileid3, offset: u64, count: u32)
-    -> Result<(Vec<u8>, bool), nfsstat3>;
+    fn read(
+        &self,
+        id: fileid3,
+        offset: u64,
+        count: u32,
+    ) -> impl Future<Output = Result<(Vec<u8>, bool), nfsstat3>> + Send;
 
     /// Writes the contents of a file returning (bytes, EOF)
     /// Note that offset/count may go past the end of the file and that
@@ -151,58 +161,67 @@ pub trait NFSFileSystem: Send + Sync {
     /// incorrectly returned `NFSERR_ISDIR` if the file system
     /// object type was not a regular file. The correct return
     /// value for the NFS version 3 protocol is `NFS3ERR_INVAL`.
-    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3>;
+    fn write(
+        &self,
+        id: fileid3,
+        offset: u64,
+        data: &[u8],
+    ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
     /// Creates a file with the following attributes.
     /// If not supported due to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn create(
+    fn create<'a>(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'a>,
         attr: sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3>;
+    ) -> impl Future<Output = Result<(fileid3, fattr3), nfsstat3>> + Send;
 
     /// Creates a file if it does not already exist
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn create_exclusive(
+    fn create_exclusive<'a>(
         &self,
         dirid: fileid3,
-        filename: &filename3,
-    ) -> Result<fileid3, nfsstat3>;
+        filename: &filename3<'a>,
+    ) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send;
 
     /// Makes a directory with the following attributes.
     /// If not supported dur to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn mkdir(
+    fn mkdir<'a>(
         &self,
         dirid: fileid3,
-        dirname: &filename3,
-    ) -> Result<(fileid3, fattr3), nfsstat3>;
+        dirname: &filename3<'a>,
+    ) -> impl Future<Output = Result<(fileid3, fattr3), nfsstat3>> + Send;
 
     /// Removes a file.
     /// If not supported due to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3>;
+    fn remove<'a>(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'a>,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
 
     /// Removes a file.
     /// If not supported due to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn rename(
+    fn rename<'a>(
         &self,
         from_dirid: fileid3,
-        from_filename: &filename3,
+        from_filename: &filename3<'a>,
         to_dirid: fileid3,
-        to_filename: &filename3,
-    ) -> Result<(), nfsstat3>;
+        to_filename: &filename3<'a>,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
 
     /// Simple version of readdir.
     /// Only need to return filename and id
-    async fn readdir(
+    fn readdir(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3>;
+    ) -> impl Future<Output = Result<Box<dyn ReadDirIterator>, nfsstat3>> + Send;
 
     /// Returns the contents of a directory with pagination.
     /// Directory listing should be deterministic.
@@ -211,50 +230,55 @@ pub trait NFSFileSystem: Send + Sync {
     ///
     /// For instance if the directory has entry with ids `[1,6,2,11,8,9]`
     /// and start_after=6, readdir should returning 2,11,8,...
-    async fn readdirplus(
+    fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3>;
+    ) -> impl Future<Output = Result<Box<dyn ReadDirPlusIterator>, nfsstat3>> + Send;
 
     /// Makes a symlink with the following attributes.
     /// If not supported due to readonly file system
     /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    async fn symlink(
+    fn symlink<'a>(
         &self,
         dirid: fileid3,
-        linkname: &filename3,
-        symlink: &nfspath3,
+        linkname: &filename3<'a>,
+        symlink: &nfspath3<'a>,
         attr: &sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3>;
+    ) -> impl Future<Output = Result<(fileid3, fattr3), nfsstat3>> + Send;
 
     /// Reads a symlink
-    async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3>;
+    fn readlink(&self, id: fileid3) -> impl Future<Output = Result<nfspath3, nfsstat3>> + Send;
 
     /// Get static file system Information
-    async fn fsinfo(&self, root_fileid: fileid3) -> Result<fsinfo3, nfsstat3> {
-        let dir_attr = self
-            .getattr(root_fileid)
-            .await
-            .map_or(post_op_attr::None, post_op_attr::Some);
+    fn fsinfo(
+        &self,
+        root_fileid: fileid3,
+    ) -> impl Future<Output = Result<fsinfo3, nfsstat3>> + Send {
+        async move {
+            let dir_attr = self
+                .getattr(root_fileid)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
 
-        let res = fsinfo3 {
-            obj_attributes: dir_attr,
-            rtmax: MEBIBYTE,
-            rtpref: MEBIBYTE,
-            rtmult: MEBIBYTE,
-            wtmax: MEBIBYTE,
-            wtpref: MEBIBYTE,
-            wtmult: MEBIBYTE,
-            dtpref: MEBIBYTE,
-            maxfilesize: 128u64 * GIBIBYTE,
-            time_delta: nfstime3 {
-                seconds: 0,
-                nseconds: 1_000_000,
-            },
-            properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
-        };
-        Ok(res)
+            let res = fsinfo3 {
+                obj_attributes: dir_attr,
+                rtmax: MEBIBYTE,
+                rtpref: MEBIBYTE,
+                rtmult: MEBIBYTE,
+                wtmax: MEBIBYTE,
+                wtpref: MEBIBYTE,
+                wtmult: MEBIBYTE,
+                dtpref: MEBIBYTE,
+                maxfilesize: 128u64 * GIBIBYTE,
+                time_delta: nfstime3 {
+                    seconds: 0,
+                    nseconds: 1_000_000,
+                },
+                properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
+            };
+            Ok(res)
+        }
     }
 
     /// Converts the fileid to an opaque NFS file handle. Optional.
@@ -267,16 +291,18 @@ pub trait NFSFileSystem: Send + Sync {
     }
     /// Converts a complete path to a fileid.  Optional.
     /// The default implementation walks the directory structure with lookup()
-    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
-        let splits = path.split('/');
-        let mut fid = self.root_dir();
-        for component in splits {
-            if component.is_empty() {
-                continue;
+    fn path_to_id(&self, path: &str) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send {
+        async move {
+            let splits = path.split('/');
+            let mut fid = self.root_dir();
+            for component in splits {
+                if component.is_empty() {
+                    continue;
+                }
+                fid = self.lookup(fid, &component.as_bytes().into()).await?;
             }
-            fid = self.lookup(fid, &component.as_bytes().into()).await?;
+            Ok(fid)
         }
-        Ok(fid)
     }
 
     fn serverid(&self) -> cookieverf3 {

@@ -524,7 +524,6 @@ impl MemFs {
     }
 }
 
-#[async_trait::async_trait]
 impl NFSFileSystem for MemFs {
     fn capabilities(&self) -> VFSCapabilities {
         VFSCapabilities::ReadWrite
@@ -534,7 +533,11 @@ impl NFSFileSystem for MemFs {
         self.rootdir
     }
 
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+    async fn lookup<'a>(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'a>,
+    ) -> Result<fileid3, nfsstat3> {
         self.lookup_impl(dirid, filename)
     }
 
@@ -571,45 +574,45 @@ impl NFSFileSystem for MemFs {
         file.write(offset, data)
     }
 
-    async fn create(
+    async fn create<'a>(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'a>,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.add_file(dirid, filename.clone_to_owned(), attr, Vec::new())
     }
 
-    async fn create_exclusive(
+    async fn create_exclusive<'a>(
         &self,
         _dirid: fileid3,
-        _filename: &filename3,
+        _filename: &filename3<'a>,
     ) -> Result<fileid3, nfsstat3> {
         tracing::warn!("create_exclusive not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn mkdir(
+    async fn mkdir<'a>(
         &self,
         dirid: fileid3,
-        dirname: &filename3,
+        dirname: &filename3<'a>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.add_dir(dirid, dirname.clone_to_owned())
     }
 
-    async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
+    async fn remove<'a>(&self, dirid: fileid3, filename: &filename3<'a>) -> Result<(), nfsstat3> {
         self.fs
             .write()
             .expect("lock is poisoned")
             .remove(dirid, filename)
     }
 
-    async fn rename(
+    async fn rename<'a>(
         &self,
         _from_dirid: fileid3,
-        _from_filename: &filename3,
+        _from_filename: &filename3<'a>,
         _to_dirid: fileid3,
-        _to_filename: &filename3,
+        _to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         tracing::warn!("rename not implemented");
         return Err(nfsstat3::NFS3ERR_NOTSUPP);
@@ -633,11 +636,11 @@ impl NFSFileSystem for MemFs {
         Ok(Box::new(iter))
     }
 
-    async fn symlink(
+    async fn symlink<'a>(
         &self,
         _dirid: fileid3,
-        _linkname: &filename3,
-        _symlink: &nfspath3,
+        _linkname: &filename3<'a>,
+        _symlink: &nfspath3<'a>,
         _attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         tracing::warn!("symlink not implemented");

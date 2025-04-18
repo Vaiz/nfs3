@@ -113,7 +113,6 @@ impl<FS> WasmFs<FS> {
     }
 }
 
-#[async_trait::async_trait]
 impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> {
     fn capabilities(&self) -> VFSCapabilities {
         VFSCapabilities::ReadWrite
@@ -121,7 +120,11 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     fn root_dir(&self) -> fileid3 {
         self.root
     }
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+    async fn lookup<'a>(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'a>,
+    ) -> Result<fileid3, nfsstat3> {
         let path = self.id_to_path(dirid)?;
         let filename = Self::filename_to_utf8(filename)?;
 
@@ -239,41 +242,40 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn create(
+    async fn create<'a>(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'a>,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn create_exclusive(
+    async fn create_exclusive<'a>(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'a>,
     ) -> Result<fileid3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
-
-    async fn mkdir(
+    async fn mkdir<'a>(
         &self,
         dirid: fileid3,
-        dirname: &filename3,
+        dirname: &filename3<'a>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
+    async fn remove<'a>(&self, dirid: fileid3, filename: &filename3<'a>) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn rename(
+    async fn rename<'a>(
         &self,
         from_dirid: fileid3,
-        from_filename: &filename3,
+        from_filename: &filename3<'a>,
         to_dirid: fileid3,
-        to_filename: &filename3,
+        to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
@@ -293,12 +295,11 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
-
-    async fn symlink(
+    async fn symlink<'a>(
         &self,
         dirid: fileid3,
-        linkname: &filename3,
-        symlink: &nfspath3,
+        linkname: &filename3<'a>,
+        symlink: &nfspath3<'a>,
         attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)

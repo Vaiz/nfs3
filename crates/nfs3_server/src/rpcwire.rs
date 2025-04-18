@@ -81,7 +81,7 @@ where
 }
 
 /// Handles the RPC message and returns a result. The handler is an async function
-pub async fn handle<'a, I, O, T>(
+pub async fn handle<I, O, T>(
     context: &RPCContext<T>,
     mut message: IncomingRpcMessage,
     handler: impl AsyncFnOnce(&RPCContext<T>, u32, I) -> O,
