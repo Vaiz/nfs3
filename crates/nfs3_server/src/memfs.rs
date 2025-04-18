@@ -615,7 +615,7 @@ impl NFSFileSystem for MemFs {
         _to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         tracing::warn!("rename not implemented");
-        return Err(nfsstat3::NFS3ERR_NOTSUPP);
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readdir(
@@ -658,7 +658,7 @@ impl NFSFileSystem for MemFs {
 
     async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
         tracing::warn!("readlink not implemented");
-        return Err(nfsstat3::NFS3ERR_NOTSUPP);
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {

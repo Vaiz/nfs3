@@ -93,7 +93,7 @@ pub enum VFSCapabilities {
 //
 /// readdir pagination
 /// ------------------
-/// We do not use cookie verifier. We just use the start_after.  The
+/// We do not use cookie verifier. We just use the `start_after`.  The
 /// implementation should allow startat to start at any position. That is,
 /// the next query to readdir may be the last entry in the previous readdir
 /// response.
@@ -116,14 +116,14 @@ pub trait NFSFileSystem: Send + Sync {
     /// Look up the id of a path in a directory
     ///
     /// i.e. given a directory dir/ containing a file a.txt
-    /// this may call lookup(id_of("dir/"), "a.txt")
+    /// this may call `lookup(id_of("dir`/"), "a.txt")
     /// and this should return the id of the file "dir/a.txt"
     ///
     /// This method should be fast as it is used very frequently.
-    fn lookup<'a>(
+    fn lookup(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
     ) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send;
 
     /// Returns the attributes of an id.
@@ -131,7 +131,7 @@ pub trait NFSFileSystem: Send + Sync {
     fn getattr(&self, id: fileid3) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
     /// Sets the attributes of an id
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS) if readonly
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)` if readonly
     fn setattr(
         &self,
         id: fileid3,
@@ -153,9 +153,9 @@ pub trait NFSFileSystem: Send + Sync {
     /// Note that offset/count may go past the end of the file and that
     /// in that case, the file is extended.
     /// If not supported due to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
     ///
-    /// # NFS3ERR_INVAL:
+    /// # `NFS3ERR_INVAL`:
     ///
     /// Some NFS version 2 protocol server implementations
     /// incorrectly returned `NFSERR_ISDIR` if the file system
@@ -170,43 +170,43 @@ pub trait NFSFileSystem: Send + Sync {
 
     /// Creates a file with the following attributes.
     /// If not supported due to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    fn create<'a>(
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    fn create(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
         attr: sattr3,
     ) -> impl Future<Output = Result<(fileid3, fattr3), nfsstat3>> + Send;
 
     /// Creates a file if it does not already exist
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    fn create_exclusive<'a>(
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    fn create_exclusive(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
     ) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send;
 
     /// Makes a directory with the following attributes.
     /// If not supported dur to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    fn mkdir<'a>(
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    fn mkdir(
         &self,
         dirid: fileid3,
-        dirname: &filename3<'a>,
+        dirname: &filename3<'_>,
     ) -> impl Future<Output = Result<(fileid3, fattr3), nfsstat3>> + Send;
 
     /// Removes a file.
     /// If not supported due to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
-    fn remove<'a>(
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    fn remove(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
     ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
 
     /// Removes a file.
     /// If not supported due to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
     fn rename<'a>(
         &self,
         from_dirid: fileid3,
@@ -225,11 +225,11 @@ pub trait NFSFileSystem: Send + Sync {
 
     /// Returns the contents of a directory with pagination.
     /// Directory listing should be deterministic.
-    /// Up to max_entries may be returned, and start_after is used
+    /// Up to `max_entries` may be returned, and `start_after` is used
     /// to determine where to start returning entries from.
     ///
     /// For instance if the directory has entry with ids `[1,6,2,11,8,9]`
-    /// and start_after=6, readdir should returning 2,11,8,...
+    /// and `start_after=6`, readdir should returning 2,11,8,...
     fn readdirplus(
         &self,
         dirid: fileid3,
@@ -238,7 +238,7 @@ pub trait NFSFileSystem: Send + Sync {
 
     /// Makes a symlink with the following attributes.
     /// If not supported due to readonly file system
-    /// this should return Err(nfsstat3::NFS3ERR_ROFS)
+    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
     fn symlink<'a>(
         &self,
         dirid: fileid3,
@@ -290,7 +290,7 @@ pub trait NFSFileSystem: Send + Sync {
         DEFAULT_FH_CONVERTER.fh_to_id(id)
     }
     /// Converts a complete path to a fileid.  Optional.
-    /// The default implementation walks the directory structure with lookup()
+    /// The default implementation walks the directory structure with `lookup()`
     fn path_to_id(&self, path: &str) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send {
         async move {
             let splits = path.split('/');
