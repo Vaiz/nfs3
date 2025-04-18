@@ -385,11 +385,7 @@ impl NFSFileSystem for MirrorFS {
         VFSCapabilities::ReadWrite
     }
 
-    async fn lookup<'a>(
-        &self,
-        dirid: fileid3,
-        filename: &filename3<'a>,
-    ) -> Result<fileid3, nfsstat3> {
+    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()) {
             if fsmap.id_to_path.contains_key(&id) {
@@ -526,20 +522,20 @@ impl NFSFileSystem for MirrorFS {
         Ok(metadata_to_fattr3(id, &meta))
     }
 
-    async fn create<'a>(
+    async fn create(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
         setattr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.create_fs_object(dirid, filename, &CreateFSObject::File(setattr))
             .await
     }
 
-    async fn create_exclusive<'a>(
+    async fn create_exclusive(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
     ) -> Result<fileid3, nfsstat3> {
         Ok(self
             .create_fs_object(dirid, filename, &CreateFSObject::Exclusive)
@@ -547,7 +543,7 @@ impl NFSFileSystem for MirrorFS {
             .0)
     }
 
-    async fn remove<'a>(&self, dirid: fileid3, filename: &filename3<'a>) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
         let mut path = fsmap.sym_to_path(&ent.name);
@@ -591,12 +587,12 @@ impl NFSFileSystem for MirrorFS {
         Ok(())
     }
 
-    async fn rename<'a>(
+    async fn rename(
         &self,
         from_dirid: fileid3,
-        from_filename: &filename3<'a>,
+        from_filename: &filename3<'_>,
         to_dirid: fileid3,
-        to_filename: &filename3<'a>,
+        to_filename: &filename3<'_>,
     ) -> Result<(), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
 
@@ -672,10 +668,10 @@ impl NFSFileSystem for MirrorFS {
 
         Ok(())
     }
-    async fn mkdir<'a>(
+    async fn mkdir(
         &self,
         dirid: fileid3,
-        dirname: &filename3<'a>,
+        dirname: &filename3<'_>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.create_fs_object(dirid, dirname, &CreateFSObject::Directory)
             .await

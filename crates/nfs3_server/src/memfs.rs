@@ -533,11 +533,7 @@ impl NFSFileSystem for MemFs {
         self.rootdir
     }
 
-    async fn lookup<'a>(
-        &self,
-        dirid: fileid3,
-        filename: &filename3<'a>,
-    ) -> Result<fileid3, nfsstat3> {
+    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
         self.lookup_impl(dirid, filename)
     }
 
@@ -574,33 +570,33 @@ impl NFSFileSystem for MemFs {
         file.write(offset, data)
     }
 
-    async fn create<'a>(
+    async fn create(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.add_file(dirid, filename.clone_to_owned(), attr, Vec::new())
     }
 
-    async fn create_exclusive<'a>(
+    async fn create_exclusive(
         &self,
         _dirid: fileid3,
-        _filename: &filename3<'a>,
+        _filename: &filename3<'_>,
     ) -> Result<fileid3, nfsstat3> {
         tracing::warn!("create_exclusive not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn mkdir<'a>(
+    async fn mkdir(
         &self,
         dirid: fileid3,
-        dirname: &filename3<'a>,
+        dirname: &filename3<'_>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.add_dir(dirid, dirname.clone_to_owned())
     }
 
-    async fn remove<'a>(&self, dirid: fileid3, filename: &filename3<'a>) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
         self.fs
             .write()
             .expect("lock is poisoned")

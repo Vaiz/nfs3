@@ -87,10 +87,10 @@ pub enum VFSCapabilities {
 /// ---------
 /// Files are only uniquely identified by a 64-bit file id. (basically an inode number)
 /// We automatically produce internally the opaque filehandle which is comprised of
-///  - A 64-bit generation number derived from the server startup time
-///   (i.e. so the opaque file handle expires when the NFS server restarts)
+///  - A 64-bit generation number derived from the server startup time (i.e. so the opaque file
+///    handle expires when the NFS server restarts)
 ///  - The 64-bit file id
-//
+///
 /// readdir pagination
 /// ------------------
 /// We do not use cookie verifier. We just use the `start_after`.  The

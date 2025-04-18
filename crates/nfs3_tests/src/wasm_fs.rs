@@ -120,11 +120,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     fn root_dir(&self) -> fileid3 {
         self.root
     }
-    async fn lookup<'a>(
-        &self,
-        dirid: fileid3,
-        filename: &filename3<'a>,
-    ) -> Result<fileid3, nfsstat3> {
+    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
         let path = self.id_to_path(dirid)?;
         let filename = Self::filename_to_utf8(filename)?;
 
@@ -242,31 +238,31 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn create<'a>(
+    async fn create(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn create_exclusive<'a>(
+    async fn create_exclusive(
         &self,
         dirid: fileid3,
-        filename: &filename3<'a>,
+        filename: &filename3<'_>,
     ) -> Result<fileid3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
-    async fn mkdir<'a>(
+    async fn mkdir(
         &self,
         dirid: fileid3,
-        dirname: &filename3<'a>,
+        dirname: &filename3<'_>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn remove<'a>(&self, dirid: fileid3, filename: &filename3<'a>) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
