@@ -14,23 +14,20 @@ pub enum NextResult<T> {
 ///
 /// All [`ReadDirPlusIterator`] implementations automatically implement `ReadDirIterator`.
 /// In general, there is no need to implement `ReadDirIterator` directly.
-#[async_trait::async_trait]
 pub trait ReadDirIterator: Send + Sync {
     /// Returns the next entry in the directory.
-    async fn next(&mut self) -> NextResult<entry3<'static>>;
+    fn next(&mut self) -> impl Future<Output = NextResult<entry3<'static>>> + Send;
 }
 
 /// Iterator for [`NFSFileSystem::readdirplus`](super::NFSFileSystem::readdirplus)
-#[async_trait::async_trait]
 pub trait ReadDirPlusIterator: Send + Sync {
     /// Returns the next entry in the directory.
     ///
     /// If `entryplus3::name_handle` field is `None`, it will be filled automatically using
     /// [`NFSFileSystem::id_to_fh`](super::NFSFileSystem::id_to_fh).
-    async fn next(&mut self) -> NextResult<entryplus3<'static>>;
+    fn next(&mut self) -> impl Future<Output = NextResult<entryplus3<'static>>> + Send;
 }
 
-#[async_trait::async_trait]
 impl<T: ReadDirPlusIterator> ReadDirIterator for T {
     async fn next(&mut self) -> NextResult<entry3<'static>> {
         match ReadDirPlusIterator::next(self).await {

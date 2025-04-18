@@ -221,7 +221,7 @@ pub trait NFSFileSystem: Send + Sync {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> impl Future<Output = Result<Box<dyn ReadDirIterator>, nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<impl ReadDirIterator, nfsstat3>> + Send;
 
     /// Returns the contents of a directory with pagination.
     /// Directory listing should be deterministic.
@@ -234,7 +234,7 @@ pub trait NFSFileSystem: Send + Sync {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> impl Future<Output = Result<Box<dyn ReadDirPlusIterator>, nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<impl ReadDirPlusIterator, nfsstat3>> + Send;
 
     /// Makes a symlink with the following attributes.
     /// If not supported due to readonly file system

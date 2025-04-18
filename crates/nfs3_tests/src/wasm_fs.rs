@@ -284,16 +284,16 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
+        Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+        Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
     }
     async fn symlink<'a>(
         &self,
@@ -406,6 +406,15 @@ fn io_error_to_nfsstat3(err: std::io::Error) -> nfsstat3 {
         _ => nfsstat3::NFS3ERR_IO,
     }
 }
+
+struct ReadDirStubIterator;
+
+impl ReadDirPlusIterator for ReadDirStubIterator {
+    async fn next(&mut self) -> nfs3_server::vfs::NextResult<entryplus3<'static>> {
+        nfs3_server::vfs::NextResult::Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -622,18 +622,18 @@ impl NFSFileSystem for MemFs {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
         let iter = Self::make_iter(self, dirid, start_after)?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         let iter = Self::make_iter(self, dirid, start_after)?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn symlink<'a>(
@@ -682,7 +682,6 @@ impl MemFsIterator {
     }
 }
 
-#[async_trait::async_trait]
 impl ReadDirPlusIterator for MemFsIterator {
     async fn next(&mut self) -> NextResult<entryplus3<'static>> {
         loop {

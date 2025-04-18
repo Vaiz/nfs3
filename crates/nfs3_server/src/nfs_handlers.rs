@@ -266,6 +266,8 @@ async fn nfsproc3_readdirplus<T>(
 where
     T: NFSFileSystem,
 {
+    use crate::vfs::ReadDirPlusIterator;
+
     let dirid = fh_to_id!(context, &args.dir);
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
 
@@ -414,6 +416,8 @@ async fn nfsproc3_readdir<T>(
 where
     T: NFSFileSystem,
 {
+    use crate::vfs::ReadDirIterator;
+
     let dirid = fh_to_id!(context, &readdir3args.dir);
     let dir_attr_maybe = context.vfs.getattr(dirid).await;
     let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);

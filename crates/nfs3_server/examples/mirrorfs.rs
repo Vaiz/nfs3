@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_trait::async_trait;
 use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
@@ -467,20 +466,20 @@ impl NFSFileSystem for MirrorFS {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
@@ -758,7 +757,6 @@ impl MirrorFsIterator {
     }
 }
 
-#[async_trait]
 impl ReadDirPlusIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<entryplus3<'static>> {
         loop {
