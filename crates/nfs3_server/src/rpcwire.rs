@@ -13,8 +13,9 @@ use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
-use crate::transaction_tracker::{TransactionError, TransactionLock};
+use crate::transaction_tracker::{self, TransactionError, TransactionLock};
 use crate::units::KIBIBYTE;
+use crate::vfs::NFSFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 pub mod messages;
@@ -26,10 +27,13 @@ const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
-async fn handle_rpc_message(
-    mut context: RPCContext,
+async fn handle_rpc_message<T>(
+    mut context: RPCContext<T>,
     message: CompleteRpcMessage,
-) -> anyhow::Result<HandleResult> {
+) -> anyhow::Result<HandleResult>
+where
+    T: NFSFileSystem,
+{
     let message = IncomingRpcMessage::try_from(message)?;
     let xid = message.xid();
     let call = message.body();
@@ -45,7 +49,12 @@ async fn handle_rpc_message(
         context.auth = auth;
     }
 
-    let transaction = lock_transaction(&context, xid, call);
+    let transaction = lock_transaction(
+        &context.transaction_tracker,
+        &context.client_addr,
+        xid,
+        call,
+    );
     if let Err(msg) = transaction {
         match msg {
             Some(err) => return message.into_error_reply(err),
@@ -72,14 +81,15 @@ async fn handle_rpc_message(
 }
 
 /// Handles the RPC message and returns a result. The handler is an async function
-pub async fn handle<'a, I, O>(
-    context: &RPCContext,
+pub async fn handle<I, O, T>(
+    context: &RPCContext<T>,
     mut message: IncomingRpcMessage,
-    handler: impl AsyncFnOnce(&RPCContext, u32, I) -> O,
+    handler: impl AsyncFnOnce(&RPCContext<T>, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
     I: Unpack<Cursor<Vec<u8>>>,
     O: Pack<Cursor<Vec<u8>>> + PackedSize + Send + 'static,
+    T: NFSFileSystem,
 {
     let mut cursor = message.take_data();
     let (args, _) = match I::unpack(&mut cursor) {
@@ -99,29 +109,23 @@ where
 }
 
 fn lock_transaction(
-    context: &RPCContext,
+    transaction_tracker: &transaction_tracker::TransactionTracker,
+    client_addr: &str,
     xid: u32,
     call: &call_body<'_>,
 ) -> Result<TransactionLock, Option<accept_stat_data>> {
-    let transaction =
-        context
-            .transaction_tracker
-            .start_transaction(&context.client_addr, xid, Instant::now());
+    let transaction = transaction_tracker.start_transaction(client_addr, xid, Instant::now());
 
     match transaction {
         Ok(lock) => Ok(lock),
         Err(TransactionError::AlreadyExists) => {
             info!(
-                "Retransmission detected, xid: {xid}, client_addr: {}, call: {call:?}",
-                context.client_addr
+                "Retransmission detected, xid: {xid}, client_addr: {client_addr}, call: {call:?}",
             );
             Err(None)
         }
         Err(TransactionError::TooManyRequests) => {
-            warn!(
-                "Too many requests, xid: {xid}, client_addr: {}, call: {call:?}",
-                context.client_addr
-            );
+            warn!("Too many requests, xid: {xid}, client_addr: {client_addr}, call: {call:?}",);
 
             Err(Some(accept_stat_data::SYSTEM_ERR))
         }
@@ -150,17 +154,20 @@ pub type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
 /// subtasks to handle each message. replies are queued into the
 /// `reply_send_channel`.
 #[derive(Debug)]
-pub struct SocketMessageHandler {
+pub struct SocketMessageHandler<T: NFSFileSystem + 'static> {
     cur_fragment: PackedRpcMessage,
     socket_receive_channel: DuplexStream,
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
-    context: RPCContext,
+    context: RPCContext<T>,
 }
 
-impl SocketMessageHandler {
+impl<T> SocketMessageHandler<T>
+where
+    T: NFSFileSystem + 'static,
+{
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub fn new(
-        context: &RPCContext,
+        context: RPCContext<T>,
     ) -> (
         Self,
         DuplexStream,
@@ -173,7 +180,7 @@ impl SocketMessageHandler {
                 cur_fragment: PackedRpcMessage::new(),
                 socket_receive_channel: sockrecv,
                 reply_send_channel: msgsend,
-                context: context.clone(),
+                context,
             },
             socksend,
             msgrecv,

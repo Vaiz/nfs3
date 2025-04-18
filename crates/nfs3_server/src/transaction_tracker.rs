@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// `TransactionTracker` tracks the state of transactions to detect retransmissions.
+#[derive(Debug)]
 pub struct TransactionTracker {
     retention_period: Duration,
     transactions: RwLock<HashMap<String, Arc<Mutex<ClientTransactions>>>>,

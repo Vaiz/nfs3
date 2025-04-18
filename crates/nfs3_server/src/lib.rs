@@ -26,9 +26,13 @@ pub mod test_reexports {
     pub use crate::context::RPCContext;
     pub use crate::transaction_tracker::TransactionTracker;
 
-    pub async fn process_socket<IO>(socket: IO, context: RPCContext) -> Result<(), anyhow::Error>
+    pub async fn process_socket<IO, T>(
+        socket: IO,
+        context: RPCContext<T>,
+    ) -> Result<(), anyhow::Error>
     where
         IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+        T: crate::vfs::NFSFileSystem + 'static,
     {
         crate::tcp::process_socket(socket, context).await
     }

@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_trait::async_trait;
 use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
@@ -378,7 +377,6 @@ impl MirrorFS {
     }
 }
 
-#[async_trait]
 impl NFSFileSystem for MirrorFS {
     fn root_dir(&self) -> fileid3 {
         0
@@ -387,7 +385,7 @@ impl NFSFileSystem for MirrorFS {
         VFSCapabilities::ReadWrite
     }
 
-    async fn lookup(&self, dirid: fileid3, filename: &filename3) -> Result<fileid3, nfsstat3> {
+    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()) {
             if fsmap.id_to_path.contains_key(&id) {
@@ -464,20 +462,20 @@ impl NFSFileSystem for MirrorFS {
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn readdirplus(
         &self,
         dirid: fileid3,
         start_after: fileid3,
-    ) -> Result<Box<dyn ReadDirPlusIterator>, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
-        Ok(Box::new(iter))
+        Ok(iter)
     }
 
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
@@ -527,7 +525,7 @@ impl NFSFileSystem for MirrorFS {
     async fn create(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'_>,
         setattr: sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.create_fs_object(dirid, filename, &CreateFSObject::File(setattr))
@@ -537,7 +535,7 @@ impl NFSFileSystem for MirrorFS {
     async fn create_exclusive(
         &self,
         dirid: fileid3,
-        filename: &filename3,
+        filename: &filename3<'_>,
     ) -> Result<fileid3, nfsstat3> {
         Ok(self
             .create_fs_object(dirid, filename, &CreateFSObject::Exclusive)
@@ -545,7 +543,7 @@ impl NFSFileSystem for MirrorFS {
             .0)
     }
 
-    async fn remove(&self, dirid: fileid3, filename: &filename3) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
         let mut path = fsmap.sym_to_path(&ent.name);
@@ -592,9 +590,9 @@ impl NFSFileSystem for MirrorFS {
     async fn rename(
         &self,
         from_dirid: fileid3,
-        from_filename: &filename3,
+        from_filename: &filename3<'_>,
         to_dirid: fileid3,
-        to_filename: &filename3,
+        to_filename: &filename3<'_>,
     ) -> Result<(), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
 
@@ -673,17 +671,17 @@ impl NFSFileSystem for MirrorFS {
     async fn mkdir(
         &self,
         dirid: fileid3,
-        dirname: &filename3,
+        dirname: &filename3<'_>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.create_fs_object(dirid, dirname, &CreateFSObject::Directory)
             .await
     }
 
-    async fn symlink(
+    async fn symlink<'a>(
         &self,
         dirid: fileid3,
-        linkname: &filename3,
-        symlink: &nfspath3,
+        linkname: &filename3<'a>,
+        symlink: &nfspath3<'a>,
         attr: &sattr3,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         self.create_fs_object(
@@ -755,7 +753,6 @@ impl MirrorFsIterator {
     }
 }
 
-#[async_trait]
 impl ReadDirPlusIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<entryplus3<'static>> {
         loop {

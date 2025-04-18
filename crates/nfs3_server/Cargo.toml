@@ -26,7 +26,6 @@ nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
 anyhow.workspace = true
-async-trait.workspace = true
 filetime.workspace = true
 
 [dev-dependencies]
