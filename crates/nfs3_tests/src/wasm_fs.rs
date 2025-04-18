@@ -415,7 +415,6 @@ impl ReadDirPlusIterator for ReadDirStubIterator {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
