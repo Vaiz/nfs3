@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.4.1...nfs3_server-v0.5.0) - 2025-04-19
+
+### Added
+
+- [**breaking**] split NFSFileSystem trait into two ([#75](https://github.com/Vaiz/nfs3/pull/75))
+- [**breaking**] remove async_trait dependency ([#70](https://github.com/Vaiz/nfs3/pull/70))
+
 ## [0.4.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.4.0...nfs3_server-v0.4.1) - 2025-04-13
 
 ### Changes
