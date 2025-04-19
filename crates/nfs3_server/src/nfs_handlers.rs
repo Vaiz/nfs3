@@ -11,7 +11,7 @@ use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
-use crate::vfs::{NFSFileSystem, NextResult, VFSCapabilities};
+use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 
 #[allow(clippy::enum_glob_use)]
 pub async fn handle_nfs<T>(
@@ -19,7 +19,7 @@ pub async fn handle_nfs<T>(
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     use NFS_PROGRAM::*;
 
@@ -89,7 +89,7 @@ async fn nfsproc3_getattr<T>(
     getattr3args: GETATTR3args,
 ) -> GETATTR3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = getattr3args.object;
 
@@ -112,7 +112,7 @@ async fn nfsproc3_lookup<T>(
     lookup3args: LOOKUP3args<'_>,
 ) -> LOOKUP3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let dirops = lookup3args.what;
     let dirid = fh_to_id!(context, &dirops.dir);
@@ -140,7 +140,7 @@ async fn nfsproc3_read<T>(
     read3args: READ3args,
 ) -> READ3res<'static>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
@@ -168,7 +168,7 @@ where
 
 async fn nfsproc3_fsinfo<T>(context: &RPCContext<T>, xid: u32, args: FSINFO3args) -> FSINFO3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
@@ -191,13 +191,14 @@ where
 
 async fn nfsproc3_access<T>(context: &RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = args.object;
     let mut access = args.access;
     let id = fh_to_id!(context, &handle);
     let obj_attributes = nfs_option_from_result(context.vfs.getattr(id).await);
 
+    // is this a bug?
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         access &= ACCESS3_READ | ACCESS3_LOOKUP;
     }
@@ -215,7 +216,7 @@ async fn nfsproc3_pathconf<T>(
     args: PATHCONF3args,
 ) -> PATHCONF3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = args.object;
     debug!("nfsproc3_pathconf({xid}, {handle:?})");
@@ -238,7 +239,7 @@ where
 
 async fn nfsproc3_fsstat<T>(context: &RPCContext<T>, xid: u32, args: FSSTAT3args) -> FSSTAT3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
@@ -264,7 +265,7 @@ async fn nfsproc3_readdirplus<T>(
     args: READDIRPLUS3args,
 ) -> READDIRPLUS3res<'static>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     use crate::vfs::ReadDirPlusIterator;
 
@@ -414,7 +415,7 @@ async fn nfsproc3_readdir<T>(
     readdir3args: READDIR3args,
 ) -> READDIR3res<'static>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     use crate::vfs::ReadDirIterator;
 
@@ -525,7 +526,7 @@ async fn nfsproc3_write<T>(
     write3args: WRITE3args<'_>,
 ) -> WRITE3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -581,7 +582,7 @@ where
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
 async fn nfsproc3_create<T>(context: &RPCContext<T>, xid: u32, args: CREATE3args<'_>) -> CREATE3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -652,7 +653,7 @@ where
 
 async fn nfsproc3_setattr<T>(context: &RPCContext<T>, xid: u32, args: SETATTR3args) -> SETATTR3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -714,7 +715,7 @@ where
 
 async fn nfsproc3_remove<T>(context: &RPCContext<T>, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -757,7 +758,7 @@ async fn nfsproc3_rename<T>(
     args: RENAME3args<'_, '_>,
 ) -> RENAME3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -820,7 +821,7 @@ where
 }
 async fn nfsproc3_mkdir<T>(context: &RPCContext<T>, xid: u32, args: MKDIR3args<'_>) -> MKDIR3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -863,7 +864,7 @@ async fn nfsproc3_symlink<T>(
     args: SYMLINK3args<'_>,
 ) -> SYMLINK3res
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
@@ -922,7 +923,7 @@ async fn nfsproc3_readlink<T>(
     args: READLINK3args,
 ) -> READLINK3res<'static>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let id = fh_to_id!(context, &args.symlink);
     let symlink_attributes = nfs_option_from_result(context.vfs.getattr(id).await);
@@ -948,7 +949,7 @@ fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
 
 async fn get_wcc_attr<T>(context: &RPCContext<T>, object_id: fileid3) -> Result<wcc_attr, nfsstat3>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     context.vfs.getattr(object_id).await.map(|v| wcc_attr {
         size: v.size,

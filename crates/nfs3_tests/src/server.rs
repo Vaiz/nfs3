@@ -1,21 +1,21 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use nfs3_server::memfs::MemFs;
 use nfs3_server::test_reexports::{RPCContext, TransactionTracker};
-use nfs3_server::vfs::NFSFileSystem;
+use nfs3_server::vfs::NfsFileSystem;
 use nfs3_types::nfs3::nfs_fh3;
 
-pub struct Server<IO> {
-    context: RPCContext<MemFs>,
+pub struct Server<IO, FS> {
+    context: RPCContext<FS>,
     io: IO,
 }
 
-impl<IO> Server<IO>
+impl<IO, FS> Server<IO, FS>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    FS: NfsFileSystem + 'static,
 {
-    pub fn new(io: IO, memfs: nfs3_server::memfs::MemFs) -> anyhow::Result<Self> {
+    pub fn new(io: IO, memfs: FS) -> anyhow::Result<Self> {
         let context = RPCContext {
             local_port: 2049,
             client_addr: "localhost".to_string(),

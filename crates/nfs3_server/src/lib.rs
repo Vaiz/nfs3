@@ -32,7 +32,7 @@ pub mod test_reexports {
     ) -> Result<(), anyhow::Error>
     where
         IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
-        T: crate::vfs::NFSFileSystem + 'static,
+        T: crate::vfs::NfsFileSystem + 'static,
     {
         crate::tcp::process_socket(socket, context).await
     }

@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_server::vfs::adapter::ReadOnlyAdapter;
 use nfs3_types::nfs3::nfs_fh3;
 pub use rpc_tests::RpcTestContext;
 pub use server::Server;
@@ -19,6 +20,14 @@ pub struct TestContext<IO> {
 
 impl TestContext<TokioIo<DuplexStream>> {
     pub fn setup() -> Self {
+        Self::setup_with_config(Self::config(), false, tracing::Level::DEBUG)
+    }
+
+    pub fn setup_ro() -> Self {
+        Self::setup_with_config(Self::config(), true, tracing::Level::DEBUG)
+    }
+
+    fn config() -> MemFsConfig {
         let mut config = MemFsConfig::default();
 
         config.add_file("/a.txt", "hello world\n".as_bytes());
@@ -26,17 +35,31 @@ impl TestContext<TokioIo<DuplexStream>> {
         config.add_dir("/another_dir");
         config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
 
-        Self::setup_with_config(config, tracing::Level::DEBUG)
+        config
     }
 
-    pub fn setup_with_config(fs_config: MemFsConfig, log_level: tracing::Level) -> Self {
+    pub fn setup_with_config(
+        fs_config: MemFsConfig,
+        readonly: bool,
+        log_level: tracing::Level,
+    ) -> Self {
         init_logging(log_level);
 
-        let memfs = MemFs::new(fs_config).unwrap();
         let (server, client) = duplex(1024 * 1024);
-        let server = Server::new(server, memfs).unwrap();
-        let root_dir = server.root_dir();
-        let server_handle = tokio::task::spawn(server.run());
+        let memfs = MemFs::new(fs_config).unwrap();
+        let (root_dir, server_handle) = if readonly {
+            let memfs = ReadOnlyAdapter::new(memfs);
+            let server = Server::new(server, memfs).unwrap();
+            let root_dir = server.root_dir();
+            let server_handle = tokio::task::spawn(server.run());
+            (root_dir, server_handle)
+        } else {
+            let server = Server::new(server, memfs).unwrap();
+            let root_dir = server.root_dir();
+            let server_handle = tokio::task::spawn(server.run());
+            (root_dir, server_handle)
+        };
+
         let client = nfs3_client::tokio::TokioIo::new(client);
         let client = nfs3_client::Nfs3Client::new(client);
 

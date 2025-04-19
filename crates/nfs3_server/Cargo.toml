@@ -43,3 +43,7 @@ workspace = true
 [[example]]
 name = "memfs"
 required-features = ["memfs"]
+
+[[example]]
+name = "ro_memfs"
+required-features = ["memfs"]

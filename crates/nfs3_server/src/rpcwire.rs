@@ -15,7 +15,7 @@ use tracing::{error, info, trace, warn};
 use crate::context::RPCContext;
 use crate::transaction_tracker::{self, TransactionError, TransactionLock};
 use crate::units::KIBIBYTE;
-use crate::vfs::NFSFileSystem;
+use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
 pub mod messages;
@@ -32,7 +32,7 @@ async fn handle_rpc_message<T>(
     message: CompleteRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let message = IncomingRpcMessage::try_from(message)?;
     let xid = message.xid();
@@ -89,7 +89,7 @@ pub async fn handle<I, O, T>(
 where
     I: Unpack<Cursor<Vec<u8>>>,
     O: Pack<Cursor<Vec<u8>>> + PackedSize + Send + 'static,
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let mut cursor = message.take_data();
     let (args, _) = match I::unpack(&mut cursor) {
@@ -154,7 +154,7 @@ pub type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
 /// subtasks to handle each message. replies are queued into the
 /// `reply_send_channel`.
 #[derive(Debug)]
-pub struct SocketMessageHandler<T: NFSFileSystem + 'static> {
+pub struct SocketMessageHandler<T: NfsFileSystem + 'static> {
     cur_fragment: PackedRpcMessage,
     socket_receive_channel: DuplexStream,
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
@@ -163,7 +163,7 @@ pub struct SocketMessageHandler<T: NFSFileSystem + 'static> {
 
 impl<T> SocketMessageHandler<T>
 where
-    T: NFSFileSystem + 'static,
+    T: NfsFileSystem + 'static,
 {
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub fn new(

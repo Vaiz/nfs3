@@ -10,7 +10,7 @@ pub enum NextResult<T> {
     Err(nfsstat3),
 }
 
-/// Iterator for [`NFSFileSystem::readdir`](super::NFSFileSystem::readdir)
+/// Iterator for [`NfsReadFileSystem::readdir`](super::NfsReadFileSystem::readdir)
 ///
 /// All [`ReadDirPlusIterator`] implementations automatically implement `ReadDirIterator`.
 /// In general, there is no need to implement `ReadDirIterator` directly.
@@ -19,12 +19,12 @@ pub trait ReadDirIterator: Send + Sync {
     fn next(&mut self) -> impl Future<Output = NextResult<entry3<'static>>> + Send;
 }
 
-/// Iterator for [`NFSFileSystem::readdirplus`](super::NFSFileSystem::readdirplus)
+/// Iterator for [`NfsReadFileSystem::readdirplus`](super::NfsReadFileSystem::readdirplus)
 pub trait ReadDirPlusIterator: Send + Sync {
     /// Returns the next entry in the directory.
     ///
     /// If `entryplus3::name_handle` field is `None`, it will be filled automatically using
-    /// [`NFSFileSystem::id_to_fh`](super::NFSFileSystem::id_to_fh).
+    /// [`NfsReadFileSystem::id_to_fh`](super::NfsReadFileSystem::id_to_fh).
     fn next(&mut self) -> impl Future<Output = NextResult<entryplus3<'static>>> + Send;
 }
 
