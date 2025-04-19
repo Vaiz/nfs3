@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_client"
-version = "0.4.0"
+version = "0.4.1"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
@@ -14,7 +14,7 @@ readme = "README.md"
 tokio = ["dep:tokio"]
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
+nfs3_types = { path = "../nfs3_types", version = "0.3.3" }
 
 rand.workspace = true
 tokio = { workspace = true, optional = true, default-features = false, features = ["net", "io-util"] }
