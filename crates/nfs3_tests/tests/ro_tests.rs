@@ -35,7 +35,32 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
         })
         .await?
         .unwrap();
+
     tracing::info!("{getattr:?}");
+
+    let lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"a.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    let getarg = client
+        .getattr(GETATTR3args {
+            object: lookup.object.clone(),
+        })
+        .await?
+        .unwrap();
+    
+    tracing::info!("{getarg:?}");
+    assert_eq!(
+        getarg.obj_attributes.mode & 0o222,
+        0,
+        "object is not read-only"
+    );
 
     client.shutdown().await
 }
@@ -591,6 +616,12 @@ async fn test_readdirplus() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{readdirplus:?}");
+
+    for entry in readdirplus.reply.entries.into_inner() {
+        let attr = entry.name_attributes.unwrap();
+        assert_eq!(attr.mode & 0o222, 0, "object is not read-only");
+    }
+
     client.shutdown().await
 }
 
