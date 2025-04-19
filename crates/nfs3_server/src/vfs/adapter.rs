@@ -4,18 +4,18 @@ use super::{
     NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
 };
 
-pub(crate) struct NfsFileSystemAdapter<T>(T);
+pub struct ReadOnlyAdapter<T>(T);
 
-impl<T> NfsFileSystemAdapter<T>
+impl<T> ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
 {
     pub fn new(inner: T) -> Self {
-        NfsFileSystemAdapter(inner)
+        ReadOnlyAdapter(inner)
     }
 }
 
-impl<T> NfsReadFileSystem for NfsFileSystemAdapter<T>
+impl<T> NfsReadFileSystem for ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
 {
@@ -61,7 +61,7 @@ where
     }
 }
 
-impl<T> NfsFileSystem for NfsFileSystemAdapter<T>
+impl<T> NfsFileSystem for ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
 {

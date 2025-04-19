@@ -21,7 +21,7 @@
 //!
 //!  The 0 fileid is reserved and should not be used
 
-pub(crate) mod adapter;
+pub mod adapter;
 mod iterator;
 
 use std::sync::LazyLock;

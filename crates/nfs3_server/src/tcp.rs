@@ -13,7 +13,7 @@ use crate::context::RPCContext;
 use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
-use crate::vfs::adapter::NfsFileSystemAdapter;
+use crate::vfs::adapter::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
 /// A NFS Tcp Connection Handler
@@ -115,7 +115,7 @@ pub trait NFSTcp: Send + Sync {
     fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
-impl<RO> NFSTcpListener<NfsFileSystemAdapter<RO>>
+impl<RO> NFSTcpListener<ReadOnlyAdapter<RO>>
 where
     RO: NfsReadFileSystem + 'static,
 {
@@ -125,7 +125,7 @@ where
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsReadFileSystem`].
     pub async fn bind_ro(ipstr: &str, fs: RO) -> io::Result<Self> {
-        Self::bind(ipstr, NfsFileSystemAdapter::new(fs)).await
+        Self::bind(ipstr, ReadOnlyAdapter::new(fs)).await
     }
 }
 
