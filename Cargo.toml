@@ -12,7 +12,7 @@ repository = "https://github.com/Vaiz/nfs3"
 license = "Unlicense"
 
 [workspace.dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 byteorder = "1.5.0"
 chrono = "0.4"
 filetime = "0.2.25"
