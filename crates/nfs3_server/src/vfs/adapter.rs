@@ -1,11 +1,12 @@
-use nfs3_types::nfs3::{fattr3, fileid3, filename3, nfsstat3, sattr3, Nfs3Option};
+use nfs3_types::nfs3::{Nfs3Option, fattr3, fileid3, filename3, nfsstat3, sattr3};
 
 use super::{
-    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities
+    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
+    VFSCapabilities,
 };
 
 /// An internal adapter that allows to reuse the same code with ReadOnly filesystems.
-/// 
+///
 /// In general, you should not use this adapter directly. Instead, use the
 /// [NFSTcpListener::bind_ro] method to bind a read-only NFS server.
 pub struct ReadOnlyAdapter<T>(T);
@@ -61,7 +62,10 @@ where
         dirid: fileid3,
         start_after: fileid3,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
-        self.0.readdirplus(dirid, start_after).await.map(ReadOnlyIterator)
+        self.0
+            .readdirplus(dirid, start_after)
+            .await
+            .map(ReadOnlyIterator)
     }
 
     async fn readlink(&self, id: fileid3) -> Result<nfs3_types::nfs3::nfspath3, nfsstat3> {
