@@ -119,7 +119,7 @@ impl<RO> NFSTcpListener<ReadOnlyAdapter<RO>>
 where
     RO: NfsReadFileSystem + 'static,
 {
-    /// Create a new NFSTcpListener with a read-only file system.
+    /// Create a new `NFSTcpListener` with a read-only file system.
     ///
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
@@ -130,7 +130,7 @@ where
 }
 
 impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
-    /// Create a new NFSTcpListener.
+    /// Create a new `NFSTcpListener`.
     ///
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation

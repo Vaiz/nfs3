@@ -54,7 +54,7 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
         })
         .await?
         .unwrap();
-    
+
     tracing::info!("{getarg:?}");
     assert_eq!(
         getarg.obj_attributes.mode & 0o222,

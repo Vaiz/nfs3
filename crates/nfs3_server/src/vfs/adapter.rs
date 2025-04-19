@@ -5,18 +5,18 @@ use super::{
     VFSCapabilities,
 };
 
-/// An internal adapter that allows to reuse the same code with ReadOnly filesystems.
+/// An internal adapter that allows to reuse the same code with `ReadOnly` filesystems.
 ///
 /// In general, you should not use this adapter directly. Instead, use the
-/// [NFSTcpListener::bind_ro] method to bind a read-only NFS server.
+/// [`NFSTcpListener::bind_ro`] method to bind a read-only NFS server.
 pub struct ReadOnlyAdapter<T>(T);
 
 impl<T> ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
 {
-    pub fn new(inner: T) -> Self {
-        ReadOnlyAdapter(inner)
+    pub const fn new(inner: T) -> Self {
+        Self(inner)
     }
 }
 
@@ -157,6 +157,6 @@ where
     }
 }
 
-fn remove_write_permissions(attr: &mut fattr3) {
+const fn remove_write_permissions(attr: &mut fattr3) {
     attr.mode &= 0o555; // Read-only permissions
 }
