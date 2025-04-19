@@ -6,14 +6,14 @@ use tracing::{debug, error, warn};
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
-use crate::vfs::NFSFileSystem;
+use crate::vfs::NfsFileSystem;
 
 pub async fn handle_portmap<T>(
     context: &RPCContext<T>,
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let call = message.body();
     if call.vers != portmap::VERSION {

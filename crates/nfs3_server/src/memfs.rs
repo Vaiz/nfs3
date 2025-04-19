@@ -40,8 +40,8 @@ use nfs3_types::nfs3::{
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
-    DEFAULT_FH_CONVERTER, NFSFileSystem, NextResult, ReadDirIterator, ReadDirPlusIterator,
-    VFSCapabilities,
+    DEFAULT_FH_CONVERTER, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
+    ReadDirPlusIterator,
 };
 
 const DELIMITER: char = '/';
@@ -379,7 +379,7 @@ impl Fs {
 
 /// In-memory file system for `NFSv3`.
 ///
-/// `MemFs` implements the [`NFSFileSystem`] trait and provides a simple in-memory file system
+/// `MemFs` implements the [`NfsFileSystem`] trait and provides a simple in-memory file system
 #[derive(Debug)]
 pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
@@ -524,11 +524,7 @@ impl MemFs {
     }
 }
 
-impl NFSFileSystem for MemFs {
-    fn capabilities(&self) -> VFSCapabilities {
-        VFSCapabilities::ReadWrite
-    }
-
+impl NfsReadFileSystem for MemFs {
     fn root_dir(&self) -> fileid3 {
         self.rootdir
     }
@@ -542,14 +538,6 @@ impl NFSFileSystem for MemFs {
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         Ok(entry.attr().clone())
     }
-
-    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        let mut fs = self.fs.write().expect("lock is poisoned");
-        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        entry.set_attr(setattr);
-        Ok(entry.attr().clone())
-    }
-
     async fn read(
         &self,
         id: fileid3,
@@ -560,6 +548,51 @@ impl NFSFileSystem for MemFs {
         let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file()?;
         Ok(file.read(offset, count))
+    }
+
+    async fn readdir(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
+        let iter = Self::make_iter(self, dirid, start_after)?;
+        Ok(iter)
+    }
+
+    async fn readdirplus(
+        &self,
+        dirid: fileid3,
+        start_after: fileid3,
+    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+        let iter = Self::make_iter(self, dirid, start_after)?;
+        Ok(iter)
+    }
+
+    /// Converts the fileid to an opaque NFS file handle.
+    fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
+        DEFAULT_FH_CONVERTER.id_to_fh(id)
+    }
+    /// Converts an opaque NFS file handle to a fileid.
+    fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
+        DEFAULT_FH_CONVERTER.fh_to_id(id)
+    }
+
+    async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
+        tracing::warn!("readlink not implemented");
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
+        self.path_to_id_impl(path)
+    }
+}
+
+impl NfsFileSystem for MemFs {
+    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+        let mut fs = self.fs.write().expect("lock is poisoned");
+        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        entry.set_attr(setattr);
+        Ok(entry.attr().clone())
     }
 
     async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
@@ -614,24 +647,6 @@ impl NFSFileSystem for MemFs {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn readdir(
-        &self,
-        dirid: fileid3,
-        start_after: fileid3,
-    ) -> Result<impl ReadDirIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, start_after)?;
-        Ok(iter)
-    }
-
-    async fn readdirplus(
-        &self,
-        dirid: fileid3,
-        start_after: fileid3,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, start_after)?;
-        Ok(iter)
-    }
-
     async fn symlink<'a>(
         &self,
         _dirid: fileid3,
@@ -641,24 +656,6 @@ impl NFSFileSystem for MemFs {
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         tracing::warn!("symlink not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    /// Converts the fileid to an opaque NFS file handle.
-    fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
-        DEFAULT_FH_CONVERTER.id_to_fh(id)
-    }
-    /// Converts an opaque NFS file handle to a fileid.
-    fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
-        DEFAULT_FH_CONVERTER.fh_to_id(id)
-    }
-
-    async fn readlink(&self, _id: fileid3) -> Result<nfspath3, nfsstat3> {
-        tracing::warn!("readlink not implemented");
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
-        self.path_to_id_impl(path)
     }
 }
 

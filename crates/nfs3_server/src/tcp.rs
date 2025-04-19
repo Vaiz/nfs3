@@ -13,10 +13,11 @@ use crate::context::RPCContext;
 use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
-use crate::vfs::NFSFileSystem;
+use crate::vfs::adapter::NfsFileSystemAdapter;
+use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
 /// A NFS Tcp Connection Handler
-pub struct NFSTcpListener<T: NFSFileSystem + 'static> {
+pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
     port: u16,
     arcfs: Arc<T>,
@@ -26,7 +27,7 @@ pub struct NFSTcpListener<T: NFSFileSystem + 'static> {
     stop_notify: Arc<tokio::sync::Notify>,
 }
 
-impl<T: NFSFileSystem + 'static> Drop for NFSTcpListener<T> {
+impl<T: NfsFileSystem + 'static> Drop for NFSTcpListener<T> {
     fn drop(&mut self) {
         self.stop_notify.notify_waiters();
     }
@@ -48,7 +49,7 @@ pub(crate) async fn process_socket<IO, T>(
 ) -> Result<(), anyhow::Error>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
-    T: NFSFileSystem + 'static,
+    T: NfsFileSystem + 'static,
 {
     let (mut message_handler, mut socksend, mut msgrecvchan) =
         SocketMessageHandler::new(context.clone());
@@ -114,10 +115,26 @@ pub trait NFSTcp: Send + Sync {
     fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
-impl<T: NFSFileSystem + 'static> NFSTcpListener<T> {
-    /// Binds to a ipstr of the form [ip address]:port. For instance
-    /// "127.0.0.1:12000". fs is an instance of an implementation
-    /// of `NFSFileSystem`.
+impl<RO> NFSTcpListener<NfsFileSystemAdapter<RO>>
+where
+    RO: NfsReadFileSystem + 'static,
+{
+    /// Create a new NFSTcpListener with a read-only file system.
+    ///
+    /// It binds to a ipstr of the form [ip address]:port. For instance,
+    /// "127.0.0.1:12000". `fs` is an instance of an implementation
+    /// of [`NfsReadFileSystem`].
+    pub async fn bind_ro(ipstr: &str, fs: RO) -> io::Result<Self> {
+        Self::bind(ipstr, NfsFileSystemAdapter::new(fs)).await
+    }
+}
+
+impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
+    /// Create a new NFSTcpListener.
+    ///
+    /// It binds to a ipstr of the form [ip address]:port. For instance,
+    /// "127.0.0.1:12000". `fs` is an instance of an implementation
+    /// of [`NfsFileSystem`].
     pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
@@ -210,7 +227,7 @@ impl<T: NFSFileSystem + 'static> NFSTcpListener<T> {
     }
 }
 
-impl<T: NFSFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
+impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16 {
         let addr = self

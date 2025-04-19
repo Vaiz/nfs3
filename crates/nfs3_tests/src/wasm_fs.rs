@@ -4,7 +4,9 @@ use std::fs::File;
 use std::path::Path;
 
 use intaglio::Symbol;
-use nfs3_server::vfs::{ReadDirIterator, ReadDirPlusIterator, VFSCapabilities};
+use nfs3_server::vfs::{
+    NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+};
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
 use tracing_subscriber::field::debug;
@@ -113,10 +115,7 @@ impl<FS> WasmFs<FS> {
     }
 }
 
-impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> {
-    fn capabilities(&self) -> VFSCapabilities {
-        VFSCapabilities::ReadWrite
-    }
+impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
     fn root_dir(&self) -> fileid3 {
         self.root
     }
@@ -142,55 +141,6 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
         let path = self.id_to_path(id)?;
-        let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
-        Self::make_attr(id, &metadata)
-    }
-
-    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        use wasmer_vfs::OpenOptionsConfig;
-
-        let path = self.id_to_path(id)?;
-        let mut file = None;
-
-        const OPEN_OPTIONS: OpenOptionsConfig = OpenOptionsConfig {
-            read: true,
-            write: false,
-            create_new: false,
-            append: false,
-            truncate: false,
-            create: false,
-        };
-
-        if let Nfs3Option::Some(mode) = setattr.mode {
-            // not supported
-        }
-        if let Nfs3Option::Some(uid) = setattr.uid {
-            // not supported
-        }
-        if let Nfs3Option::Some(gid) = setattr.gid {
-            // not supported
-        }
-        if let Nfs3Option::Some(size) = setattr.size {
-            if file.is_none() {
-                let mut options = OPEN_OPTIONS;
-                options.truncate = true;
-                let opened_file = self
-                    .fs
-                    .new_open_options()
-                    .options(options)
-                    .open(path)
-                    .map_err(wasm_error_to_nfsstat3)?;
-                file = Some(opened_file);
-            }
-
-            file.as_mut()
-                .unwrap()
-                .set_len(size)
-                .map_err(wasm_error_to_nfsstat3)?;
-        }
-        // if let Nfs3Option::Some(atime) = setattr.atime
-        // if let Nfs3Option::Some(mtime) = setattr.mtime
-
         let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
         Self::make_attr(id, &metadata)
     }
@@ -234,47 +184,6 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         buf.truncate(read as usize);
         Ok((buf, eof))
     }
-    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    async fn create(
-        &self,
-        dirid: fileid3,
-        filename: &filename3<'_>,
-        attr: sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    async fn create_exclusive(
-        &self,
-        dirid: fileid3,
-        filename: &filename3<'_>,
-    ) -> Result<fileid3, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-    async fn mkdir(
-        &self,
-        dirid: fileid3,
-        dirname: &filename3<'_>,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-
-    async fn rename<'a>(
-        &self,
-        from_dirid: fileid3,
-        from_filename: &filename3<'a>,
-        to_dirid: fileid3,
-        to_filename: &filename3<'a>,
-    ) -> Result<(), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
-    }
 
     async fn readdir(
         &self,
@@ -290,15 +199,6 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
         start_after: fileid3,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
-    }
-    async fn symlink<'a>(
-        &self,
-        dirid: fileid3,
-        linkname: &filename3<'a>,
-        symlink: &nfspath3<'a>,
-        attr: &sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     /// Reads a symlink
@@ -360,6 +260,109 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NFSFileSystem for WasmFs<FS> 
     }
 }
 
+impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> {
+    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+        use wasmer_vfs::OpenOptionsConfig;
+
+        let path = self.id_to_path(id)?;
+        let mut file = None;
+
+        const OPEN_OPTIONS: OpenOptionsConfig = OpenOptionsConfig {
+            read: true,
+            write: false,
+            create_new: false,
+            append: false,
+            truncate: false,
+            create: false,
+        };
+
+        if let Nfs3Option::Some(mode) = setattr.mode {
+            // not supported
+        }
+        if let Nfs3Option::Some(uid) = setattr.uid {
+            // not supported
+        }
+        if let Nfs3Option::Some(gid) = setattr.gid {
+            // not supported
+        }
+        if let Nfs3Option::Some(size) = setattr.size {
+            if file.is_none() {
+                let mut options = OPEN_OPTIONS;
+                options.truncate = true;
+                let opened_file = self
+                    .fs
+                    .new_open_options()
+                    .options(options)
+                    .open(path)
+                    .map_err(wasm_error_to_nfsstat3)?;
+                file = Some(opened_file);
+            }
+
+            file.as_mut()
+                .unwrap()
+                .set_len(size)
+                .map_err(wasm_error_to_nfsstat3)?;
+        }
+        // if let Nfs3Option::Some(atime) = setattr.atime
+        // if let Nfs3Option::Some(mtime) = setattr.mtime
+
+        let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
+        Self::make_attr(id, &metadata)
+    }
+
+    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn create(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'_>,
+        attr: sattr3,
+    ) -> Result<(fileid3, fattr3), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn create_exclusive(
+        &self,
+        dirid: fileid3,
+        filename: &filename3<'_>,
+    ) -> Result<fileid3, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+    async fn mkdir(
+        &self,
+        dirid: fileid3,
+        dirname: &filename3<'_>,
+    ) -> Result<(fileid3, fattr3), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn rename<'a>(
+        &self,
+        from_dirid: fileid3,
+        from_filename: &filename3<'a>,
+        to_dirid: fileid3,
+        to_filename: &filename3<'a>,
+    ) -> Result<(), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+
+    async fn symlink<'a>(
+        &self,
+        dirid: fileid3,
+        linkname: &filename3<'a>,
+        symlink: &nfspath3<'a>,
+        attr: &sattr3,
+    ) -> Result<(fileid3, fattr3), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+}
+
 fn wasm_error_to_nfsstat3(err: wasmer_vfs::FsError) -> nfsstat3 {
     use wasmer_vfs::FsError;
     match err {
@@ -415,8 +418,10 @@ impl ReadDirPlusIterator for ReadDirStubIterator {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use nfs3_server::vfs::NFSFileSystem;
+    use nfs3_server::vfs::NfsFileSystem;
     use wasmer_vfs::{FileSystem, OpenOptionsConfig};
+
+    use super::*;
 
     #[tokio::test]
     async fn test_file_id() {

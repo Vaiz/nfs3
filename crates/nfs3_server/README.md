@@ -62,8 +62,8 @@ Note that the demo filesystem is *writable*.
 Usage
 =====
 
-You simply need to implement the `vfs::NFSFileSystem`
-trait. See demofs.rs for an example and bin/main.rs for how to actually start
+You simply need to implement the `vfs::NfsReadFileSysmtem` and (optionaly) `vfs::NfsFileSystem`
+traits. See memfs.rs for an example and bin/main.rs for how to actually start
 a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.

@@ -9,7 +9,7 @@ use tracing::{debug, error, warn};
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
-use crate::vfs::NFSFileSystem;
+use crate::vfs::NfsFileSystem;
 
 #[allow(clippy::enum_glob_use)]
 pub async fn handle_mount<T>(
@@ -17,7 +17,7 @@ pub async fn handle_mount<T>(
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     use MOUNT_PROGRAM::*;
 
@@ -62,7 +62,7 @@ async fn mountproc3_mnt<T>(
     path: dirpath<'_>,
 ) -> mountres3<'static>
 where
-    T: NFSFileSystem,
+    T: NfsFileSystem,
 {
     let path = std::str::from_utf8(&path.0);
     let utf8path = match path {

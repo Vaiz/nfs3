@@ -15,7 +15,7 @@ use nfs3_server::fs_util::{
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
-    NFSFileSystem, NextResult, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
 };
 use nfs3_types::nfs3::{
     entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr, post_op_fh3,
@@ -377,12 +377,9 @@ impl MirrorFS {
     }
 }
 
-impl NFSFileSystem for MirrorFS {
+impl NfsReadFileSystem for MirrorFS {
     fn root_dir(&self) -> fileid3 {
         0
-    }
-    fn capabilities(&self) -> VFSCapabilities {
-        VFSCapabilities::ReadWrite
     }
 
     async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
@@ -478,6 +475,23 @@ impl NFSFileSystem for MirrorFS {
         Ok(iter)
     }
 
+    async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
+        let fsmap = self.fsmap.read().await;
+        let ent = fsmap.find_entry(id)?;
+        let path = fsmap.sym_to_path(&ent.name);
+        drop(fsmap);
+        if path.is_symlink() {
+            path.read_link()
+                .map_or(Err(nfsstat3::NFS3ERR_IO), |target| {
+                    Ok(nfspath3::from_os_str(target.as_os_str()))
+                })
+        } else {
+            Err(nfsstat3::NFS3ERR_BADTYPE)
+        }
+    }
+}
+
+impl NfsFileSystem for MirrorFS {
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;
@@ -690,20 +704,6 @@ impl NFSFileSystem for MirrorFS {
             &CreateFSObject::Symlink((attr.clone(), symlink.clone())),
         )
         .await
-    }
-    async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
-        let fsmap = self.fsmap.read().await;
-        let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
-        drop(fsmap);
-        if path.is_symlink() {
-            path.read_link()
-                .map_or(Err(nfsstat3::NFS3ERR_IO), |target| {
-                    Ok(nfspath3::from_os_str(target.as_os_str()))
-                })
-        } else {
-            Err(nfsstat3::NFS3ERR_BADTYPE)
-        }
     }
 }
 
