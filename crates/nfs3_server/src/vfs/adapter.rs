@@ -11,7 +11,7 @@ use super::{
 ///
 /// In general, you should not use this adapter directly. Instead, use the
 /// [`NFSTcpListener::bind_ro`][1] method to bind a read-only NFS server.
-/// 
+///
 /// [1]: crate::tcp::NFSTcpListener::bind_ro
 pub struct ReadOnlyAdapter<T>(T);
 
