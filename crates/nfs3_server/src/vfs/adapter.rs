@@ -1,9 +1,13 @@
-use nfs3_types::nfs3::{fattr3, fileid3, filename3, nfsstat3, sattr3};
+use nfs3_types::nfs3::{fattr3, fileid3, filename3, nfsstat3, sattr3, Nfs3Option};
 
 use super::{
-    NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities
 };
 
+/// An internal adapter that allows to reuse the same code with ReadOnly filesystems.
+/// 
+/// In general, you should not use this adapter directly. Instead, use the
+/// [NFSTcpListener::bind_ro] method to bind a read-only NFS server.
 pub struct ReadOnlyAdapter<T>(T);
 
 impl<T> ReadOnlyAdapter<T>
@@ -28,7 +32,11 @@ where
     }
 
     async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        self.0.getattr(id).await
+        let mut result = self.0.getattr(id).await;
+        if let Ok(attr) = &mut result {
+            remove_write_permissions(attr);
+        }
+        result
     }
 
     async fn read(
@@ -53,7 +61,7 @@ where
         dirid: fileid3,
         start_after: fileid3,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
-        self.0.readdirplus(dirid, start_after).await
+        self.0.readdirplus(dirid, start_after).await.map(ReadOnlyIterator)
     }
 
     async fn readlink(&self, id: fileid3) -> Result<nfs3_types::nfs3::nfspath3, nfsstat3> {
@@ -125,4 +133,26 @@ where
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
+}
+
+#[derive(Debug)]
+struct ReadOnlyIterator<T>(T);
+
+impl<T> ReadDirPlusIterator for ReadOnlyIterator<T>
+where
+    T: ReadDirPlusIterator,
+{
+    async fn next(&mut self) -> NextResult<nfs3_types::nfs3::entryplus3<'static>> {
+        let mut result = self.0.next().await;
+        if let NextResult::Ok(entry) = &mut result {
+            if let Nfs3Option::Some(attr) = &mut entry.name_attributes {
+                remove_write_permissions(attr);
+            }
+        }
+        result
+    }
+}
+
+fn remove_write_permissions(attr: &mut fattr3) {
+    attr.mode &= 0o555; // Read-only permissions
 }
