@@ -116,9 +116,9 @@ pub trait NfsReadFileSystem: Send + Sync {
     fn root_dir(&self) -> fileid3;
     /// Look up the id of a path in a directory
     ///
-    /// i.e. given a directory dir/ containing a file a.txt
-    /// this may call `lookup(id_of("dir`/"), "a.txt")
-    /// and this should return the id of the file "dir/a.txt"
+    /// i.e. given a directory dir/ containing a file `a.txt`
+    /// this may call `lookup(id_of("dir/"), "a.txt")`
+    /// and this should return the id of the file `dir/a.txt`
     ///
     /// This method should be fast as it is used very frequently.
     fn lookup(

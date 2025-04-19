@@ -1,3 +1,5 @@
+//! An adapter for read-only NFS filesystems.
+
 use nfs3_types::nfs3::{Nfs3Option, fattr3, fileid3, filename3, nfsstat3, sattr3};
 
 use super::{
@@ -8,7 +10,9 @@ use super::{
 /// An internal adapter that allows to reuse the same code with `ReadOnly` filesystems.
 ///
 /// In general, you should not use this adapter directly. Instead, use the
-/// [`NFSTcpListener::bind_ro`] method to bind a read-only NFS server.
+/// [`NFSTcpListener::bind_ro`][1] method to bind a read-only NFS server.
+/// 
+/// [1]: crate::tcp::NFSTcpListener::bind_ro
 pub struct ReadOnlyAdapter<T>(T);
 
 impl<T> ReadOnlyAdapter<T>
