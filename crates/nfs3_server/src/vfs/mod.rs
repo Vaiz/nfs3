@@ -22,7 +22,7 @@
 //!  The 0 fileid is reserved and should not be used
 
 pub mod adapter;
-mod handle;
+pub(crate) mod handle;
 mod iterator;
 
 use handle::DEFAULT_FH_CONVERTER;

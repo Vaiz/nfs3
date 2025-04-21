@@ -1,5 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
+use crate::vfs::handle::FileHandleConverter;
 
 use nfs3_types::rpc::auth_unix;
 use tokio::sync::mpsc;
@@ -14,6 +15,7 @@ pub struct RPCContext<T> {
     pub mount_signal: Option<mpsc::Sender<bool>>,
     pub export_name: Arc<String>,
     pub transaction_tracker: Arc<TransactionTracker>,
+    pub file_handle_converter: FileHandleConverter,
 }
 
 #[allow(clippy::missing_fields_in_debug)]
@@ -40,6 +42,7 @@ impl<T> Clone for RPCContext<T> {
             mount_signal: self.mount_signal.clone(),
             export_name: Arc::clone(&self.export_name),
             transaction_tracker: Arc::clone(&self.transaction_tracker),
+            file_handle_converter: self.file_handle_converter.clone(),
         }
     }
 }

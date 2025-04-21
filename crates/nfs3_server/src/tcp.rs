@@ -24,6 +24,7 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     mount_signal: Option<mpsc::Sender<bool>>,
     export_name: Arc<String>,
     transaction_tracker: Arc<TransactionTracker>,
+    file_handle_converter: crate::vfs::handle::FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
 }
 
@@ -195,6 +196,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             export_name: Arc::from("/".to_string()),
             transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
+            file_handle_converter: crate::vfs::handle::FileHandleConverter::new(),
         })
     }
 
@@ -274,6 +276,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 mount_signal: self.mount_signal.clone(),
                 export_name: self.export_name.clone(),
                 transaction_tracker: self.transaction_tracker.clone(),
+                file_handle_converter: self.file_handle_converter.clone(),
             };
             info!("Accepting connection from {}", context.client_addr);
             debug!("Accepting socket {:?} {:?}", socket, context);
