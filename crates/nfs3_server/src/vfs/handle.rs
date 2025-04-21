@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use nfs3_types::nfs3::{fileid3, nfs_fh3, nfsstat3};
+use nfs3_types::nfs3::{nfs_fh3, nfsstat3};
 use nfs3_types::xdr_codec::Opaque;
 
 /// Represents a file handle
@@ -31,6 +31,17 @@ pub struct FileHandleU64 {
     id: [u8; 8],
 }
 
+impl FileHandleU64 {
+    /// Creates a new file handle from a u64
+    pub fn new(id: u64) -> Self {
+        Self { id: id.to_ne_bytes() }
+    }    
+
+    pub fn as_u64(&self) -> u64 {
+        u64::from_ne_bytes(self.id)
+    }
+}
+
 impl FileHandle for FileHandleU64 {
     fn len(&self) -> usize {
         self.id.len()
@@ -53,37 +64,38 @@ impl std::fmt::Debug for FileHandleU64 {
 
 impl std::fmt::Display for FileHandleU64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", u64::from_ne_bytes(self.id))
+        write!(f, "{}", self.as_u64())
     }
 }
 
 impl From<u64> for FileHandleU64 {
     fn from(id: u64) -> Self {        
-        Self { id: id.to_ne_bytes() }
+        Self::new(id)
     }
 }
 
 impl Into<u64> for FileHandleU64 {
     fn into(self) -> u64 {
-        u64::from_ne_bytes(self.id)
+        self.as_u64()
     }
 }
 
 impl PartialEq<u64> for FileHandleU64 {
     fn eq(&self, other: &u64) -> bool {
-        self.id == other.to_ne_bytes()
+        &self.as_u64() == other
     }
 }
 
-pub(crate) static DEFAULT_FH_CONVERTER: LazyLock<DefaultNfsFhConverter> =
-    LazyLock::new(DefaultNfsFhConverter::new);
+pub(crate) static DEFAULT_FH_CONVERTER: LazyLock<FileHandleConverter> =
+    LazyLock::new(FileHandleConverter::new);
 
-pub(crate) struct DefaultNfsFhConverter {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FileHandleConverter {
     generation_number: u64,
     generation_number_le: [u8; 8],
 }
 
-impl DefaultNfsFhConverter {
+impl FileHandleConverter {
     const HANDLE_LENGTH: usize = 16;
 
     #[allow(clippy::cast_possible_truncation)] // it's ok to truncate the generation number
@@ -99,23 +111,6 @@ impl DefaultNfsFhConverter {
         }
     }
 
-    pub(crate) fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
-        let mut ret: Vec<u8> = Vec::with_capacity(Self::HANDLE_LENGTH);
-        ret.extend_from_slice(&self.generation_number_le);
-        ret.extend_from_slice(&id.to_le_bytes());
-        nfs_fh3 {
-            data: Opaque::owned(ret),
-        }
-    }
-    pub(crate) fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
-        self.check_handle(id)?;
-
-        Ok(u64::from_le_bytes(
-            id.data[8..16]
-                .try_into()
-                .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
-        ))
-    }
     pub(crate) const fn generation_number_le(&self) -> [u8; 8] {
         self.generation_number_le
     }

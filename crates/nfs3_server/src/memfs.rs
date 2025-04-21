@@ -48,13 +48,13 @@ const DELIMITER: char = '/';
 #[derive(Debug)]
 struct Dir {
     name: filename3<'static>,
-    parent: &FileHandleU64,
+    parent: FileHandleU64,
     attr: fattr3,
     content: HashSet<FileHandleU64>,
 }
 
 impl Dir {
-    fn new(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64) -> Self {
+    fn new(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
             type_: ftype3::NF3DIR,
@@ -82,7 +82,7 @@ impl Dir {
     fn root_dir() -> Self {
         let name = filename3(Opaque::borrowed(b"/"));
         let id = 1.into();
-        Self::new(name, id, &0.into())
+        Self::new(name, id, 0.into())
     }
 
     fn add_entry(&mut self, entry: FileHandleU64) -> bool {
@@ -93,13 +93,13 @@ impl Dir {
 #[derive(Debug)]
 struct File {
     name: filename3<'static>,
-    _parent: &FileHandleU64,
+    _parent: FileHandleU64,
     attr: fattr3,
     content: Vec<u8>,
 }
 
 impl File {
-    fn new(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
+    fn new(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64, content: Vec<u8>) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
             type_: ftype3::NF3REG,
@@ -178,11 +178,11 @@ enum Entry {
 }
 
 impl Entry {
-    fn new_file(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
+    fn new_file(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64, content: Vec<u8>) -> Self {
         Self::File(File::new(name, id, parent, content))
     }
 
-    fn new_dir(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64) -> Self {
+    fn new_dir(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64) -> Self {
         Self::Dir(Dir::new(name, id, parent))
     }
 
@@ -281,7 +281,7 @@ impl Entry {
 #[derive(Debug)]
 struct Fs {
     entries: HashMap<FileHandleU64, Entry>,
-    root: &FileHandleU64,
+    root: FileHandleU64,
 }
 
 impl Fs {
@@ -382,7 +382,7 @@ impl Fs {
 #[derive(Debug)]
 pub struct MemFs {
     fs: Arc<RwLock<Fs>>,
-    rootdir: &FileHandleU64,
+    rootdir: FileHandleU64,
     nextid: AtomicU64,
 }
 
@@ -390,7 +390,7 @@ impl Default for MemFs {
     fn default() -> Self {
         let root = Fs::new();
         let rootdir = root.root;
-        let nextid = AtomicU64::new(rootdir + 1);
+        let nextid = AtomicU64::new(rootdir.as_u64() + 1);
         Self {
             fs: Arc::new(RwLock::new(root)),
             rootdir,
@@ -428,7 +428,7 @@ impl MemFs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let dir = Entry::new_dir(dirname, newid.clone(), dirid);
+        let dir = Entry::new_dir(dirname, newid.clone(), *dirid);
         let attr = dir.attr().clone();
 
         self.fs
@@ -451,7 +451,7 @@ impl MemFs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let mut file = Entry::new_file(filename, newid.clone(), dirid, content);
+        let mut file = Entry::new_file(filename, newid.clone(), *dirid, content);
         file.set_attr(attr);
         let attr = file.attr().clone();
 
@@ -688,7 +688,7 @@ impl ReadDirPlusIterator for MemFsIterator {
             self.index += 1;
 
             let fs = self.fs.read().expect("lock is poisoned");
-            let entry = fs.get(id);
+            let entry = fs.get(&id);
             let Some(entry) = entry else {
                 // skip missing entries
                 tracing::warn!("entry not found: {id}");
@@ -697,9 +697,9 @@ impl ReadDirPlusIterator for MemFsIterator {
             let attr = entry.attr().clone();
             // let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
             return NextResult::Ok(entryplus3 {
-                fileid: id,
+                fileid: id.clone().into(),
                 name: entry.name().clone_to_owned(),
-                cookie: id,
+                cookie: id.into(),
                 name_attributes: nfs::post_op_attr::Some(attr),
                 name_handle: nfs::Nfs3Option::None,
             });

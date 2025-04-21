@@ -1,6 +1,6 @@
 //! An adapter for read-only NFS filesystems.
 
-use nfs3_types::nfs3::{cookie3, fattr3, filename3, nfsstat3, sattr3, Nfs3Option};
+use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3, Nfs3Option};
 
 use super::{
     NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,

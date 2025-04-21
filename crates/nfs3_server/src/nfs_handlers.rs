@@ -147,7 +147,7 @@ where
     let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
     match context
         .vfs
-        .read(id, read3args.offset, read3args.count)
+        .read(&id, read3args.offset, read3args.count)
         .await
     {
         Ok((bytes, eof)) => {
@@ -172,7 +172,7 @@ where
 {
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
-    match context.vfs.fsinfo(id).await {
+    match context.vfs.fsinfo(&id).await {
         Ok(fsinfo) => {
             debug!("fsinfo success {xid} --> {fsinfo:?}");
             FSINFO3res::Ok(fsinfo)
@@ -546,7 +546,7 @@ where
 
     match context
         .vfs
-        .write(id, write3args.offset, &write3args.data)
+        .write(&id, write3args.offset, &write3args.data)
         .await
     {
         Ok(fattr) => {
@@ -685,7 +685,7 @@ where
         }
     }
 
-    match context.vfs.setattr(id, args.new_attributes).await {
+    match context.vfs.setattr(&id, args.new_attributes).await {
         Ok(post_op_attr) => {
             debug!("setattr success {xid} --> {post_op_attr:?}");
             SETATTR3res::Ok(SETATTR3resok {
@@ -843,7 +843,7 @@ where
         Ok((fid, fattr)) => {
             debug!("mkdir success {xid} --> {fid:?}, {fattr:?}");
             MKDIR3res::Ok(MKDIR3resok {
-                obj: post_op_fh3::Some(context.vfs.id_to_fh(fid)),
+                obj: post_op_fh3::Some(context.vfs.id_to_fh(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc,
             })
@@ -881,7 +881,7 @@ where
     match context
         .vfs
         .symlink(
-            dirid,
+            &dirid,
             &args.where_.name,
             &args.symlink.symlink_data,
             &args.symlink.symlink_attributes,
@@ -891,7 +891,7 @@ where
         Ok((fid, fattr)) => {
             debug!("symlink success {xid} --> {fid:?}, {fattr:?}");
             SYMLINK3res::Ok(SYMLINK3resok {
-                obj: post_op_fh3::Some(context.vfs.id_to_fh(fid)),
+                obj: post_op_fh3::Some(context.vfs.id_to_fh(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc: wcc_data {
                     before: pre_dir_attr,
@@ -923,9 +923,9 @@ where
     T: NfsFileSystem,
 {
     let id = fh_to_id!(context, &args.symlink);
-    let symlink_attributes = nfs_option_from_result(context.vfs.getattr(id).await);
+    let symlink_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
 
-    match context.vfs.readlink(id).await {
+    match context.vfs.readlink(&id).await {
         Ok(data) => {
             debug!("readlink success {xid} --> {data:?}");
             READLINK3res::Ok(READLINK3resok {

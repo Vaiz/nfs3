@@ -80,7 +80,7 @@ pub trait NfsReadFileSystem: Send + Sync {
                 if component.is_empty() {
                     continue;
                 }
-                fid = self.lookup(fid, &component.as_bytes().into()).await?;
+                fid = self.lookup(&fid, &component.as_bytes().into()).await?;
             }
             Ok(fid)
         }
