@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use nfs3_types::nfs3::{nfs_fh3, nfsstat3};
 use nfs3_types::xdr_codec::Opaque;
 
@@ -86,9 +84,6 @@ impl PartialEq<u64> for FileHandleU64 {
     }
 }
 
-pub(crate) static DEFAULT_FH_CONVERTER: LazyLock<FileHandleConverter> =
-    LazyLock::new(FileHandleConverter::new);
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FileHandleConverter {
     generation_number: u64,
@@ -109,10 +104,6 @@ impl FileHandleConverter {
             generation_number,
             generation_number_le: generation_number.to_le_bytes(),
         }
-    }
-
-    pub(crate) const fn generation_number_le(&self) -> [u8; 8] {
-        self.generation_number_le
     }
 
     pub(crate) fn fh_to_nfs(&self, id: &impl FileHandle) -> nfs_fh3 {

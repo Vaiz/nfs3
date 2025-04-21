@@ -69,7 +69,7 @@ where
 
 macro_rules! fh_to_id {
     ($context:expr, $fh:expr) => {
-        match $context.vfs.fh_to_id($fh) {
+        match $context.file_handle_converter.fh_from_nfs($fh) {
             Ok(id) => id,
             Err(stat) => {
                 warn!("cannot resolve fh: {stat}");
@@ -122,7 +122,7 @@ where
             let obj_attributes = nfs_option_from_result(context.vfs.getattr(&fid).await);
             debug!("lookup success {} --> {:?}", xid, obj_attributes);
             LOOKUP3res::Ok(LOOKUP3resok {
-                object: context.vfs.id_to_fh(&fid),
+                object: context.file_handle_converter.fh_to_nfs(&fid),
                 obj_attributes,
                 dir_attributes,
             })
@@ -636,7 +636,7 @@ where
         Ok(fid) => {
             debug!("create success {xid} --> {fid:?}, {postopattr:?}");
             CREATE3res::Ok(CREATE3resok {
-                obj: post_op_fh3::Some(context.vfs.id_to_fh(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: postopattr,
                 dir_wcc,
             })
@@ -843,7 +843,7 @@ where
         Ok((fid, fattr)) => {
             debug!("mkdir success {xid} --> {fid:?}, {fattr:?}");
             MKDIR3res::Ok(MKDIR3resok {
-                obj: post_op_fh3::Some(context.vfs.id_to_fh(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc,
             })
@@ -891,7 +891,7 @@ where
         Ok((fid, fattr)) => {
             debug!("symlink success {xid} --> {fid:?}, {fattr:?}");
             SYMLINK3res::Ok(SYMLINK3resok {
-                obj: post_op_fh3::Some(context.vfs.id_to_fh(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc: wcc_data {
                     before: pre_dir_attr,

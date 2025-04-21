@@ -84,8 +84,9 @@ where
 
     match context.vfs.lookup_by_path(path).await {
         Ok(fileid) => {
-            let response = mountres3_ok {
-                fhandle: fhandle3(context.vfs.id_to_fh(&fileid).data),
+            let root = context.file_handle_converter.fh_to_nfs(&fileid);
+            let response = mountres3_ok {                
+                fhandle: fhandle3(root.data),
                 auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
             };
             debug!("{xid} --> {response:?}");

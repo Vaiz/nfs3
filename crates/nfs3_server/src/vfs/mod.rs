@@ -25,12 +25,11 @@ pub mod adapter;
 pub(crate) mod handle;
 mod iterator;
 
-use handle::DEFAULT_FH_CONVERTER;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 use nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3, fattr3,
-    filename3, nfs_fh3, nfspath3, nfstime3, post_op_attr, sattr3,
+    filename3, nfspath3, nfstime3, post_op_attr, sattr3,
 };
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -156,17 +155,8 @@ pub trait NfsReadFileSystem: Send + Sync {
         }
     }
 
-    /// Converts the fileid to an opaque NFS file handle. Optional.
-    fn id_to_fh(&self, id: &Self::Handle) -> nfs_fh3 {
-        DEFAULT_FH_CONVERTER.fh_to_nfs(id)
-    }
-    /// Converts an opaque NFS file handle to a fileid.  Optional.
-    fn fh_to_id(&self, id: &nfs_fh3) -> Result<Self::Handle, nfsstat3> {
-        DEFAULT_FH_CONVERTER.fh_from_nfs(id)
-    }
-
     fn serverid(&self) -> cookieverf3 {
-        cookieverf3(DEFAULT_FH_CONVERTER.generation_number_le())
+        cookieverf3(0u64.to_be_bytes())
     }
 }
 
