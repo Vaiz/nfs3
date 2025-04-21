@@ -1,6 +1,6 @@
 //! An adapter for read-only NFS filesystems.
 
-use nfs3_types::nfs3::{Nfs3Option, fattr3, fileid3, filename3, nfsstat3, sattr3};
+use nfs3_types::nfs3::{cookie3, fattr3, filename3, nfsstat3, sattr3, Nfs3Option};
 
 use super::{
     NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
@@ -30,15 +30,15 @@ where
 {
     type Handle = T::Handle;
 
-    fn root_dir(&self) -> fileid3 {
+    fn root_dir(&self) -> Self::Handle {
         self.0.root_dir()
     }
 
-    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
+    async fn lookup(&self, dirid: &Self::Handle, filename: &filename3<'_>) -> Result<Self::Handle, nfsstat3> {
         self.0.lookup(dirid, filename).await
     }
 
-    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
+    async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
         let mut result = self.0.getattr(id).await;
         if let Ok(attr) = &mut result {
             remove_write_permissions(attr);
@@ -48,7 +48,7 @@ where
 
     async fn read(
         &self,
-        id: fileid3,
+        id: &Self::Handle,
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
@@ -57,24 +57,24 @@ where
 
     async fn readdir(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        cookie3: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        self.0.readdir(dirid, start_after).await
+        self.0.readdir(dirid, cookie3).await
     }
 
     async fn readdirplus(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        cookie3: u64,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         self.0
-            .readdirplus(dirid, start_after)
+            .readdirplus(dirid, cookie3)
             .await
             .map(ReadOnlyIterator)
     }
 
-    async fn readlink(&self, id: fileid3) -> Result<nfs3_types::nfs3::nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfs3_types::nfs3::nfspath3, nfsstat3> {
         self.0.readlink(id).await
     }
 }
@@ -87,48 +87,48 @@ where
         VFSCapabilities::ReadOnly
     }
 
-    async fn setattr(&self, _id: fileid3, _setattr: sattr3) -> Result<fattr3, nfsstat3> {
+    async fn setattr(&self, _id: &Self::Handle, _setattr: sattr3) -> Result<fattr3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
-    async fn write(&self, _id: fileid3, _offset: u64, _data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(&self, _id: &Self::Handle, _offset: u64, _data: &[u8]) -> Result<fattr3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
     async fn create(
         &self,
-        _dirid: fileid3,
+        _dirid: &Self::Handle,
         _filename: &filename3<'_>,
         _attr: sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
     async fn create_exclusive(
         &self,
-        _dirid: fileid3,
+        _dirid: &Self::Handle,
         _filename: &filename3<'_>,
-    ) -> Result<fileid3, nfsstat3> {
+    ) -> Result<Self::Handle, nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
     async fn mkdir(
         &self,
-        _dirid: fileid3,
+        _dirid: &Self::Handle,
         _dirname: &filename3<'_>,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
-    async fn remove(&self, _dirid: fileid3, _filename: &filename3<'_>) -> Result<(), nfsstat3> {
+    async fn remove(&self, _dirid: &Self::Handle, _filename: &filename3<'_>) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
     async fn rename<'a>(
         &self,
-        _from_dirid: fileid3,
+        _from_dirid: &Self::Handle,
         _from_filename: &filename3<'a>,
-        _to_dirid: fileid3,
+        _to_dirid: &Self::Handle,
         _to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
@@ -136,11 +136,11 @@ where
 
     async fn symlink<'a>(
         &self,
-        _dirid: fileid3,
+        _dirid: &Self::Handle,
         _linkname: &filename3<'a>,
         _symlink: &nfs3_types::nfs3::nfspath3<'a>,
         _attr: &sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 }
