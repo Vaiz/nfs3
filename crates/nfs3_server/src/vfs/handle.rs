@@ -26,7 +26,7 @@ pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
 /// 
 /// If your implementation of [`NfsReadFileSystem`] uses a file handle that is
 /// 8 bytes long, you can use this type.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileHandleU64 {
     id: [u8; 8],
 }

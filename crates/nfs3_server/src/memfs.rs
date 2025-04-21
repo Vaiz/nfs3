@@ -54,7 +54,7 @@ struct Dir {
 }
 
 impl Dir {
-    fn new(name: filename3<'static>, id: &FileHandleU64, parent: &FileHandleU64) -> Self {
+    fn new(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
             type_: ftype3::NF3DIR,
@@ -66,7 +66,7 @@ impl Dir {
             used: 0,
             rdev: specdata3::default(),
             fsid: 0,
-            fileid: id,
+            fileid: id.into(),
             atime: current_time.clone(),
             mtime: current_time.clone(),
             ctime: current_time,
@@ -81,11 +81,11 @@ impl Dir {
 
     fn root_dir() -> Self {
         let name = filename3(Opaque::borrowed(b"/"));
-        let id = 1;
-        Self::new(name, id, 0)
+        let id = 1.into();
+        Self::new(name, id, &0.into())
     }
 
-    fn add_entry(&mut self, entry: &FileHandleU64) -> bool {
+    fn add_entry(&mut self, entry: FileHandleU64) -> bool {
         self.content.insert(entry)
     }
 }
@@ -99,7 +99,7 @@ struct File {
 }
 
 impl File {
-    fn new(name: filename3<'static>, id: &FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
+    fn new(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
             type_: ftype3::NF3REG,
@@ -111,7 +111,7 @@ impl File {
             used: content.len() as u64,
             rdev: specdata3::default(),
             fsid: 0,
-            fileid: id,
+            fileid: id.into(),
             atime: current_time.clone(),
             mtime: current_time.clone(),
             ctime: current_time,
@@ -178,11 +178,11 @@ enum Entry {
 }
 
 impl Entry {
-    fn new_file(name: filename3<'static>, id: &FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
+    fn new_file(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64, content: Vec<u8>) -> Self {
         Self::File(File::new(name, id, parent, content))
     }
 
-    fn new_dir(name: filename3<'static>, id: &FileHandleU64, parent: &FileHandleU64) -> Self {
+    fn new_dir(name: filename3<'static>, id: FileHandleU64, parent: &FileHandleU64) -> Self {
         Self::Dir(Dir::new(name, id, parent))
     }
 
@@ -214,11 +214,11 @@ impl Entry {
         }
     }
 
-    const fn fileid(&self) -> FileHandleU64 {
+    fn fileid(&self) -> FileHandleU64 {
         match self {
             Self::File(file) => file.attr.fileid,
             Self::Dir(dir) => dir.attr.fileid,
-        }
+        }.into()
     }
 
     const fn name(&self) -> &filename3<'static> {
@@ -409,7 +409,7 @@ impl MemFs {
             let id = fs.path_to_id_impl(&entry.parent)?;
             let name = filename3(Opaque::owned(entry.name.into_bytes()));
             if entry.is_dir {
-                fs.add_dir(id, name)?;
+                fs.add_dir(&id, name)?;
             } else {
                 fs.add_file(&id, name, sattr3::default(), entry.content)?;
             }
@@ -423,12 +423,12 @@ impl MemFs {
         dirid: &FileHandleU64,
         dirname: filename3<'static>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        let newid = self
+        let newid: FileHandleU64 = self
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let dir = Entry::new_dir(dirname, &newid, dirid);
+        let dir = Entry::new_dir(dirname, newid.clone(), dirid);
         let attr = dir.attr().clone();
 
         self.fs
@@ -446,12 +446,12 @@ impl MemFs {
         attr: sattr3,
         content: Vec<u8>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        let newid = self
+        let newid: FileHandleU64 = self
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let mut file = Entry::new_file(filename, &newid, dirid, content);
+        let mut file = Entry::new_file(filename, newid.clone(), dirid, content);
         file.set_attr(attr);
         let attr = file.attr().clone();
 
@@ -556,18 +556,18 @@ impl NfsReadFileSystem for MemFs {
     async fn readdir(
         &self,
         dirid: &FileHandleU64,
-        start_after: &FileHandleU64,
+        cookie: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, start_after)?;
+        let iter = Self::make_iter(self, dirid, cookie)?;
         Ok(iter)
     }
 
     async fn readdirplus(
         &self,
         dirid: &FileHandleU64,
-        start_after: &FileHandleU64,
+        cookie: u64,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, start_after)?;
+        let iter = Self::make_iter(self, dirid, cookie)?;
         Ok(iter)
     }
 
