@@ -106,12 +106,27 @@ pub enum VFSCapabilities {
     ReadWrite,
 }
 
+pub trait FileHandle {
+    fn len(&self) -> usize;
+    fn as_bytes(&self) -> &[u8];
+    fn from_bytes(bytes: &[u8]) -> Option<Self>
+    where
+        Self: Sized;
+}
+
 /// Read-only file system interface
 ///
 /// This should be enough to implement a read-only NFS server.
 /// If you want to implement a read-write server, you should implement
 /// the [`NfsFileSystem`] trait too.
 pub trait NfsReadFileSystem: Send + Sync {
+    /// Type that can be used to indentify a file or folder in the file system.
+    ///
+    /// This will be used to form [`nfs_fh3`] handles.
+    /// NOTE: Maximum size of nfs_fh3 is 60 bytes.
+    ///       4 bytes are reserved for server unique id.
+    type Handle: FileHandle;
+
     /// Returns the ID the of the root directory "/"
     fn root_dir(&self) -> fileid3;
     /// Look up the id of a path in a directory

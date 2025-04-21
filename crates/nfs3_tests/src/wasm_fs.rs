@@ -5,7 +5,8 @@ use std::path::Path;
 
 use intaglio::Symbol;
 use nfs3_server::vfs::{
-    NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
+    FileHandle, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
+    VFSCapabilities,
 };
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
@@ -15,6 +16,22 @@ use crate::server;
 
 const MEBIBYTE: u32 = 1024 * 1024;
 const GIBIBYTE: u64 = 1024 * 1024 * 1024;
+
+pub struct WasmFsHandle {
+    id: [u8; 8],
+}
+
+impl FileHandle for WasmFsHandle {
+    fn len(&self) -> usize {
+        self.id.len()
+    }
+    fn as_bytes(&self) -> &[u8] {
+        &self.id
+    }
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bytes.try_into().ok().map(|id| Self { id })
+    }
+}
 
 #[derive(Debug)]
 pub struct WasmFs<FS> {
@@ -116,6 +133,8 @@ impl<FS> WasmFs<FS> {
 }
 
 impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
+    type Handle = WasmFsHandle;
+
     fn root_dir(&self) -> fileid3 {
         self.root
     }

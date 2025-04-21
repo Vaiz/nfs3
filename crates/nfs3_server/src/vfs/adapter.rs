@@ -28,6 +28,8 @@ impl<T> NfsReadFileSystem for ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
 {
+    type Handle = T::Handle;
+
     fn root_dir(&self) -> fileid3 {
         self.0.root_dir()
     }

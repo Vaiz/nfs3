@@ -15,7 +15,7 @@ use nfs3_server::fs_util::{
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
-    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
+    FileHandle, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
 };
 use nfs3_types::nfs3::{
     entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr, post_op_fh3,
@@ -56,11 +56,27 @@ async fn main() {
 
     let path = PathBuf::from(path);
 
-    let fs = MirrorFS::new(path);
+    let fs = MirrorFs::new(path);
     let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), fs)
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();
+}
+
+pub struct MirrorFsHandle {
+    id: [u8; 8],
+}
+
+impl FileHandle for MirrorFsHandle {
+    fn len(&self) -> usize {
+        self.id.len()
+    }
+    fn as_bytes(&self) -> &[u8] {
+        &self.id
+    }
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bytes.try_into().ok().map(|id| Self { id })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -273,7 +289,7 @@ impl FSMap {
     }
 }
 #[derive(Debug)]
-pub struct MirrorFS {
+pub struct MirrorFs {
     fsmap: Arc<tokio::sync::RwLock<FSMap>>,
 }
 
@@ -288,7 +304,7 @@ enum CreateFSObject<'a> {
     /// Creates a symlink with a set of attributes to a target location
     Symlink((sattr3, nfspath3<'a>)),
 }
-impl MirrorFS {
+impl MirrorFs {
     #[must_use]
     pub fn new(root: PathBuf) -> Self {
         Self {
@@ -377,7 +393,9 @@ impl MirrorFS {
     }
 }
 
-impl NfsReadFileSystem for MirrorFS {
+impl NfsReadFileSystem for MirrorFs {
+    type Handle = MirrorFsHandle;
+
     fn root_dir(&self) -> fileid3 {
         0
     }
@@ -491,7 +509,7 @@ impl NfsReadFileSystem for MirrorFS {
     }
 }
 
-impl NfsFileSystem for MirrorFS {
+impl NfsFileSystem for MirrorFs {
     async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;

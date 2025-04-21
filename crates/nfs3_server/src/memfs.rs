@@ -40,11 +40,27 @@ use nfs3_types::nfs3::{
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
-    DEFAULT_FH_CONVERTER, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator,
+    DEFAULT_FH_CONVERTER, FileHandle, NextResult, NfsFileSystem, NfsReadFileSystem,
+    ReadDirIterator, ReadDirPlusIterator,
 };
 
 const DELIMITER: char = '/';
+
+pub struct MemFsHandle {
+    id: [u8; 8],
+}
+
+impl FileHandle for MemFsHandle {
+    fn len(&self) -> usize {
+        self.id.len()
+    }
+    fn as_bytes(&self) -> &[u8] {
+        &self.id
+    }
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bytes.try_into().ok().map(|id| Self { id })
+    }
+}
 
 #[derive(Debug)]
 struct Dir {
@@ -525,6 +541,8 @@ impl MemFs {
 }
 
 impl NfsReadFileSystem for MemFs {
+    type Handle = MemFsHandle;
+
     fn root_dir(&self) -> fileid3 {
         self.rootdir
     }
