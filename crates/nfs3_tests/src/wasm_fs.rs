@@ -245,7 +245,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
             .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?;
         Ok(fileid3::from_ne_bytes(id))
     }
-    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
+    async fn lookup_by_path(&self, path: &str) -> Result<fileid3, nfsstat3> {
         let path = Path::new(path);
         let id = self
             .id_to_path_table
@@ -431,7 +431,7 @@ mod tests {
         let id = fs.fh_to_id(&root).unwrap();
         assert_eq!(id, fs.root_dir());
 
-        let id = fs.path_to_id("/").await.unwrap();
+        let id = fs.lookup_by_path("/").await.unwrap();
         assert_eq!(id, fs.root_dir());
 
         let path = fs.id_to_path(fs.root_dir()).unwrap();

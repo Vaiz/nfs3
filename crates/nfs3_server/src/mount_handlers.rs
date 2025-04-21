@@ -82,7 +82,7 @@ where
         return mountres3::Err(mountstat3::MNT3ERR_NOENT);
     };
 
-    match context.vfs.path_to_id(path).await {
+    match context.vfs.lookup_by_path(path).await {
         Ok(fileid) => {
             let response = mountres3_ok {
                 fhandle: fhandle3(context.vfs.id_to_fh(fileid).data),

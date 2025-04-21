@@ -127,6 +127,22 @@ pub trait NfsReadFileSystem: Send + Sync {
         filename: &filename3<'_>,
     ) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send;
 
+    /// This method is used when the client tries to mount a subdirectory.
+    /// The default implementation walks the directory structure with [`lookup`]
+    fn lookup_by_path(&self, path: &str) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send {
+        async move {
+            let splits = path.split('/');
+            let mut fid = self.root_dir();
+            for component in splits {
+                if component.is_empty() {
+                    continue;
+                }
+                fid = self.lookup(fid, &component.as_bytes().into()).await?;
+            }
+            Ok(fid)
+        }
+    }
+
     /// Returns the attributes of an id.
     /// This method should be fast as it is used very frequently.
     fn getattr(&self, id: fileid3) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
@@ -204,21 +220,6 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// Converts an opaque NFS file handle to a fileid.  Optional.
     fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
         DEFAULT_FH_CONVERTER.fh_to_id(id)
-    }
-    /// Converts a complete path to a fileid.  Optional.
-    /// The default implementation walks the directory structure with `lookup()`
-    fn path_to_id(&self, path: &str) -> impl Future<Output = Result<fileid3, nfsstat3>> + Send {
-        async move {
-            let splits = path.split('/');
-            let mut fid = self.root_dir();
-            for component in splits {
-                if component.is_empty() {
-                    continue;
-                }
-                fid = self.lookup(fid, &component.as_bytes().into()).await?;
-            }
-            Ok(fid)
-        }
     }
 
     fn serverid(&self) -> cookieverf3 {

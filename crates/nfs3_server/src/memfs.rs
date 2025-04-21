@@ -582,7 +582,7 @@ impl NfsReadFileSystem for MemFs {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn path_to_id(&self, path: &str) -> Result<fileid3, nfsstat3> {
+    async fn lookup_by_path(&self, path: &str) -> Result<fileid3, nfsstat3> {
         self.path_to_id_impl(path)
     }
 }
