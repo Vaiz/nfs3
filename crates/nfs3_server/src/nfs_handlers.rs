@@ -364,10 +364,7 @@ where
     let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
     loop {
         match iter.next().await {
-            NextResult::Ok(mut entry) => {
-                if entry.name_handle.is_none() {
-                    entry.name_handle = post_op_fh3::Some(context.vfs.id_to_fh(dirid));
-                }
+            NextResult::Ok(entry) => {
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
