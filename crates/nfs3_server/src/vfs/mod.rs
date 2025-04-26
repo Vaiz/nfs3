@@ -49,15 +49,12 @@ pub enum VFSCapabilities {
 pub trait NfsReadFileSystem: Send + Sync {
     /// Type that can be used to indentify a file or folder in the file system.
     ///
-    /// This will be used to form [`nfs_fh3`][1] handles.
-    /// NOTE: Maximum size of `nfs_fh3` is 60 bytes.
-    ///       4 bytes are reserved for server unique id.
-    ///
-    /// [1]: nfs3_types::nfs3::nfs_fh3
+    /// For more information, see [`FileHandle`].
     type Handle: FileHandle;
 
     /// Returns the ID the of the root directory "/"
     fn root_dir(&self) -> Self::Handle;
+
     /// Look up the id of a path in a directory
     ///
     /// i.e. given a directory dir/ containing a file `a.txt`
