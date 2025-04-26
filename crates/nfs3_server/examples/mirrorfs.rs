@@ -15,11 +15,12 @@ use nfs3_server::fs_util::{
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
-    FileHandle, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
+    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
+    ReadDirPlusIterator,
 };
 use nfs3_types::nfs3::{
-    entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr, post_op_fh3,
-    sattr3,
+    cookie3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
+    post_op_fh3, sattr3,
 };
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -61,22 +62,6 @@ async fn main() {
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();
-}
-
-pub struct MirrorFsHandle {
-    id: [u8; 8],
-}
-
-impl FileHandle for MirrorFsHandle {
-    fn len(&self) -> usize {
-        self.id.len()
-    }
-    fn as_bytes(&self) -> &[u8] {
-        &self.id
-    }
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bytes.try_into().ok().map(|id| Self { id })
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -394,17 +379,22 @@ impl MirrorFs {
 }
 
 impl NfsReadFileSystem for MirrorFs {
-    type Handle = MirrorFsHandle;
+    type Handle = FileHandleU64;
 
-    fn root_dir(&self) -> fileid3 {
-        0
+    fn root_dir(&self) -> Self::Handle {
+        FileHandleU64::new(0)
     }
 
-    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
+    async fn lookup(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+    ) -> Result<Self::Handle, nfsstat3> {
+        let dirid = dirid.as_u64();
         let mut fsmap = self.fsmap.write().await;
         if let Ok(id) = fsmap.find_child(dirid, filename.as_ref()) {
             if fsmap.id_to_path.contains_key(&id) {
-                return Ok(id);
+                return Ok(FileHandleU64::new(id));
             }
         }
         // Optimize for negative lookups.
@@ -424,15 +414,13 @@ impl NfsReadFileSystem for MirrorFs {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
         let _ = fsmap.refresh_dir_list(dirid).await;
-
-        fsmap.find_child(dirid, filename.as_ref())
-        // debug!("lookup({:?}, {:?})", dirid, filename);
-
-        // debug!(" -- lookup result {:?}", res);
+        fsmap
+            .find_child(dirid, filename.as_ref())
+            .map(FileHandleU64::new)
     }
 
-    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
-        // debug!("Stat query {:?}", id);
+    async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
+        let id = id.as_u64();
         let mut fsmap = self.fsmap.write().await;
         if matches!(fsmap.refresh_entry(id).await?, RefreshResult::Delete) {
             return Err(nfsstat3::NFS3ERR_NOENT);
@@ -446,10 +434,11 @@ impl NfsReadFileSystem for MirrorFs {
     #[allow(clippy::cast_possible_truncation)]
     async fn read(
         &self,
-        id: fileid3,
+        id: &Self::Handle,
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
+        let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let entry = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&entry.name);
@@ -475,9 +464,10 @@ impl NfsReadFileSystem for MirrorFs {
 
     async fn readdir(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        start_after: cookie3,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
+        let dirid = dirid.as_u64();
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
         Ok(iter)
@@ -485,15 +475,17 @@ impl NfsReadFileSystem for MirrorFs {
 
     async fn readdirplus(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        start_after: cookie3,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+        let dirid = dirid.as_u64();
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
         Ok(iter)
     }
 
-    async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3, nfsstat3> {
+        let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&ent.name);
@@ -510,7 +502,8 @@ impl NfsReadFileSystem for MirrorFs {
 }
 
 impl NfsFileSystem for MirrorFs {
-    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+    async fn setattr(&self, id: &Self::Handle, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+        let id = id.as_u64();
         let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&entry.name);
@@ -523,7 +516,8 @@ impl NfsFileSystem for MirrorFs {
         }
         Ok(metadata_to_fattr3(id, &metadata))
     }
-    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(&self, id: &Self::Handle, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+        let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
         let path = fsmap.sym_to_path(&ent.name);
@@ -556,26 +550,29 @@ impl NfsFileSystem for MirrorFs {
 
     async fn create(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         filename: &filename3<'_>,
         setattr: sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
-        self.create_fs_object(dirid, filename, &CreateFSObject::File(setattr))
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
+        self.create_fs_object(dirid.as_u64(), filename, &CreateFSObject::File(setattr))
             .await
+            .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 
     async fn create_exclusive(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         filename: &filename3<'_>,
-    ) -> Result<fileid3, nfsstat3> {
-        Ok(self
-            .create_fs_object(dirid, filename, &CreateFSObject::Exclusive)
+    ) -> Result<Self::Handle, nfsstat3> {
+        let id = self
+            .create_fs_object(dirid.as_u64(), filename, &CreateFSObject::Exclusive)
             .await?
-            .0)
+            .0;
+        Ok(FileHandleU64::new(id))
     }
 
-    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: &Self::Handle, filename: &filename3<'_>) -> Result<(), nfsstat3> {
+        let dirid = dirid.as_u64();
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
         let mut path = fsmap.sym_to_path(&ent.name);
@@ -621,11 +618,13 @@ impl NfsFileSystem for MirrorFs {
 
     async fn rename(
         &self,
-        from_dirid: fileid3,
+        from_dirid: &Self::Handle,
         from_filename: &filename3<'_>,
-        to_dirid: fileid3,
+        to_dirid: &Self::Handle,
         to_filename: &filename3<'_>,
     ) -> Result<(), nfsstat3> {
+        let from_dirid = from_dirid.as_u64();
+        let to_dirid = to_dirid.as_u64();
         let mut fsmap = self.fsmap.write().await;
 
         let from_dirent = fsmap.find_entry(from_dirid)?;
@@ -702,26 +701,28 @@ impl NfsFileSystem for MirrorFs {
     }
     async fn mkdir(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         dirname: &filename3<'_>,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
-        self.create_fs_object(dirid, dirname, &CreateFSObject::Directory)
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
+        self.create_fs_object(dirid.as_u64(), dirname, &CreateFSObject::Directory)
             .await
+            .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 
     async fn symlink<'a>(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         linkname: &filename3<'a>,
         symlink: &nfspath3<'a>,
         attr: &sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         self.create_fs_object(
-            dirid,
+            dirid.as_u64(),
             linkname,
             &CreateFSObject::Symlink((attr.clone(), symlink.clone())),
         )
         .await
+        .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 }
 
