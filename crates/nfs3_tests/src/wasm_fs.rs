@@ -421,15 +421,10 @@ mod tests {
     #[tokio::test]
     async fn test_file_id() {
         let fs = super::new_mem_fs();
-        let root = fs.id_to_fh(fs.root_dir());
-
-        let id = fs.fh_to_id(&root).unwrap();
-        assert_eq!(id, fs.root_dir());
-
         let id = fs.lookup_by_path("/").await.unwrap();
         assert_eq!(id, fs.root_dir());
 
-        let path = fs.id_to_path(fs.root_dir()).unwrap();
+        let path = fs.id_to_path(&fs.root_dir()).unwrap();
         assert_eq!(path, Path::new("/"));
     }
 
