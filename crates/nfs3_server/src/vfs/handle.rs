@@ -1,4 +1,4 @@
-use nfs3_types::nfs3::{nfs_fh3, nfsstat3};
+use nfs3_types::nfs3::{nfs_fh3, nfsstat3, writeverf3};
 use nfs3_types::xdr_codec::Opaque;
 
 /// Represents a file handle
@@ -150,6 +150,16 @@ impl FileHandleConverter {
                 Err(nfsstat3::NFS3ERR_BADHANDLE)
             }
         }
+    }
+
+    /// This is a cookie that the client can use to determine
+    /// whether the server has rebooted between a call to WRITE
+    /// and a subsequent call to COMMIT. This cookie must be
+    /// consistent during a single boot session and must be
+    /// unique between instances of the NFS version 3 protocol
+    /// server where uncommitted data may be lost.
+    pub fn verf(&self) -> writeverf3 {
+        writeverf3(self.generation_number_le)        
     }
 }
 

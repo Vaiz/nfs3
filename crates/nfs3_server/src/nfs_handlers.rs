@@ -558,7 +558,7 @@ where
                 },
                 count: write3args.count,
                 committed: stable_how::FILE_SYNC,
-                verf: writeverf3(context.vfs.serverid().0),
+                verf: context.file_handle_converter.verf(),
             })
         }
         Err(stat) => {

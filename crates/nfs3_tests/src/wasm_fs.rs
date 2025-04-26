@@ -249,10 +249,6 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
 
         Ok(self.symbol_to_id(id))
     }
-
-    fn serverid(&self) -> cookieverf3 {
-        cookieverf3(self.server_id.to_ne_bytes())
-    }
 }
 
 impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> {

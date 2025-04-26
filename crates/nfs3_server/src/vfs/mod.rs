@@ -28,7 +28,7 @@ mod iterator;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 use nfs3_types::nfs3::{
-    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3, fattr3,
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, fattr3,
     filename3, nfspath3, nfstime3, post_op_attr, sattr3,
 };
 
@@ -48,7 +48,7 @@ pub enum VFSCapabilities {
 /// the [`NfsFileSystem`] trait too.
 pub trait NfsReadFileSystem: Send + Sync {
     /// Type that can be used to indentify a file or folder in the file system.
-    ///
+    /// 
     /// For more information, see [`FileHandle`].
     type Handle: FileHandle;
 
@@ -158,10 +158,6 @@ pub trait NfsReadFileSystem: Send + Sync {
             };
             Ok(res)
         }
-    }
-
-    fn serverid(&self) -> cookieverf3 {
-        cookieverf3(0u64.to_be_bytes())
     }
 }
 
