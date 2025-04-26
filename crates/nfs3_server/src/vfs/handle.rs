@@ -8,7 +8,7 @@ use nfs3_types::xdr_codec::Opaque;
 /// into a [`nfs_fh3`] handle and sent to the client. The server reserves
 /// the first 8 bytes of the handle for its own use, while the remaining
 /// 56 bytes can be freely used by the implementation.
-/// 
+///
 /// [1]: crate::vfs::NfsReadFileSystem
 /// [2]: crate::vfs::NfsFileSystem
 #[expect(clippy::len_without_is_empty)]
@@ -27,7 +27,7 @@ pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
 ///
 /// If your implementation of [`NfsReadFileSystem`][1] uses a file handle that is
 /// 8 bytes long, you can use this type instead of creating you own.
-/// 
+///
 /// [1]: crate::vfs::NfsReadFileSystem
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileHandleU64 {
@@ -165,7 +165,10 @@ mod tests {
         assert_eq!(handle.as_u64(), 42);
         assert_eq!(handle.len(), 8);
         assert_eq!(handle.as_bytes(), &[42, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(FileHandleU64::from_bytes(&[42, 0, 0, 0, 0, 0, 0, 0]), Some(handle));
+        assert_eq!(
+            FileHandleU64::from_bytes(&[42, 0, 0, 0, 0, 0, 0, 0]),
+            Some(handle)
+        );
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,14 +204,18 @@ mod tests {
     fn test_file_handle_converter_19bytes() {
         let converter = FileHandleConverter::new();
         let handle = TestHandle {
-            id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+            id: [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+            ],
         };
         let nfs_handle = converter.fh_to_nfs(&handle);
         assert_eq!(nfs_handle.data.len(), 27);
         assert_eq!(nfs_handle.data[0..8], converter.generation_number_le);
         assert_eq!(&nfs_handle.data[8..], handle.as_bytes());
 
-        let converted_handle = converter.fh_from_nfs::<TestHandle<19>>(&nfs_handle).unwrap();
+        let converted_handle = converter
+            .fh_from_nfs::<TestHandle<19>>(&nfs_handle)
+            .unwrap();
         assert_eq!(converted_handle, handle);
     }
 }

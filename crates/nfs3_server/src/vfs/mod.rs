@@ -52,7 +52,7 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// This will be used to form [`nfs_fh3`][1] handles.
     /// NOTE: Maximum size of `nfs_fh3` is 60 bytes.
     ///       4 bytes are reserved for server unique id.
-    /// 
+    ///
     /// [1]: nfs3_types::nfs3::nfs_fh3
     type Handle: FileHandle;
 
