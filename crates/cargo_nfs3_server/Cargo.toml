@@ -1,0 +1,18 @@
+[package]
+name = "cargo_nfs3_server"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false # WIP
+
+[dependencies]
+nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
+nfs3_server = { path = "../nfs3_server", version = "0.4.1" }
+
+clap = { workspace = true, default-features = true, features = ["derive"] }
+
+[lints]
+workspace = true
