@@ -8,6 +8,7 @@ use nfs3_types::xdr_codec::Opaque;
 /// into a [`nfs_fh3`] handle and sent to the client. The server reserves
 /// the first 8 bytes of the handle for its own use, while the remaining
 /// 56 bytes can be freely used by the implementation.
+#[expect(clippy::len_without_is_empty)]
 pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
     /// The length of the handle in bytes
     fn len(&self) -> usize;
@@ -30,13 +31,15 @@ pub struct FileHandleU64 {
 
 impl FileHandleU64 {
     /// Creates a new file handle from a u64
-    pub fn new(id: u64) -> Self {
+    #[must_use]
+    pub const fn new(id: u64) -> Self {
         Self {
             id: id.to_ne_bytes(),
         }
     }
 
-    pub fn as_u64(&self) -> u64 {
+    #[must_use]
+    pub const fn as_u64(&self) -> u64 {
         u64::from_ne_bytes(self.id)
     }
 }
@@ -73,9 +76,9 @@ impl From<u64> for FileHandleU64 {
     }
 }
 
-impl Into<u64> for FileHandleU64 {
-    fn into(self) -> u64 {
-        self.as_u64()
+impl From<FileHandleU64> for u64 {
+    fn from(val: FileHandleU64) -> Self {
+        val.as_u64()
     }
 }
 
@@ -86,7 +89,7 @@ impl PartialEq<u64> for FileHandleU64 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct FileHandleConverter {
+pub struct FileHandleConverter {
     generation_number: u64,
     generation_number_le: [u8; 8],
 }

@@ -308,7 +308,7 @@ impl Fs {
         }
     }
 
-    fn push(&mut self, parent: &FileHandleU64, entry: Entry) -> Result<(), nfsstat3> {
+    fn push(&mut self, parent: FileHandleU64, entry: Entry) -> Result<(), nfsstat3> {
         use std::collections::hash_map::Entry as MapEntry;
 
         let id = entry.fileid();
@@ -344,7 +344,7 @@ impl Fs {
         }
     }
 
-    fn remove(&mut self, dirid: &FileHandleU64, filename: &filename3) -> Result<(), nfsstat3> {
+    fn remove(&mut self, dirid: FileHandleU64, filename: &filename3) -> Result<(), nfsstat3> {
         if filename.as_ref() == b"." || filename.as_ref() == b".." {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
@@ -379,11 +379,11 @@ impl Fs {
         Ok(())
     }
 
-    fn get(&self, id: &FileHandleU64) -> Option<&Entry> {
+    fn get(&self, id: FileHandleU64) -> Option<&Entry> {
         self.entries.get(&id)
     }
 
-    fn get_mut(&mut self, id: &FileHandleU64) -> Option<&mut Entry> {
+    fn get_mut(&mut self, id: FileHandleU64) -> Option<&mut Entry> {
         self.entries.get_mut(&id)
     }
 }
@@ -421,9 +421,9 @@ impl MemFs {
             let id = fs.path_to_id_impl(&entry.parent)?;
             let name = filename3(Opaque::owned(entry.name.into_bytes()));
             if entry.is_dir {
-                fs.add_dir(&id, name)?;
+                fs.add_dir(id, name)?;
             } else {
-                fs.add_file(&id, name, sattr3::default(), entry.content)?;
+                fs.add_file(id, name, sattr3::default(), entry.content)?;
             }
         }
 
@@ -432,7 +432,7 @@ impl MemFs {
 
     fn add_dir(
         &self,
-        dirid: &FileHandleU64,
+        dirid: FileHandleU64,
         dirname: filename3<'static>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
         let newid: FileHandleU64 = self
@@ -440,7 +440,7 @@ impl MemFs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let dir = Entry::new_dir(dirname, newid.clone(), *dirid);
+        let dir = Entry::new_dir(dirname, newid, dirid);
         let attr = dir.attr().clone();
 
         self.fs
@@ -453,7 +453,7 @@ impl MemFs {
 
     fn add_file(
         &self,
-        dirid: &FileHandleU64,
+        dirid: FileHandleU64,
         filename: filename3<'static>,
         attr: sattr3,
         content: Vec<u8>,
@@ -463,7 +463,7 @@ impl MemFs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let mut file = Entry::new_file(filename, newid.clone(), *dirid, content);
+        let mut file = Entry::new_file(filename, newid, dirid, content);
         file.set_attr(attr);
         let attr = file.attr().clone();
 
@@ -477,7 +477,7 @@ impl MemFs {
 
     fn lookup_impl(
         &self,
-        dirid: &FileHandleU64,
+        dirid: FileHandleU64,
         filename: &filename3,
     ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
@@ -488,13 +488,13 @@ impl MemFs {
         } else if let Entry::Dir(dir) = &entry {
             // if looking for dir/. its the current directory
             if filename.as_ref() == b"." {
-                return Ok(dirid.clone());
+                return Ok(dirid);
             }
             // if looking for dir/.. its the parent directory
             if filename.as_ref() == b".." {
                 return Ok(dir.parent);
             }
-            for i in &dir.content {
+            for i in dir.content.iter().copied() {
                 match fs.get(i) {
                     None => {
                         tracing::error!("invalid entry: {i}");
@@ -518,14 +518,14 @@ impl MemFs {
             if component.is_empty() {
                 continue;
             }
-            fid = self.lookup_impl(&fid, &component.as_bytes().into())?;
+            fid = self.lookup_impl(fid, &component.as_bytes().into())?;
         }
         Ok(fid)
     }
 
     fn make_iter(
         &self,
-        dirid: &FileHandleU64,
+        dirid: FileHandleU64,
         start_after: cookie3,
     ) -> Result<MemFsIterator, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
@@ -557,12 +557,12 @@ impl NfsReadFileSystem for MemFs {
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
-        self.lookup_impl(dirid, filename)
+        self.lookup_impl(*dirid, filename)
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         Ok(entry.attr().clone())
     }
     async fn read(
@@ -572,7 +572,7 @@ impl NfsReadFileSystem for MemFs {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        let entry = fs.get(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file()?;
         Ok(file.read(offset, count))
     }
@@ -582,7 +582,7 @@ impl NfsReadFileSystem for MemFs {
         dirid: &FileHandleU64,
         cookie: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, cookie)?;
+        let iter = Self::make_iter(self, *dirid, cookie)?;
         Ok(iter)
     }
 
@@ -591,18 +591,9 @@ impl NfsReadFileSystem for MemFs {
         dirid: &FileHandleU64,
         cookie: u64,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
-        let iter = Self::make_iter(self, dirid, cookie)?;
+        let iter = Self::make_iter(self, *dirid, cookie)?;
         Ok(iter)
     }
-
-    // /// Converts the fileid to an opaque NFS file handle.
-    // fn id_to_fh(&self, id: &FileHandleU64) -> nfs_fh3 {
-    //     DEFAULT_FH_CONVERTER.id_to_fh(id)
-    // }
-    // /// Converts an opaque NFS file handle to a fileid.
-    // fn fh_to_id(&self, id: &nfs_fh3) -> Result<FileHandleU64, nfsstat3> {
-    //     DEFAULT_FH_CONVERTER.fh_to_id(id)
-    // }
 
     async fn readlink(&self, _id: &FileHandleU64) -> Result<nfspath3, nfsstat3> {
         tracing::warn!("readlink not implemented");
@@ -617,7 +608,7 @@ impl NfsReadFileSystem for MemFs {
 impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
-        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         entry.set_attr(setattr);
         Ok(entry.attr().clone())
     }
@@ -630,7 +621,7 @@ impl NfsFileSystem for MemFs {
     ) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
-        let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+        let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file_mut().map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
         file.write(offset, data)
     }
@@ -641,7 +632,7 @@ impl NfsFileSystem for MemFs {
         filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_file(dirid, filename.clone_to_owned(), attr, Vec::new())
+        self.add_file(*dirid, filename.clone_to_owned(), attr, Vec::new())
     }
 
     async fn create_exclusive(
@@ -658,7 +649,7 @@ impl NfsFileSystem for MemFs {
         dirid: &FileHandleU64,
         dirname: &filename3<'_>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_dir(dirid, dirname.clone_to_owned())
+        self.add_dir(*dirid, dirname.clone_to_owned())
     }
 
     async fn remove(
@@ -669,7 +660,7 @@ impl NfsFileSystem for MemFs {
         self.fs
             .write()
             .expect("lock is poisoned")
-            .remove(dirid, filename)
+            .remove(*dirid, filename)
     }
 
     async fn rename<'a>(
@@ -721,7 +712,7 @@ impl ReadDirPlusIterator for MemFsIterator {
             self.index += 1;
 
             let fs = self.fs.read().expect("lock is poisoned");
-            let entry = fs.get(&id);
+            let entry = fs.get(id);
             let Some(entry) = entry else {
                 // skip missing entries
                 tracing::warn!("entry not found: {id}");
@@ -730,7 +721,7 @@ impl ReadDirPlusIterator for MemFsIterator {
             let attr = entry.attr().clone();
             // let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
             return NextResult::Ok(entryplus3 {
-                fileid: id.clone().into(),
+                fileid: id.into(),
                 name: entry.name().clone_to_owned(),
                 cookie: id.into(),
                 name_attributes: nfs::post_op_attr::Some(attr),

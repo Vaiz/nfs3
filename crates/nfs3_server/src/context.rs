@@ -42,7 +42,7 @@ impl<T> Clone for RPCContext<T> {
             mount_signal: self.mount_signal.clone(),
             export_name: Arc::clone(&self.export_name),
             transaction_tracker: Arc::clone(&self.transaction_tracker),
-            file_handle_converter: self.file_handle_converter.clone(),
+            file_handle_converter: self.file_handle_converter,
         }
     }
 }
@@ -69,6 +69,7 @@ where
             file_handle_converter: FileHandleConverter::new(),
         }
     }
+    #[must_use]
     pub fn root_dir(&self) -> nfs3_types::nfs3::nfs_fh3 {
         self.file_handle_converter.fh_to_nfs(&self.vfs.root_dir())
     }

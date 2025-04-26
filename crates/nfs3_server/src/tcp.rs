@@ -276,7 +276,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 mount_signal: self.mount_signal.clone(),
                 export_name: self.export_name.clone(),
                 transaction_tracker: self.transaction_tracker.clone(),
-                file_handle_converter: self.file_handle_converter.clone(),
+                file_handle_converter: self.file_handle_converter,
             };
             info!("Accepting connection from {}", context.client_addr);
             debug!("Accepting socket {:?} {:?}", socket, context);
