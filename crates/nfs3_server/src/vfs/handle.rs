@@ -155,7 +155,7 @@ impl FileHandleConverter {
 
 #[cfg(test)]
 mod tests {
-    use std::usize;
+    #![expect(clippy::unwrap_used)]
 
     use super::*;
 
