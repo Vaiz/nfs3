@@ -101,8 +101,6 @@ pub struct FileHandleConverter {
 }
 
 impl FileHandleConverter {
-    const HANDLE_LENGTH: usize = 16;
-
     #[allow(clippy::cast_possible_truncation)] // it's ok to truncate the generation number
     pub(crate) fn new() -> Self {
         let generation_number = std::time::SystemTime::now()
@@ -135,7 +133,7 @@ impl FileHandleConverter {
     }
 
     fn check_handle(&self, id: &nfs_fh3) -> Result<(), nfsstat3> {
-        if id.data.len() != Self::HANDLE_LENGTH {
+        if id.data.len() < 8 {
             return Err(nfsstat3::NFS3ERR_BADHANDLE);
         }
         if id.data[0..8] == self.generation_number_le {
@@ -152,5 +150,65 @@ impl FileHandleConverter {
                 Err(nfsstat3::NFS3ERR_BADHANDLE)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::usize;
+
+    use super::*;
+
+    #[test]
+    fn test_file_handle_u64() {
+        let handle = FileHandleU64::new(42);
+        assert_eq!(handle.as_u64(), 42);
+        assert_eq!(handle.len(), 8);
+        assert_eq!(handle.as_bytes(), &[42, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(FileHandleU64::from_bytes(&[42, 0, 0, 0, 0, 0, 0, 0]), Some(handle));
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct TestHandle<const N: usize> {
+        id: [u8; N],
+    }
+    impl<const N: usize> FileHandle for TestHandle<N> {
+        fn len(&self) -> usize {
+            self.id.len()
+        }
+        fn as_bytes(&self) -> &[u8] {
+            &self.id
+        }
+        fn from_bytes(bytes: &[u8]) -> Option<Self> {
+            bytes.try_into().ok().map(|id| Self { id })
+        }
+    }
+
+    #[test]
+    fn test_file_handle_converter_3bytes() {
+        let converter = FileHandleConverter::new();
+        let handle = TestHandle { id: [1, 2, 3] };
+        let nfs_handle = converter.fh_to_nfs(&handle);
+        assert_eq!(nfs_handle.data.len(), 11);
+        assert_eq!(nfs_handle.data[0..8], converter.generation_number_le);
+        assert_eq!(&nfs_handle.data[8..], handle.as_bytes());
+
+        let converted_handle = converter.fh_from_nfs::<TestHandle<3>>(&nfs_handle).unwrap();
+        assert_eq!(converted_handle, handle);
+    }
+
+    #[test]
+    fn test_file_handle_converter_19bytes() {
+        let converter = FileHandleConverter::new();
+        let handle = TestHandle {
+            id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        };
+        let nfs_handle = converter.fh_to_nfs(&handle);
+        assert_eq!(nfs_handle.data.len(), 27);
+        assert_eq!(nfs_handle.data[0..8], converter.generation_number_le);
+        assert_eq!(&nfs_handle.data[8..], handle.as_bytes());
+
+        let converted_handle = converter.fh_from_nfs::<TestHandle<19>>(&nfs_handle).unwrap();
+        assert_eq!(converted_handle, handle);
     }
 }
