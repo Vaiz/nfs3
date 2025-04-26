@@ -158,8 +158,8 @@ impl FileHandleConverter {
     /// consistent during a single boot session and must be
     /// unique between instances of the NFS version 3 protocol
     /// server where uncommitted data may be lost.
-    pub fn verf(&self) -> writeverf3 {
-        writeverf3(self.generation_number_le)        
+    pub const fn verf(&self) -> writeverf3 {
+        writeverf3(self.generation_number_le)
     }
 }
 
