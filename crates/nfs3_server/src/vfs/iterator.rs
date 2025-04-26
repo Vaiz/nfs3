@@ -22,9 +22,6 @@ pub trait ReadDirIterator: Send + Sync {
 /// Iterator for [`NfsReadFileSystem::readdirplus`](super::NfsReadFileSystem::readdirplus)
 pub trait ReadDirPlusIterator: Send + Sync {
     /// Returns the next entry in the directory.
-    ///
-    /// If `entryplus3::name_handle` field is `None`, it will be filled automatically using
-    /// [`NfsReadFileSystem::id_to_fh`](super::NfsReadFileSystem::id_to_fh).
     fn next(&mut self) -> impl Future<Output = NextResult<entryplus3<'static>>> + Send;
 }
 

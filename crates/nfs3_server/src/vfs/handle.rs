@@ -4,10 +4,13 @@ use nfs3_types::xdr_codec::Opaque;
 /// Represents a file handle
 ///
 /// This uniquely identifies a file or folder in the implementation of
-/// [`NfsReadFileSystem`] and [`NfsFileSystem`]. The value is serialized
+/// [`NfsReadFileSystem`][1] and [`NfsFileSystem`][2]. The value is serialized
 /// into a [`nfs_fh3`] handle and sent to the client. The server reserves
 /// the first 8 bytes of the handle for its own use, while the remaining
 /// 56 bytes can be freely used by the implementation.
+/// 
+/// [1]: crate::vfs::NfsReadFileSystem
+/// [2]: crate::vfs::NfsFileSystem
 #[expect(clippy::len_without_is_empty)]
 pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
     /// The length of the handle in bytes
@@ -20,10 +23,12 @@ pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
         Self: Sized;
 }
 
-/// A file handle that is 8 bytes long
+/// A basic 8-bytes long file handle
 ///
-/// If your implementation of [`NfsReadFileSystem`] uses a file handle that is
-/// 8 bytes long, you can use this type.
+/// If your implementation of [`NfsReadFileSystem`][1] uses a file handle that is
+/// 8 bytes long, you can use this type instead of creating you own.
+/// 
+/// [1]: crate::vfs::NfsReadFileSystem
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileHandleU64 {
     id: [u8; 8],
@@ -38,6 +43,7 @@ impl FileHandleU64 {
         }
     }
 
+    /// Converts the file handle to a u64
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
         u64::from_ne_bytes(self.id)

@@ -49,9 +49,11 @@ pub enum VFSCapabilities {
 pub trait NfsReadFileSystem: Send + Sync {
     /// Type that can be used to indentify a file or folder in the file system.
     ///
-    /// This will be used to form [`nfs_fh3`] handles.
+    /// This will be used to form [`nfs_fh3`][1] handles.
     /// NOTE: Maximum size of `nfs_fh3` is 60 bytes.
     ///       4 bytes are reserved for server unique id.
+    /// 
+    /// [1]: nfs3_types::nfs3::nfs_fh3
     type Handle: FileHandle;
 
     /// Returns the ID the of the root directory "/"
@@ -70,7 +72,7 @@ pub trait NfsReadFileSystem: Send + Sync {
     ) -> impl Future<Output = Result<Self::Handle, nfsstat3>> + Send;
 
     /// This method is used when the client tries to mount a subdirectory.
-    /// The default implementation walks the directory structure with [`lookup`]
+    /// The default implementation walks the directory structure with [`lookup`](Self::lookup).
     fn lookup_by_path(
         &self,
         path: &str,
