@@ -5,8 +5,8 @@ use std::path::Path;
 
 use intaglio::Symbol;
 use nfs3_server::vfs::{
-    FileHandle, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
-    VFSCapabilities,
+    FileHandle, FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
+    ReadDirPlusIterator, VFSCapabilities,
 };
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
@@ -17,28 +17,12 @@ use crate::server;
 const MEBIBYTE: u32 = 1024 * 1024;
 const GIBIBYTE: u64 = 1024 * 1024 * 1024;
 
-pub struct WasmFsHandle {
-    id: [u8; 8],
-}
-
-impl FileHandle for WasmFsHandle {
-    fn len(&self) -> usize {
-        self.id.len()
-    }
-    fn as_bytes(&self) -> &[u8] {
-        &self.id
-    }
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bytes.try_into().ok().map(|id| Self { id })
-    }
-}
-
 #[derive(Debug)]
 pub struct WasmFs<FS> {
     fs: FS,
     id_to_path_table: intaglio::path::SymbolTable,
     server_id: u64,
-    root: fileid3,
+    root: FileHandleU64,
 }
 
 pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
@@ -51,7 +35,7 @@ pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
         fs: wasmer_vfs::mem_fs::FileSystem::default(),
         id_to_path_table,
         server_id: (0xdead_beef << 32), // keep the same server id for testing
-        root: 0,
+        root: 0.into(),
     };
 
     fs.root = fs.symbol_to_id(root);
@@ -59,11 +43,13 @@ pub fn new_mem_fs() -> WasmFs<wasmer_vfs::mem_fs::FileSystem> {
 }
 
 impl<FS> WasmFs<FS> {
-    fn symbol_to_id(&self, symbol: Symbol) -> fileid3 {
-        self.server_id | (symbol.id() as u64)
+    fn symbol_to_id(&self, symbol: Symbol) -> FileHandleU64 {
+        let id = self.server_id | (symbol.id() as u64);
+        id.into()
     }
 
-    fn id_to_path(&self, id: fileid3) -> Result<&Path, nfsstat3> {
+    fn id_to_path(&self, id: &FileHandleU64) -> Result<&Path, nfsstat3> {
+        let id = id.as_u64();
         let server_id = id & 0xFFFF_FFFF_0000_0000;
         if server_id != self.server_id {
             return Err(nfsstat3::NFS3ERR_STALE);
@@ -86,7 +72,7 @@ impl<FS> WasmFs<FS> {
         }
     }
 
-    fn make_attr(id: fileid3, metadata: &wasmer_vfs::Metadata) -> Result<fattr3, nfsstat3> {
+    fn make_attr(id: &FileHandleU64, metadata: &wasmer_vfs::Metadata) -> Result<fattr3, nfsstat3> {
         use wasmer_vfs::FileType;
 
         let file_type = match metadata.file_type() {
@@ -122,7 +108,7 @@ impl<FS> WasmFs<FS> {
             used: metadata.len(),
             rdev: specdata3::default(),
             fsid: 0,
-            fileid: id,
+            fileid: id.as_u64(),
             atime: to_nfstime3(metadata.accessed()),
             mtime: to_nfstime3(metadata.modified()),
             ctime: to_nfstime3(metadata.created()),
@@ -131,14 +117,17 @@ impl<FS> WasmFs<FS> {
         Ok(fattr)
     }
 }
-
 impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
-    type Handle = WasmFsHandle;
+    type Handle = nfs3_server::vfs::FileHandleU64;
 
-    fn root_dir(&self) -> fileid3 {
+    fn root_dir(&self) -> Self::Handle {
         self.root
     }
-    async fn lookup(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<fileid3, nfsstat3> {
+    async fn lookup(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+    ) -> Result<Self::Handle, nfsstat3> {
         let path = self.id_to_path(dirid)?;
         let filename = Self::filename_to_utf8(filename)?;
 
@@ -158,7 +147,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
         Ok(self.symbol_to_id(id))
     }
 
-    async fn getattr(&self, id: fileid3) -> Result<fattr3, nfsstat3> {
+    async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
         let path = self.id_to_path(id)?;
         let metadata = self.fs.metadata(path).map_err(wasm_error_to_nfsstat3)?;
         Self::make_attr(id, &metadata)
@@ -166,7 +155,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
 
     async fn read(
         &self,
-        id: fileid3,
+        id: &Self::Handle,
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
@@ -206,27 +195,27 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
 
     async fn readdir(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        start_after: cookie3,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
         Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn readdirplus(
         &self,
-        dirid: fileid3,
-        start_after: fileid3,
+        dirid: &Self::Handle,
+        start_after: cookie3,
     ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
         Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     /// Reads a symlink
-    async fn readlink(&self, id: fileid3) -> Result<nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     /// Get static file system Information
-    async fn fsinfo(&self, root_fileid: fileid3) -> Result<FSINFO3resok, nfsstat3> {
+    async fn fsinfo(&self, root_fileid: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
         let dir_attr: post_op_attr = match self.getattr(root_fileid).await {
             Ok(v) => post_op_attr::Some(v),
             Err(_) => post_op_attr::None,
@@ -251,20 +240,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
         Ok(res)
     }
 
-    fn id_to_fh(&self, id: fileid3) -> nfs_fh3 {
-        nfs_fh3 {
-            data: Opaque::owned(id.to_ne_bytes().to_vec()),
-        }
-    }
-    fn fh_to_id(&self, id: &nfs_fh3) -> Result<fileid3, nfsstat3> {
-        let id: [u8; 8] = id
-            .data
-            .as_ref()
-            .try_into()
-            .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?;
-        Ok(fileid3::from_ne_bytes(id))
-    }
-    async fn lookup_by_path(&self, path: &str) -> Result<fileid3, nfsstat3> {
+    async fn lookup_by_path(&self, path: &str) -> Result<Self::Handle, nfsstat3> {
         let path = Path::new(path);
         let id = self
             .id_to_path_table
@@ -280,7 +256,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
 }
 
 impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> {
-    async fn setattr(&self, id: fileid3, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+    async fn setattr(&self, id: &Self::Handle, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         use wasmer_vfs::OpenOptionsConfig;
 
         let path = self.id_to_path(id)?;
@@ -329,43 +305,43 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> 
         Self::make_attr(id, &metadata)
     }
 
-    async fn write(&self, id: fileid3, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(&self, id: &Self::Handle, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn create(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         filename: &filename3<'_>,
         attr: sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn create_exclusive(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         filename: &filename3<'_>,
-    ) -> Result<fileid3, nfsstat3> {
+    ) -> Result<Self::Handle, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
     async fn mkdir(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         dirname: &filename3<'_>,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
-    async fn remove(&self, dirid: fileid3, filename: &filename3<'_>) -> Result<(), nfsstat3> {
+    async fn remove(&self, dirid: &Self::Handle, filename: &filename3<'_>) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
     async fn rename<'a>(
         &self,
-        from_dirid: fileid3,
+        from_dirid: &Self::Handle,
         from_filename: &filename3<'a>,
-        to_dirid: fileid3,
+        to_dirid: &Self::Handle,
         to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
@@ -373,11 +349,11 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> 
 
     async fn symlink<'a>(
         &self,
-        dirid: fileid3,
+        dirid: &Self::Handle,
         linkname: &filename3<'a>,
         symlink: &nfspath3<'a>,
         attr: &sattr3,
-    ) -> Result<(fileid3, fattr3), nfsstat3> {
+    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 }

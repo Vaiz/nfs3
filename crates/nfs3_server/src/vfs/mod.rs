@@ -71,7 +71,10 @@ pub trait NfsReadFileSystem: Send + Sync {
 
     /// This method is used when the client tries to mount a subdirectory.
     /// The default implementation walks the directory structure with [`lookup`]
-    fn lookup_by_path(&self, path: &str) -> impl Future<Output = Result<Self::Handle, nfsstat3>> + Send {
+    fn lookup_by_path(
+        &self,
+        path: &str,
+    ) -> impl Future<Output = Result<Self::Handle, nfsstat3>> + Send {
         async move {
             let splits = path.split('/');
             let mut fid = self.root_dir();
@@ -122,7 +125,10 @@ pub trait NfsReadFileSystem: Send + Sync {
     ) -> impl Future<Output = Result<impl ReadDirPlusIterator, nfsstat3>> + Send;
 
     /// Reads a symlink
-    fn readlink(&self, id: &Self::Handle) -> impl Future<Output = Result<nfspath3, nfsstat3>> + Send;
+    fn readlink(
+        &self,
+        id: &Self::Handle,
+    ) -> impl Future<Output = Result<nfspath3, nfsstat3>> + Send;
 
     /// Get static file system Information
     fn fsinfo(

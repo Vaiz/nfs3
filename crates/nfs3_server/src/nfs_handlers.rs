@@ -944,7 +944,10 @@ fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
     result.map_or(Nfs3Option::None, Nfs3Option::Some)
 }
 
-async fn get_wcc_attr<T>(context: &RPCContext<T>, object_id: &T::Handle) -> Result<wcc_attr, nfsstat3>
+async fn get_wcc_attr<T>(
+    context: &RPCContext<T>,
+    object_id: &T::Handle,
+) -> Result<wcc_attr, nfsstat3>
 where
     T: NfsFileSystem,
 {

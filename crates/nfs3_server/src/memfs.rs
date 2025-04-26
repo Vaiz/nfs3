@@ -34,13 +34,14 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use nfs3_types::nfs3::{
-    self as nfs, cookie3, entryplus3, fattr3, filename3, ftype3, nfspath3,
-    nfsstat3, nfstime3, sattr3, specdata3,
+    self as nfs, cookie3, entryplus3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
+    sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
-    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator
+    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
+    ReadDirPlusIterator,
 };
 
 const DELIMITER: char = '/';
@@ -99,7 +100,12 @@ struct File {
 }
 
 impl File {
-    fn new(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64, content: Vec<u8>) -> Self {
+    fn new(
+        name: filename3<'static>,
+        id: FileHandleU64,
+        parent: FileHandleU64,
+        content: Vec<u8>,
+    ) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
             type_: ftype3::NF3REG,
@@ -178,7 +184,12 @@ enum Entry {
 }
 
 impl Entry {
-    fn new_file(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64, content: Vec<u8>) -> Self {
+    fn new_file(
+        name: filename3<'static>,
+        id: FileHandleU64,
+        parent: FileHandleU64,
+        content: Vec<u8>,
+    ) -> Self {
         Self::File(File::new(name, id, parent, content))
     }
 
@@ -218,7 +229,8 @@ impl Entry {
         match self {
             Self::File(file) => file.attr.fileid,
             Self::Dir(dir) => dir.attr.fileid,
-        }.into()
+        }
+        .into()
     }
 
     const fn name(&self) -> &filename3<'static> {
@@ -463,7 +475,11 @@ impl MemFs {
         Ok((newid, attr))
     }
 
-    fn lookup_impl(&self, dirid: &FileHandleU64, filename: &filename3) -> Result<FileHandleU64, nfsstat3> {
+    fn lookup_impl(
+        &self,
+        dirid: &FileHandleU64,
+        filename: &filename3,
+    ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
@@ -507,10 +523,14 @@ impl MemFs {
         Ok(fid)
     }
 
-    fn make_iter(&self, dirid: &FileHandleU64, start_after: cookie3) -> Result<MemFsIterator, nfsstat3> {
+    fn make_iter(
+        &self,
+        dirid: &FileHandleU64,
+        start_after: cookie3,
+    ) -> Result<MemFsIterator, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let dir = entry.as_dir()?;        
+        let dir = entry.as_dir()?;
 
         let mut iter = dir.content.iter();
         if start_after != 0 {
@@ -532,7 +552,11 @@ impl NfsReadFileSystem for MemFs {
         self.rootdir
     }
 
-    async fn lookup(&self, dirid: &FileHandleU64, filename: &filename3<'_>) -> Result<FileHandleU64, nfsstat3> {
+    async fn lookup(
+        &self,
+        dirid: &FileHandleU64,
+        filename: &filename3<'_>,
+    ) -> Result<FileHandleU64, nfsstat3> {
         self.lookup_impl(dirid, filename)
     }
 
@@ -598,7 +622,12 @@ impl NfsFileSystem for MemFs {
         Ok(entry.attr().clone())
     }
 
-    async fn write(&self, id: &FileHandleU64, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(
+        &self,
+        id: &FileHandleU64,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
         let entry = fs.get_mut(id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
@@ -632,7 +661,11 @@ impl NfsFileSystem for MemFs {
         self.add_dir(dirid, dirname.clone_to_owned())
     }
 
-    async fn remove(&self, dirid: &FileHandleU64, filename: &filename3<'_>) -> Result<(), nfsstat3> {
+    async fn remove(
+        &self,
+        dirid: &FileHandleU64,
+        filename: &filename3<'_>,
+    ) -> Result<(), nfsstat3> {
         self.fs
             .write()
             .expect("lock is poisoned")

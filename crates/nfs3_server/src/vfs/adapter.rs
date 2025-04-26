@@ -1,6 +1,6 @@
 //! An adapter for read-only NFS filesystems.
 
-use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3, Nfs3Option};
+use nfs3_types::nfs3::{Nfs3Option, fattr3, filename3, nfsstat3, sattr3};
 
 use super::{
     NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
@@ -34,7 +34,11 @@ where
         self.0.root_dir()
     }
 
-    async fn lookup(&self, dirid: &Self::Handle, filename: &filename3<'_>) -> Result<Self::Handle, nfsstat3> {
+    async fn lookup(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+    ) -> Result<Self::Handle, nfsstat3> {
         self.0.lookup(dirid, filename).await
     }
 
@@ -91,7 +95,12 @@ where
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
-    async fn write(&self, _id: &Self::Handle, _offset: u64, _data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(
+        &self,
+        _id: &Self::Handle,
+        _offset: u64,
+        _data: &[u8],
+    ) -> Result<fattr3, nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
@@ -120,7 +129,11 @@ where
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
-    async fn remove(&self, _dirid: &Self::Handle, _filename: &filename3<'_>) -> Result<(), nfsstat3> {
+    async fn remove(
+        &self,
+        _dirid: &Self::Handle,
+        _filename: &filename3<'_>,
+    ) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 

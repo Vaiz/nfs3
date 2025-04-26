@@ -2,7 +2,7 @@ use nfs3_types::nfs3::{nfs_fh3, nfsstat3};
 use nfs3_types::xdr_codec::Opaque;
 
 /// Represents a file handle
-/// 
+///
 /// This uniquely identifies a file or folder in the implementation of
 /// [`NfsReadFileSystem`] and [`NfsFileSystem`]. The value is serialized
 /// into a [`nfs_fh3`] handle and sent to the client. The server reserves
@@ -19,9 +19,8 @@ pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
         Self: Sized;
 }
 
-
 /// A file handle that is 8 bytes long
-/// 
+///
 /// If your implementation of [`NfsReadFileSystem`] uses a file handle that is
 /// 8 bytes long, you can use this type.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,8 +31,10 @@ pub struct FileHandleU64 {
 impl FileHandleU64 {
     /// Creates a new file handle from a u64
     pub fn new(id: u64) -> Self {
-        Self { id: id.to_ne_bytes() }
-    }    
+        Self {
+            id: id.to_ne_bytes(),
+        }
+    }
 
     pub fn as_u64(&self) -> u64 {
         u64::from_ne_bytes(self.id)
@@ -67,7 +68,7 @@ impl std::fmt::Display for FileHandleU64 {
 }
 
 impl From<u64> for FileHandleU64 {
-    fn from(id: u64) -> Self {        
+    fn from(id: u64) -> Self {
         Self::new(id)
     }
 }
