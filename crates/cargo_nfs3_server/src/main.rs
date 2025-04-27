@@ -19,9 +19,9 @@ struct Args {
     #[arg(long)]
     path: Option<String>,
 
-    /// Export path (default is `/`)
-    #[arg(long)]
-    export_name: Option<String>,
+    /// Export path
+    #[arg(long, default_value = "/")]
+    export_name: String,
 
     /// IP address to bind the server to
     #[arg(short = 'i', long, default_value = "0.0.0.0")]
@@ -58,7 +58,7 @@ async fn main() {
     let guards = logging::init_logging(&args.log_level, args.log_file.as_deref(), !args.quiet);
 
     let bind_addr = format!("{}:{}", args.bind_ip, args.bind_port);
-    let export_path = args.export_name.unwrap_or("/".to_owned());
+    let export_path = args.export_name;
 
     if args.memfs {
         let memfs = MemFs::new(memfs::default_config(args.readonly))
