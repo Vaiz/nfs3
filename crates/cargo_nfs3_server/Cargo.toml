@@ -9,8 +9,8 @@ license.workspace = true
 publish = false # WIP
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
-nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["memfs"] }
+nfs3_types = { path = "../nfs3_types", version = "0.3.3" }
+nfs3_server = { path = "../nfs3_server", version = "0.5.0", features = ["memfs"] }
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
 ctrlc = { workspace = true } 
