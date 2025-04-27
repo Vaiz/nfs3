@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_client"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "nfs3_types",
@@ -432,7 +432,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_macros"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "byteorder",
  "proc-macro2",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_server"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "filetime",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_types"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "byteorder",
  "nfs3_macros",
