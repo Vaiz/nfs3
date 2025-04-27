@@ -90,6 +90,10 @@ async fn main() {
     }
 }
 
+#[expect(
+    clippy::collection_is_never_read,
+    reason = "it's not expected to be read"
+)]
 async fn start_server(
     bind_addr: String,
     export_name: String,
