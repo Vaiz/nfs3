@@ -15,6 +15,8 @@ license = "Unlicense"
 anyhow = "1.0.98"
 byteorder = "1.5.0"
 chrono = "0.4"
+clap = { version = "4.5", default-features = false }
+ctrlc = { version = "3.4" }
 filetime = "0.2.25"
 intaglio = "1.10"
 proc-macro2 = "1.0.95"
@@ -23,6 +25,7 @@ rand = "0.9.1"
 syn = "2.0.100"
 tokio = { version = "1.44.2", default-features = false }
 tracing = "0.1.41"
+tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.19"
 xdr-codec = "0.4.4"
 wasmer-vfs = { version = "3.1.1", default-features = false }
