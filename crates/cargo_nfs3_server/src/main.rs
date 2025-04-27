@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::LazyLock;
+use std::vec;
 
 use clap::Parser;
 use nfs3_server::memfs::MemFs;
@@ -55,8 +55,7 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-
-    init_logging(&args);
+    let guards = init_logging(&args);
 
     let bind_addr = format!("{}:{}", args.bind_ip, args.bind_port);
     let export_path = args.export_name.unwrap_or("/".to_owned());
@@ -65,9 +64,9 @@ async fn main() {
         let memfs = MemFs::new(memfs::default_config(args.readonly))
             .expect("failed to create memfs instance");
         if args.readonly {
-            start_server(bind_addr, export_path, ReadOnlyAdapter::new(memfs)).await;
+            start_server(bind_addr, export_path, ReadOnlyAdapter::new(memfs), guards).await;
         } else {
-            start_server(bind_addr, export_path, memfs).await;
+            start_server(bind_addr, export_path, memfs, guards).await;
         }
     } else {
         let path = args
@@ -75,35 +74,44 @@ async fn main() {
             .as_deref()
             .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
 
-        assert!(
-            Path::new(path).exists(),
-            "path [{path}] does not exist",
-        );
+        assert!(Path::new(path).exists(), "path [{path}] does not exist",);
         let mirror_fs = mirror::MirrorFs::new(path);
         if args.readonly {
-            start_server(bind_addr, export_path, ReadOnlyAdapter::new(mirror_fs)).await;
+            start_server(
+                bind_addr,
+                export_path,
+                ReadOnlyAdapter::new(mirror_fs),
+                guards,
+            )
+            .await;
         } else {
-            start_server(bind_addr, export_path, mirror_fs).await;
+            start_server(bind_addr, export_path, mirror_fs, guards).await;
         }
     }
 }
 
-async fn start_server(bind_addr: String, export_name: String, fs: impl NfsFileSystem + 'static) {
+async fn start_server(
+    bind_addr: String,
+    export_name: String,
+    fs: impl NfsFileSystem + 'static,
+    mut guards: Vec<WorkerGuard>,
+) {
     use nfs3_server::tcp::NFSTcpListener;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let mut tx = Some(tx);    
+    let mut tx = Some(tx);
     ctrlc::set_handler(move || {
         if let Some(tx) = tx.take() {
+            tracing::info!("Received Ctrl-C, shutting down...");
+            guards.clear();
             let _ = tx.send(());
         }
-    }).expect("Error setting Ctrl-C handler");
-
+    })
+    .expect("Error setting Ctrl-C handler");
 
     let mut listener = NFSTcpListener::bind(&bind_addr, fs).await.unwrap();
     listener.with_export_name(export_name);
-    let handle_future = listener
-        .handle_forever();
+    let handle_future = listener.handle_forever();
 
     tokio::select! {
         result = handle_future => {
@@ -112,13 +120,11 @@ async fn start_server(bind_addr: String, export_name: String, fs: impl NfsFileSy
                 tracing::error!("Error: {e}");
             }
         }
-        _ = rx => {
-            tracing::info!("Received Ctrl-C, shutting down...");
-        }
+        _ = rx => { }
     }
 }
 
-fn init_logging(args: &Args) {
+fn init_logging(args: &Args) -> Vec<WorkerGuard> {
     let log_level = match args.log_level.to_lowercase().as_str() {
         "error" => tracing::Level::ERROR,
         "warn" => tracing::Level::WARN,
@@ -129,49 +135,63 @@ fn init_logging(args: &Args) {
     };
 
     let builder = tracing_subscriber::fmt().with_max_level(log_level);
-
     match (args.quiet, args.log_file.as_deref()) {
         (true, None) => {
             // No logging
+            vec![]
         }
         (false, None) => {
             // Console logging
+            let stdout_guard = init_stdout_logger();
             builder.with_writer(stdout_logger).init();
+            vec![stdout_guard]
         }
         (true, Some(log_file)) => {
             // File logging only
-            init_file_logger(log_file);
+            let file_guard = init_file_logger(log_file);
             builder.with_writer(file_logger).init();
+            vec![file_guard]
         }
         (false, Some(log_file)) => {
             // both console and file logging
-            init_file_logger(log_file);
+            let stdout_guard = init_stdout_logger();
+            let file_guard = init_file_logger(log_file);
             builder
                 .with_writer(file_logger)
                 .with_writer(stdout_logger)
                 .init();
+            vec![stdout_guard, file_guard]
         }
     }
 }
 
-static STDOUT_LOGGER: LazyLock<(NonBlocking, WorkerGuard)> =
-    LazyLock::new(|| tracing_appender::non_blocking(std::io::stdout()));
+static STDOUT_LOGGER: std::sync::OnceLock<NonBlocking> = std::sync::OnceLock::new();
+static FILE_LOGGER: std::sync::OnceLock<NonBlocking> = std::sync::OnceLock::new();
 
 fn stdout_logger() -> impl std::io::Write {
-    STDOUT_LOGGER.0.clone()
+    STDOUT_LOGGER
+        .get()
+        .expect("stdout logger not initialzied")
+        .clone()
 }
-
-static FILE_LOGGER: std::sync::OnceLock<(NonBlocking, WorkerGuard)> = std::sync::OnceLock::new();
 
 fn file_logger() -> impl std::io::Write {
     FILE_LOGGER
         .get()
         .expect("file logger not initialized")
-        .0
         .clone()
 }
 
-fn init_file_logger(log_file: &str) {
+fn init_stdout_logger() -> WorkerGuard {
+    let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+    STDOUT_LOGGER
+        .set(non_blocking)
+        .expect("stdout logger already initialized");
+
+    guard
+}
+
+fn init_file_logger(log_file: &str) -> WorkerGuard {
     let path = std::path::Path::new(log_file);
     let file_appender = tracing_appender::rolling::never(
         path.parent().unwrap_or_else(|| std::path::Path::new(".")),
@@ -179,6 +199,8 @@ fn init_file_logger(log_file: &str) {
     );
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
     FILE_LOGGER
-        .set((non_blocking, guard))
+        .set(non_blocking)
         .expect("file logger already initialized");
+
+    guard
 }
