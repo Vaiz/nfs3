@@ -11,11 +11,11 @@ mod logging;
 mod memfs;
 mod mirror;
 
-/// CLI tool for the nfs3_server
+/// CLI tool for the `nfs3_server`
 #[derive(Parser, Debug)]
 #[command(name = "nfs3_server", version, about = "A simple NFSv3 server", long_about = None)]
 struct Args {
-    /// Path to the directory to serve for MirrorFs
+    /// Path to the directory to serve for `MirrorFs`
     #[arg(long)]
     path: Option<String>,
 
