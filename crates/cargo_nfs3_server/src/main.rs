@@ -125,6 +125,10 @@ async fn start_server(
 }
 
 fn init_logging(args: &Args) -> Vec<WorkerGuard> {
+    use tracing_subscriber::fmt::layer;
+    use tracing::subscriber::set_global_default;
+    use tracing_subscriber::layer::SubscriberExt;
+
     let log_level = match args.log_level.to_lowercase().as_str() {
         "error" => tracing::Level::ERROR,
         "warn" => tracing::Level::WARN,
@@ -134,7 +138,10 @@ fn init_logging(args: &Args) -> Vec<WorkerGuard> {
         _ => panic!("invalid log level: {}", args.log_level),
     };
 
-    let builder = tracing_subscriber::fmt().with_max_level(log_level);
+    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(level_filter);
+
     match (args.quiet, args.log_file.as_deref()) {
         (true, None) => {
             // No logging
@@ -143,23 +150,27 @@ fn init_logging(args: &Args) -> Vec<WorkerGuard> {
         (false, None) => {
             // Console logging
             let stdout_guard = init_stdout_logger();
-            builder.with_writer(stdout_logger).init();
+            let subscriber = subscriber
+                .with(layer().with_writer(stdout_logger));            
+            set_global_default(subscriber).expect("failed to set global subscriber");
             vec![stdout_guard]
         }
         (true, Some(log_file)) => {
             // File logging only
             let file_guard = init_file_logger(log_file);
-            builder.with_writer(file_logger).init();
+            let subscriber = subscriber
+                .with(layer().with_writer(file_logger));
+            set_global_default(subscriber).expect("failed to set global subscriber");
             vec![file_guard]
         }
         (false, Some(log_file)) => {
             // both console and file logging
             let stdout_guard = init_stdout_logger();
             let file_guard = init_file_logger(log_file);
-            builder
-                .with_writer(file_logger)
-                .with_writer(stdout_logger)
-                .init();
+            let subscriber = subscriber
+                .with(layer().with_writer(stdout_logger))
+                .with(layer().with_writer(file_logger));
+            set_global_default(subscriber).expect("failed to set global subscriber");
             vec![stdout_guard, file_guard]
         }
     }
