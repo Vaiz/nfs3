@@ -60,7 +60,7 @@ pub fn init_logging(
 fn stdout_logger() -> impl std::io::Write {
     STDOUT_LOGGER
         .get()
-        .expect("stdout logger not initialzied")
+        .expect("stdout logger not initialized")
         .clone()
 }
 
