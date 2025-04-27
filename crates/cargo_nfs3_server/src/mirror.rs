@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
 use std::io::SeekFrom;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,7 +13,6 @@ use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
-use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
     FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
@@ -26,42 +25,6 @@ use string_ext::{FromOsString, IntoOsString};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::debug;
-
-const HOSTPORT: u16 = 11111;
-
-// This example implements a simple NFS server that mirrors a directory from the host filesystem.
-// Usage:
-// cargo run --example mirrorfs -- <directory> [bind_ip] [bind_port]
-// <directory> is the directory to mirror
-// [bind_ip] is the IP address to bind to (default: 0.0.0.0)
-// [bind_port] is the port to bind to (default: 11111)
-//
-// To mount the NFS server on Linux, use the following command:
-// mount -t nfs -o nolock,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ mnt/
-
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .init();
-
-    let args = std::env::args().collect::<Vec<_>>();
-    let path = args.get(1).expect("must supply directory to mirror");
-    let bind_ip = args.get(2).map_or("0.0.0.0", std::string::String::as_str);
-    let bind_port = args
-        .get(3)
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(HOSTPORT);
-
-    let path = PathBuf::from(path);
-
-    let fs = MirrorFs::new(path);
-    let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), fs)
-        .await
-        .unwrap();
-    listener.handle_forever().await.unwrap();
-}
 
 #[derive(Debug, Clone)]
 struct FSEntry {
@@ -290,7 +253,8 @@ enum CreateFSObject<'a> {
 }
 impl MirrorFs {
     #[must_use]
-    pub fn new(root: PathBuf) -> Self {
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref().to_path_buf();
         Self {
             fsmap: Arc::new(tokio::sync::RwLock::new(FSMap::new(root))),
         }

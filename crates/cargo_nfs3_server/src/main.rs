@@ -1,6 +1,11 @@
+use std::path::Path;
 use std::sync::LazyLock;
 
 use clap::Parser;
+use nfs3_server::memfs::MemFs;
+use nfs3_server::tcp::NFSTcp;
+use nfs3_server::vfs::NfsFileSystem;
+use nfs3_server::vfs::adapter::ReadOnlyAdapter;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 
 mod memfs;
@@ -10,13 +15,13 @@ mod mirror;
 #[derive(Parser, Debug)]
 #[command(name = "nfs3_server", version, about = "A simple NFSv3 server", long_about = None)]
 struct Args {
-    /// Path to the directory to serve
+    /// Path to the directory to serve for MirrorFs
     #[arg(long)]
-    path: String,
+    path: Option<String>,
 
-    /// Mount path (default is the same as `path`)
+    /// Export path (default is `/`)
     #[arg(long)]
-    mount_path: Option<String>,
+    export_name: Option<String>,
 
     /// IP address to bind the server to
     #[arg(short = 'i', long, default_value = "0.0.0.0")]
@@ -47,10 +52,50 @@ struct Args {
     quiet: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     init_logging(&args);
+
+    let bind_addr = format!("{}:{}", args.bind_ip, args.bind_port);
+    let export_path = args.export_name.unwrap_or("/".to_owned());
+
+    if args.memfs {
+        let memfs = MemFs::new(memfs::default_config(args.readonly))
+            .expect("failed to create memfs instance");
+        if args.readonly {
+            start_server(bind_addr, export_path, ReadOnlyAdapter::new(memfs)).await;
+        } else {
+            start_server(bind_addr, export_path, memfs).await;
+        }
+    } else {
+        let path = args
+            .path
+            .as_deref()
+            .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
+
+        assert!(
+            Path::new(path).exists(),
+            "path [{path}] does not exist",
+        );
+        let mirror_fs = mirror::MirrorFs::new(path);
+        if args.readonly {
+            start_server(bind_addr, export_path, ReadOnlyAdapter::new(mirror_fs)).await;
+        } else {
+            start_server(bind_addr, export_path, mirror_fs).await;
+        }
+    }
+}
+
+async fn start_server(bind_addr: String, export_name: String, fs: impl NfsFileSystem + 'static) {
+    use nfs3_server::tcp::NFSTcpListener;
+    let mut listener = NFSTcpListener::bind(&bind_addr, fs).await.unwrap();
+    listener.with_export_name(export_name);
+    listener
+        .handle_forever()
+        .await
+        .expect("failed to handle connections");
 }
 
 fn init_logging(args: &Args) {

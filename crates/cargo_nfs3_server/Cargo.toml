@@ -1,5 +1,5 @@
 [package]
-name = "cargo_nfs3_server"
+name = "cargo-nfs3-server"
 version = "0.1.0-alpha.1"
 authors.workspace = true
 edition.workspace = true
