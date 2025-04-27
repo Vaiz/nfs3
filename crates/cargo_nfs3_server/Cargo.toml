@@ -13,6 +13,7 @@ nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
 nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["memfs"] }
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
+ctrlc = { workspace = true } 
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }

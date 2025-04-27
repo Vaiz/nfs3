@@ -90,12 +90,32 @@ async fn main() {
 
 async fn start_server(bind_addr: String, export_name: String, fs: impl NfsFileSystem + 'static) {
     use nfs3_server::tcp::NFSTcpListener;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut tx = Some(tx);    
+    ctrlc::set_handler(move || {
+        if let Some(tx) = tx.take() {
+            let _ = tx.send(());
+        }
+    }).expect("Error setting Ctrl-C handler");
+
+
     let mut listener = NFSTcpListener::bind(&bind_addr, fs).await.unwrap();
     listener.with_export_name(export_name);
-    listener
-        .handle_forever()
-        .await
-        .expect("failed to handle connections");
+    let handle_future = listener
+        .handle_forever();
+
+    tokio::select! {
+        result = handle_future => {
+            tracing::info!("Server stopped");
+            if let Err(e) = result {
+                tracing::error!("Error: {e}");
+            }
+        }
+        _ = rx => {
+            tracing::info!("Received Ctrl-C, shutting down...");
+        }
+    }
 }
 
 fn init_logging(args: &Args) {
