@@ -1,5 +1,8 @@
 use clap::Parser;
 
+mod mirror;
+mod memfs;
+
 /// CLI tool for the nfs3_server
 #[derive(Parser, Debug)]
 #[command(name = "nfs3_server", version, about = "A simple NFSv3 server", long_about = None)]
@@ -27,8 +30,22 @@ struct Args {
     /// Use an in-memory filesystem
     #[arg(long)]
     memfs: bool,
+
+    /// Log level (default is "info")
+    #[arg(long, default_value = "info")]
+    log_level: String,
+
+    /// Log file path
+    #[arg(long)]
+    log_file: Option<String>,
+
+    /// Disable console logging
+    #[arg(long)]
+    quiet: bool,
 }
 
 fn main() {
-    let _args = Args::parse();
+    let args = Args::parse();
+
+
 }

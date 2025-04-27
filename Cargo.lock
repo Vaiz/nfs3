@@ -138,8 +138,12 @@ name = "cargo_nfs3_server"
 version = "0.1.0-alpha.1"
 dependencies = [
  "clap",
+ "intaglio",
  "nfs3_server",
  "nfs3_types",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

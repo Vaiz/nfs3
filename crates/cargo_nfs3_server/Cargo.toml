@@ -10,9 +10,13 @@ publish = false # WIP
 
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.3.2" }
-nfs3_server = { path = "../nfs3_server", version = "0.4.1" }
+nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["memfs"] }
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["tracing-log"] }
+intaglio.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
 
 [lints]
 workspace = true
