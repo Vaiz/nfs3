@@ -1,10 +1,12 @@
+use std::sync::OnceLock;
+
 use tracing::subscriber::set_global_default;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::fmt::layer;
 use tracing_subscriber::layer::SubscriberExt;
 
-static STDOUT_LOGGER: std::sync::OnceLock<NonBlocking> = std::sync::OnceLock::new();
-static FILE_LOGGER: std::sync::OnceLock<NonBlocking> = std::sync::OnceLock::new();
+static STDOUT_LOGGER: OnceLock<NonBlocking> = OnceLock::new();
+static FILE_LOGGER: OnceLock<NonBlocking> = OnceLock::new();
 
 pub fn init_logging(
     log_level: &str,
@@ -48,7 +50,7 @@ pub fn init_logging(
             let file_guard = init_file_logger(log_file);
             let subscriber = subscriber
                 .with(layer().with_writer(stdout_logger))
-                .with(layer().with_writer(file_logger));
+                .with(layer().with_writer(file_logger).with_ansi(false));
             set_global_default(subscriber).expect("failed to set global subscriber");
             vec![stdout_guard, file_guard]
         }
