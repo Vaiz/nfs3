@@ -14,8 +14,9 @@ nfs3_server = { path = "../nfs3_server", version = "0.4.1", features = ["memfs"]
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
 tracing = { workspace = true }
+tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
-intaglio.workspace = true
+intaglio = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
 
 [lints]
