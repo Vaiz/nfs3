@@ -5,37 +5,23 @@ This project originated as a fork of [xetdata/nfsserve](https://github.com/xetda
 includes a substantial amount of code from that repository.
 
 Rust `NFSv3` Server
-=================
-This is an incomplete but very functional implementation of an `NFSv3` server
-in Rust.
+===================
 
-Why? You may ask. 
+This is an incomplete but very functional implementation of an `NFSv3` server in Rust. The main goal of this project is to enable robust and flexible data sharing. By implementing the provided traits, you can share almost any type of data, ranging from a regular filesystem to more complex storage backends like S3 buckets (note: S3 integration is not included in this library).
 
-I wanted to implement a user-mode file-system mount that is truly cross-platform.
-What is a protocol that pretty much every OS supports? NFS.
+Quick start
+===========
 
-Why not FUSE you may ask:
-1. FUSE is annoying to users on Mac and Windows (drivers necessary).
-2. It takes a lot of care to build a FUSE driver for remote filesystems. 
-   NFS clients however have a lot of historical robustification for
-   slow-responding, or perhaps, never-responding servers. 
-3. The OS is pretty good at caching NFS. There are established principles for 
-   cache eviction, for metadata, or for data. With a FUSE driver I have to do
-   a lot of the work myself.
+If you want to try the server out, you can use [cargo-nfs3-server](https://github.com/Vaiz/nfs3/blob/main/crates/cargo_nfs3_server/README.md) crate that provides a cli tool able to run in memory filesystem or mirror an existing the local one.
 
-So, this is a FUSE-like user-mode filesystem API that basically works by 
-creating a localhost `NFSv3` server you can mount.
+Examples
+========
 
-This is used in [pyxet](https://github.com/xetdata/pyxet) and 
-[xet-core](https://github.com/xetdata/xet-core/) to provide the `xet mount`
-functionality that allows you to mount multi-TB [Xethub](https://about.xethub.com) repository
-anywhere.
+The project includes a set of examples that can be run pretty much in the same way. You can find them in [examples](https://github.com/Vaiz/nfs3/tree/main/crates/nfs3_server/examples) folder.
 
-This is a blogpost explaining our rationale: [link](https://about.xethub.com/blog/nfs-fuse-why-we-built-nfs-server-rust).
+`MemFs` example
+---------------
 
-Run the `MemFS` Demo
-==================
-To run the demofs, this will host an NFS server on localhost:11111
 ```bash
 cargo run --example memfs --features memfs
 ```
@@ -57,7 +43,7 @@ On Windows (Pro required as Home does not have NFS client):
 mount.exe -o anon,nolock,mtype=soft,fileaccess=6,casesensitive,lang=ansi,rsize=128,wsize=128,timeout=60,retry=2 \\127.0.0.1\\ X:
 ```
 
-Note that the demo filesystem is *writable*. 
+Note that this example uses *writable* instance of `MemFs`.
 
 Usage
 =====
