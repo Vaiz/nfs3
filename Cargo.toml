@@ -22,7 +22,7 @@ intaglio = "1.10"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 rand = "0.9.1"
-syn = "2.0.100"
+syn = "2.0.101"
 tokio = { version = "1.44.2", default-features = false }
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
