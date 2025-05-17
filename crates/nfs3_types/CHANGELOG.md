@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.3...nfs3_types-v0.3.4) - 2025-05-17
+
+### Other
+
+- updated the following local packages: nfs3_macros
+
 ## [0.3.3](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.2...nfs3_types-v0.3.3) - 2025-04-27
 
 ### Changes
