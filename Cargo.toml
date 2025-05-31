@@ -23,7 +23,7 @@ proc-macro2 = "1.0.95"
 quote = "1.0.40"
 rand = "0.9.1"
 syn = "2.0.101"
-tokio = { version = "1.45.0", default-features = false }
+tokio = { version = "1.45.1", default-features = false }
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.19"
