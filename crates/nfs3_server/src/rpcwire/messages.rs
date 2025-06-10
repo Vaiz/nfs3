@@ -104,7 +104,7 @@ impl IncomingRpcMessage {
         &self.body
     }
 
-    pub const fn take_data(&mut self) -> Cursor<Vec<u8>> {
+    pub fn take_data(&mut self) -> Cursor<Vec<u8>> {
         let data = self.data.take().expect("Data already taken");
         let mut cursor = Cursor::new(data);
         cursor.set_position(self.message_start as u64);

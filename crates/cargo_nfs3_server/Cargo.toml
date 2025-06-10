@@ -3,6 +3,7 @@ name = "cargo-nfs3-server"
 version = "0.1.0-alpha.1"
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
