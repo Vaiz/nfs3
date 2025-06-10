@@ -21,7 +21,7 @@ impl<T> List<T> {
         self.0
     }
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
