@@ -24,7 +24,7 @@ updates:
   ignore:
     # keep minimal tokio version low
     - dependency-name: "tokio"
-      versions: ["[1.0.0, 2.0.0)"]
+      versions: ["1.x"]
     # ignore patch updates for all dependencies
     - dependency-name: "*"
       update-types: ["version-update:semver-patch"]
