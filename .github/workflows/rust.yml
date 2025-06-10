@@ -33,6 +33,29 @@ jobs:
     - name: Run tests
       run: cargo test --locked --verbose --all-features --target ${{ matrix.target }}
 
+  msrv_build:
+    runs-on: ubuntu-latest
+    name: MSRV Build
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Get MSRV
+      id: msrv
+      shell: pwsh
+      run: |
+        $msrv = Select-String '^rust-version' Cargo.toml | Select-Object -First 1 | ForEach-Object {
+          ($_ -split '"')[1]
+        }
+        "msrv=$msrv" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Install toolchain
+      run: rustup install ${{ steps.msrv.outputs.msrv }}
+
+    - name: Build
+      run: cargo +${{ steps.msrv.outputs.msrv }} build --locked --verbose
+
   release_build:
     strategy:
       fail-fast: false
