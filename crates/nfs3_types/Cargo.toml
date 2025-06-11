@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_types"
-version = "0.3.3"
+version = "0.3.4"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -12,7 +12,7 @@ readme = "README.md"
 keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 
 [dependencies]
-nfs3_macros = { path = "../nfs3_macros", version = "0.3.3" }
+nfs3_macros = { path = "../nfs3_macros", version = "0.3.4" }
 
 byteorder.workspace = true
 xdr-codec.workspace = true
