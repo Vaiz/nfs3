@@ -476,7 +476,7 @@ impl MemFs {
         let attr = file.attr().clone();
 
         let mut fs_lock = self.fs.write().expect("lock is poisoned");
-        match self.lookup_impl(&fs_lock, dirid, file.name()) {
+        match Self::lookup_impl(&fs_lock, dirid, file.name()) {
             Err(nfsstat3::NFS3ERR_NOENT) => {
                 // the existing file does not exist, we can add the new file
             }
@@ -500,7 +500,6 @@ impl MemFs {
     }
 
     fn lookup_impl(
-        &self,
         fs: &impl std::ops::Deref<Target = Fs>,
         dirid: FileHandleU64,
         filename: &filename3,
@@ -543,7 +542,7 @@ impl MemFs {
             if component.is_empty() {
                 continue;
             }
-            fid = self.lookup_impl(&fs, fid, &component.as_bytes().into())?;
+            fid = Self::lookup_impl(&fs, fid, &component.as_bytes().into())?;
         }
         Ok(fid)
     }
@@ -583,7 +582,7 @@ impl NfsReadFileSystem for MemFs {
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        self.lookup_impl(&fs, *dirid, filename)
+        Self::lookup_impl(&fs, *dirid, filename)
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {

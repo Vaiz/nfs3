@@ -215,7 +215,7 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// If the server can not support these exclusive create
     /// semantics, possibly because of the requirement to commit
     /// the verifier to stable storage, it should fail the CREATE
-    /// request with the error, NFS3ERR_NOTSUPP.
+    /// request with the error, `NFS3ERR_NOTSUPP`.
     fn create_exclusive(
         &self,
         dirid: &Self::Handle,
