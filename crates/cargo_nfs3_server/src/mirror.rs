@@ -18,8 +18,8 @@ use nfs3_server::vfs::{
     ReadDirPlusIterator,
 };
 use nfs3_types::nfs3::{
-    cookie3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
-    post_op_fh3, sattr3,
+    cookie3, createverf3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3,
+    post_op_attr, post_op_fh3, sattr3,
 };
 use string_ext::{FromOsString, IntoOsString};
 use tokio::fs::{File, OpenOptions};
@@ -247,7 +247,7 @@ enum CreateFSObject<'a> {
     /// Creates a file with a set of attributes
     File(sattr3),
     /// Creates an exclusive file with a set of attributes
-    Exclusive,
+    Exclusive(createverf3),
     /// Creates a symlink with a set of attributes to a target location
     Symlink((sattr3, nfspath3<'a>)),
 }
@@ -289,7 +289,11 @@ impl MirrorFs {
                 let file = std::fs::File::create(&path).map_err(|_| nfsstat3::NFS3ERR_IO)?;
                 let _ = file_setattr(&file, setattr).await;
             }
-            CreateFSObject::Exclusive => {
+            CreateFSObject::Exclusive(_verf) => {
+                // TODO: Store the createverf3 value in the file's metadata. If the file already
+                // exists and the stored createverf3 matches the requested one,
+                // treat this as a successful creation. Otherwise, return an error
+                // as per NFSv3 exclusive create semantics.
                 debug!("create exclusive {:?}", path);
                 let _ = std::fs::File::options()
                     .write(true)
@@ -526,9 +530,14 @@ impl NfsFileSystem for MirrorFs {
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
+        createverf: nfs3_types::nfs3::createverf3,
     ) -> Result<Self::Handle, nfsstat3> {
         let id = self
-            .create_fs_object(dirid.as_u64(), filename, &CreateFSObject::Exclusive)
+            .create_fs_object(
+                dirid.as_u64(),
+                filename,
+                &CreateFSObject::Exclusive(createverf),
+            )
             .await?
             .0;
         Ok(FileHandleU64::new(id))

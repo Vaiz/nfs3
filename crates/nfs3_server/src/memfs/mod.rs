@@ -28,14 +28,17 @@
 //! }
 //! ```
 
+mod config;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
+pub use config::MemFsConfig;
 use nfs3_types::nfs3::{
-    self as nfs, cookie3, entryplus3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
-    sattr3, specdata3,
+    self as nfs, cookie3, createverf3, entryplus3, fattr3, filename3, ftype3, nfspath3, nfsstat3,
+    nfstime3, sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
@@ -97,6 +100,7 @@ struct File {
     _parent: FileHandleU64,
     attr: fattr3,
     content: Vec<u8>,
+    verf: createverf3,
 }
 
 impl File {
@@ -105,6 +109,7 @@ impl File {
         id: FileHandleU64,
         parent: FileHandleU64,
         content: Vec<u8>,
+        verf: createverf3,
     ) -> Self {
         let current_time = current_time();
         let attr = fattr3 {
@@ -127,6 +132,7 @@ impl File {
             _parent: parent,
             attr,
             content,
+            verf,
         }
     }
 
@@ -189,8 +195,9 @@ impl Entry {
         id: FileHandleU64,
         parent: FileHandleU64,
         content: Vec<u8>,
+        verf: createverf3,
     ) -> Self {
-        Self::File(File::new(name, id, parent, content))
+        Self::File(File::new(name, id, parent, content, verf))
     }
 
     fn new_dir(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64) -> Self {
@@ -423,7 +430,7 @@ impl MemFs {
             if entry.is_dir {
                 fs.add_dir(id, name)?;
             } else {
-                fs.add_file(id, name, sattr3::default(), entry.content)?;
+                fs.add_file(id, name, sattr3::default(), entry.content, None)?;
             }
         }
 
@@ -457,30 +464,46 @@ impl MemFs {
         filename: filename3<'static>,
         attr: sattr3,
         content: Vec<u8>,
+        verf: Option<createverf3>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
         let newid: FileHandleU64 = self
             .nextid
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let mut file = Entry::new_file(filename, newid, dirid, content);
+        let mut file = Entry::new_file(filename, newid, dirid, content, verf.unwrap_or_default());
         file.set_attr(attr);
         let attr = file.attr().clone();
 
-        self.fs
-            .write()
-            .expect("lock is poisoned")
-            .push(dirid, file)?;
+        let mut fs_lock = self.fs.write().expect("lock is poisoned");
+        match Self::lookup_impl(&fs_lock, dirid, file.name()) {
+            Err(nfsstat3::NFS3ERR_NOENT) => {
+                // the existing file does not exist, we can add the new file
+            }
+            Ok(id) => {
+                let existing_file = fs_lock.get(id).expect("file not found");
+                if let Entry::File(existing_file) = existing_file {
+                    if verf.is_some_and(|v| v == existing_file.verf) {
+                        return Ok((id, attr));
+                    }
+                }
+                return Err(nfsstat3::NFS3ERR_EXIST);
+            }
+            Err(e) => {
+                // unexpected error, we should not continue
+                return Err(e);
+            }
+        }
+        fs_lock.push(dirid, file)?;
 
         Ok((newid, attr))
     }
 
     fn lookup_impl(
-        &self,
+        fs: &impl std::ops::Deref<Target = Fs>,
         dirid: FileHandleU64,
         filename: &filename3,
     ) -> Result<FileHandleU64, nfsstat3> {
-        let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
         if let Entry::File(_) = entry {
@@ -514,11 +537,12 @@ impl MemFs {
     fn path_to_id_impl(&self, path: &str) -> Result<FileHandleU64, nfsstat3> {
         let splits = path.split(DELIMITER);
         let mut fid = self.root_dir();
+        let fs = self.fs.read().expect("lock is poisoned");
         for component in splits {
             if component.is_empty() {
                 continue;
             }
-            fid = self.lookup_impl(fid, &component.as_bytes().into())?;
+            fid = Self::lookup_impl(&fs, fid, &component.as_bytes().into())?;
         }
         Ok(fid)
     }
@@ -557,7 +581,8 @@ impl NfsReadFileSystem for MemFs {
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
-        self.lookup_impl(*dirid, filename)
+        let fs = self.fs.read().expect("lock is poisoned");
+        Self::lookup_impl(&fs, *dirid, filename)
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
@@ -632,16 +657,23 @@ impl NfsFileSystem for MemFs {
         filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_file(*dirid, filename.clone_to_owned(), attr, Vec::new())
+        self.add_file(*dirid, filename.clone_to_owned(), attr, Vec::new(), None)
     }
 
     async fn create_exclusive(
         &self,
-        _dirid: &FileHandleU64,
-        _filename: &filename3<'_>,
+        dirid: &FileHandleU64,
+        filename: &filename3<'_>,
+        createverf: nfs::createverf3,
     ) -> Result<FileHandleU64, nfsstat3> {
-        tracing::warn!("create_exclusive not implemented");
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        self.add_file(
+            *dirid,
+            filename.clone_to_owned(),
+            sattr3::default(),
+            Vec::new(),
+            Some(createverf),
+        )
+        .map(|(id, _attr)| id)
     }
 
     async fn mkdir(
@@ -728,88 +760,5 @@ impl ReadDirPlusIterator for MemFsIterator {
                 name_handle: nfs::Nfs3Option::None,
             });
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct MemFsConfigEntry {
-    parent: String,
-    name: String,
-    is_dir: bool,
-    content: Vec<u8>,
-}
-
-/// Initial configuration for the in-memory file system.
-///
-/// It allows to specify the initial files and directories in the file system.
-#[derive(Default, Debug, Clone)]
-pub struct MemFsConfig {
-    entries: Vec<MemFsConfigEntry>,
-}
-
-impl MemFsConfig {
-    /// Adds a directory to the file system configuration.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the path is empty.
-    pub fn add_dir(&mut self, path: &str) {
-        let name = path
-            .split(DELIMITER)
-            .next_back()
-            .expect("dir path cannot be empty")
-            .to_string();
-        let path = path.trim_end_matches(&name);
-        self.entries.push(MemFsConfigEntry {
-            parent: path.to_string(),
-            name,
-            is_dir: true,
-            content: Vec::new(),
-        });
-    }
-
-    /// Adds a file to the file system configuration.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the path is empty.
-    pub fn add_file(&mut self, path: &str, content: impl Into<Vec<u8>>) {
-        let name = path
-            .split(DELIMITER)
-            .next_back()
-            .expect("file path cannot be empty")
-            .to_string();
-        let path = path.trim_end_matches(&name);
-
-        self.entries.push(MemFsConfigEntry {
-            parent: path.to_string(),
-            name,
-            is_dir: false,
-            content: content.into(),
-        });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fs_config() {
-        let mut config = MemFsConfig::default();
-        config.add_file("/a.txt", b"hello world\n");
-        config.add_file("/b.txt", b"Greetings to xet data\n");
-        config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", b"i hope\n");
-
-        assert_eq!(config.entries.len(), 4);
-        assert_eq!(config.entries[0].parent, "/");
-        assert_eq!(config.entries[1].parent, "/");
-        assert_eq!(config.entries[2].parent, "/");
-        assert_eq!(config.entries[3].parent, "/another_dir/");
-        assert_eq!(config.entries[0].name, "a.txt");
-        assert_eq!(config.entries[1].name, "b.txt");
-        assert_eq!(config.entries[2].name, "another_dir");
-        assert_eq!(config.entries[3].name, "thisworks.txt");
     }
 }

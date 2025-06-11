@@ -608,7 +608,7 @@ pub enum createmode3 {
     EXCLUSIVE = 2,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]

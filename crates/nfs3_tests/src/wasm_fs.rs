@@ -318,6 +318,7 @@ impl<FS: wasmer_vfs::FileSystem> nfs3_server::vfs::NfsFileSystem for WasmFs<FS> 
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
+        createverf: createverf3,
     ) -> Result<Self::Handle, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }

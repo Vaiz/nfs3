@@ -306,22 +306,44 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
+    let _create = client
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_file.txt".as_slice().into(),
+            },
+            how: createhow3::EXCLUSIVE(createverf3(1234u64.to_ne_bytes())),
+        })
+        .await?
+        .unwrap();
+
     let create = client
         .create(CREATE3args {
             where_: diropargs3 {
                 dir: root.clone(),
                 name: b"new_file.txt".as_slice().into(),
             },
-            how: createhow3::EXCLUSIVE(createverf3([0u8; 8])),
+            how: createhow3::EXCLUSIVE(createverf3(5678u64.to_ne_bytes())),
         })
         .await?;
 
-    tracing::info!("{create:?}");
-    if matches!(&create, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation");
+    if matches!(create, Nfs3Result::Err((nfsstat3::NFS3ERR_EXIST, _))) {
+        tracing::info!("file already exists, as expected");
     } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
+        panic!("Expected NFS3ERR_EXIST error");
     }
+
+    // recreate the file with the same verifier, should succeed
+    let _create = client
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"new_file.txt".as_slice().into(),
+            },
+            how: createhow3::EXCLUSIVE(createverf3(1234u64.to_ne_bytes())),
+        })
+        .await?
+        .unwrap();
 
     client.shutdown().await
 }
