@@ -613,8 +613,11 @@ where
     }
 
     let (fid, postopattr) = match createhow {
-        createhow3::EXCLUSIVE(_) => {
-            let fid = context.vfs.create_exclusive(&dirid, &dirops.name).await;
+        createhow3::EXCLUSIVE(verf) => {
+            let fid = context
+                .vfs
+                .create_exclusive(&dirid, &dirops.name, verf)
+                .await;
             (fid, post_op_attr::None)
         }
         createhow3::UNCHECKED(target_attributes) | createhow3::GUARDED(target_attributes) => {

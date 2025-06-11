@@ -35,6 +35,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
+pub use config::MemFsConfig;
 use nfs3_types::nfs3::{
     self as nfs, cookie3, entryplus3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
     sattr3, specdata3,
@@ -45,8 +46,6 @@ use crate::vfs::{
     FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
 };
-
-pub use config::MemFsConfig;
 
 const DELIMITER: char = '/';
 
@@ -643,6 +642,7 @@ impl NfsFileSystem for MemFs {
         &self,
         _dirid: &FileHandleU64,
         _filename: &filename3<'_>,
+        _createverf: nfs::createverf3,
     ) -> Result<FileHandleU64, nfsstat3> {
         tracing::warn!("create_exclusive not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)

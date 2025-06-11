@@ -28,8 +28,8 @@ mod iterator;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 use nfs3_types::nfs3::{
-    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, fattr3, filename3,
-    nfspath3, nfstime3, post_op_attr, sattr3,
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
+    filename3, nfspath3, nfstime3, post_op_attr, sattr3,
 };
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -207,12 +207,20 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         attr: sattr3,
     ) -> impl Future<Output = Result<(Self::Handle, fattr3), nfsstat3>> + Send;
 
-    /// Creates a file if it does not already exist
+    /// Creates a file if it does not already exist.
+    /// If not supported due to readonly file system
     /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    ///
+    /// # NOTE:
+    /// If the server can not support these exclusive create
+    /// semantics, possibly because of the requirement to commit
+    /// the verifier to stable storage, it should fail the CREATE
+    /// request with the error, NFS3ERR_NOTSUPP.
     fn create_exclusive(
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
+        createverf: createverf3,
     ) -> impl Future<Output = Result<Self::Handle, nfsstat3>> + Send;
 
     /// Makes a directory with the following attributes.
