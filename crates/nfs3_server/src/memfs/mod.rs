@@ -505,7 +505,6 @@ impl MemFs {
         dirid: FileHandleU64,
         filename: &filename3,
     ) -> Result<FileHandleU64, nfsstat3> {
-        // let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
         if let Entry::File(_) = entry {
