@@ -244,6 +244,17 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// Removes a file.
     /// If not supported due to readonly file system
     /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    /// 
+    /// # NOTE:
+    /// 
+    /// If the directory, `to_dirid`, already contains an entry with
+    /// the name, `to_filename`, the source object must be compatible
+    /// with the target: either both are non-directories or both
+    /// are directories and the target must be empty. If
+    /// compatible, the existing target is removed before the
+    /// rename occurs. If they are not compatible or if the target
+    /// is a directory but not empty, the server should return the
+    /// error, `NFS3ERR_EXIST`.
     fn rename<'a>(
         &self,
         from_dirid: &Self::Handle,
