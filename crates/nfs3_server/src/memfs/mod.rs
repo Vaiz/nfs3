@@ -136,6 +136,10 @@ impl File {
         }
     }
 
+    fn fileid(&self) -> FileHandleU64 {
+        self.attr.fileid.into()
+    }
+
     fn resize(&mut self, size: u64) {
         self.content
             .resize(usize::try_from(size).expect("size is too large"), 0);
@@ -487,11 +491,10 @@ impl MemFs {
             Err(nfsstat3::NFS3ERR_NOENT) => {
                 // the existing file does not exist, we can add the new file
             }
-            Ok(id) => {
-                let existing_file = fs_lock.get(id).expect("file not found");
+            Ok(existing_file) => {
                 if let Entry::File(existing_file) = existing_file {
                     if verf.is_some_and(|v| v == existing_file.verf) {
-                        return Ok((id, attr));
+                        return Ok((existing_file.fileid(), attr));
                     }
                 }
                 return Err(nfsstat3::NFS3ERR_EXIST);
@@ -506,11 +509,11 @@ impl MemFs {
         Ok((newid, attr))
     }
 
-    fn lookup_impl(
-        fs: &impl std::ops::Deref<Target = Fs>,
+    fn lookup_impl<'a>(
+        fs: &'a impl std::ops::Deref<Target = Fs>,
         dirid: FileHandleU64,
         filename: &filename3,
-    ) -> Result<FileHandleU64, nfsstat3> {
+    ) -> Result<&'a Entry, nfsstat3> {
         let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
         if let Entry::File(_) = entry {
@@ -518,11 +521,12 @@ impl MemFs {
         } else if let Entry::Dir(dir) = &entry {
             // if looking for dir/. its the current directory
             if filename.as_ref() == b"." {
-                return Ok(dirid);
+                return Ok(entry);
             }
             // if looking for dir/.. its the parent directory
             if filename.as_ref() == b".." {
-                return Ok(dir.parent);
+                let parent = fs.get(dir.parent).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+                return Ok(parent);
             }
             for i in dir.content.iter().copied() {
                 match fs.get(i) {
@@ -532,7 +536,7 @@ impl MemFs {
                     }
                     Some(f) => {
                         if f.name() == filename {
-                            return Ok(f.fileid());
+                            return Ok(f);
                         }
                     }
                 }
@@ -549,7 +553,8 @@ impl MemFs {
             if component.is_empty() {
                 continue;
             }
-            fid = Self::lookup_impl(&fs, fid, &component.as_bytes().into())?;
+            let entry = Self::lookup_impl(&fs, fid, &component.as_bytes().into())?;
+            fid = entry.fileid();
         }
         Ok(fid)
     }
@@ -589,7 +594,7 @@ impl NfsReadFileSystem for MemFs {
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        Self::lookup_impl(&fs, *dirid, filename)
+        Self::lookup_impl(&fs, *dirid, filename).map(|entry| entry.fileid())
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
@@ -711,13 +716,14 @@ impl NfsFileSystem for MemFs {
     ) -> Result<(), nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
-        let to_id = Self::lookup_impl(&fs, *to_dirid, to_filename);
-        if !matches!(to_id, Err(nfsstat3::NFS3ERR_NOENT)) {
+        let from_entry = Self::lookup_impl(&fs, *from_dirid, from_filename)?;
+        let to_entry = Self::lookup_impl(&fs, *to_dirid, to_filename);
+        if !matches!(to_entry, Err(nfsstat3::NFS3ERR_NOENT)) {
             // if the target file exists, we cannot rename
             return Err(nfsstat3::NFS3ERR_EXIST);
         }
 
-        let from_id = Self::lookup_impl(&fs, *from_dirid, from_filename)?;
+        let from_id = from_entry.fileid();
         if from_dirid == to_dirid {
             fs.get_mut(from_id)
                 .ok_or(nfsstat3::NFS3ERR_NOENT)?
