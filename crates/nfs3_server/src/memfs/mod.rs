@@ -717,13 +717,40 @@ impl NfsFileSystem for MemFs {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
         let from_entry = Self::lookup_impl(&fs, *from_dirid, from_filename)?;
+        let from_id = from_entry.fileid();
         let to_entry = Self::lookup_impl(&fs, *to_dirid, to_filename);
-        if !matches!(to_entry, Err(nfsstat3::NFS3ERR_NOENT)) {
-            // if the target file exists, we cannot rename
-            return Err(nfsstat3::NFS3ERR_EXIST);
+        match (from_entry, to_entry) {
+            (_, Err(nfsstat3::NFS3ERR_NOENT)) => {
+                // the entry does not exist, we can rename
+            }
+            (Entry::File(_), Ok(Entry::File(_))) => {
+                // if both entries are files, we can rename
+                fs.remove(*to_dirid, to_filename)?;
+            }
+            (Entry::Dir(_), Ok(Entry::Dir(tgt_dir))) => {
+                // if both entries are directories, we can rename if the target directory is empty
+                if !tgt_dir.content.is_empty() {
+                    tracing::warn!("target directory is not empty");
+                    return Err(nfsstat3::NFS3ERR_NOTEMPTY);
+                }
+                fs.remove(*to_dirid, to_filename)?;
+            }
+            (Entry::File(_), Ok(Entry::Dir(_))) => {
+                // cannot rename a file to a directory
+                tracing::warn!("cannot rename file to directory");
+                return Err(nfsstat3::NFS3ERR_NOTDIR);
+            }
+            (Entry::Dir(_), Ok(Entry::File(_))) => {
+                // cannot rename a directory to a file
+                tracing::warn!("cannot rename directory to file");
+                return Err(nfsstat3::NFS3ERR_NOTDIR);
+            }
+            (_, Err(e)) => {
+                // unexpected error, we should not continue
+                return Err(e);
+            }
         }
 
-        let from_id = from_entry.fileid();
         if from_dirid == to_dirid {
             fs.get_mut(from_id)
                 .ok_or(nfsstat3::NFS3ERR_NOENT)?

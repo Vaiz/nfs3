@@ -552,9 +552,21 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
 }
 
 #[tokio::test]
-async fn test_rename() -> Result<(), anyhow::Error> {
+async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
+
+    let create = client
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"old_name".as_slice().into(),
+            },
+            how: createhow3::UNCHECKED(sattr3::default()),
+        })
+        .await?
+        .unwrap();
+    tracing::info!("Created file for rename: {create:?}");
 
     let rename = client
         .rename(RENAME3args {
@@ -567,14 +579,128 @@ async fn test_rename() -> Result<(), anyhow::Error> {
                 name: b"new_name".as_slice().into(),
             },
         })
+        .await?
+        .unwrap();
+
+    tracing::info!("{rename:?}");
+    let old_lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"old_name".as_slice().into(),
+            },
+        })
+        .await?;
+    if !matches!(old_lookup, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
+        panic!("Expected NFS3ERR_NOENT for old_name after rename");
+    }
+
+    let new_lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"new_name".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+    tracing::info!("new_name lookup: {new_lookup:?}");
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rename_noent() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: root.clone(),
+                name: b"nonexistent_file".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: root.clone(),
+                name: b"new_name".as_slice().into(),
+            },
+        })
         .await?;
 
     tracing::info!("{rename:?}");
-    if matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
+    if !matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
+        panic!("Expected NFS3ERR_NOENT error");
     }
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    // Create the source file
+    let _src = client
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"src_file".as_slice().into(),
+            },
+            how: createhow3::UNCHECKED(sattr3::default()),
+        })
+        .await?
+        .unwrap();
+
+    // Create the target file
+    let _dst = client
+        .create(CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"dst_file".as_slice().into(),
+            },
+            how: createhow3::UNCHECKED(sattr3::default()),
+        })
+        .await?
+        .unwrap();
+
+    // Attempt to rename src_file to dst_file (should overwrite dst_file)
+    let _rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: root.clone(),
+                name: b"src_file".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: root.clone(),
+                name: b"dst_file".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    // src_file should be gone, dst_file should exist (now with src_file's handle)
+    let old_lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"src_file".as_slice().into(),
+            },
+        })
+        .await?;
+    assert!(matches!(
+        old_lookup,
+        Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))
+    ));
+    let _new_lookup = client
+        .lookup(LOOKUP3args {
+            what: diropargs3 {
+                dir: root.clone(),
+                name: b"dst_file".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
 
     client.shutdown().await
 }
