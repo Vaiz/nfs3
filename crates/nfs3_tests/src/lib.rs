@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::vfs::adapter::ReadOnlyAdapter;
-use nfs3_types::nfs3::nfs_fh3;
+use nfs3_types::nfs3::{Nfs3Result, nfs_fh3, nfsstat3};
 pub use rpc_tests::RpcTestContext;
 pub use server::Server;
 use tokio::io::{DuplexStream, duplex};
@@ -71,7 +71,10 @@ impl TestContext<TokioIo<DuplexStream>> {
     }
 }
 
-impl<IO> TestContext<IO> {
+impl<IO> TestContext<IO>
+where
+    IO: nfs3_client::io::AsyncRead + nfs3_client::io::AsyncWrite + Send,
+{
     pub fn root_dir(&self) -> &nfs_fh3 {
         &self.root_dir
     }
@@ -86,6 +89,26 @@ impl<IO> TestContext<IO> {
         drop(client);
 
         server_handle.await?
+    }
+
+    pub async fn just_lookup(&mut self, dir: nfs_fh3, filename: &str) -> Result<nfs_fh3, nfsstat3> {
+        use nfs3_types::nfs3::{LOOKUP3args, diropargs3};
+
+        let result = self
+            .client
+            .lookup(LOOKUP3args {
+                what: diropargs3 {
+                    dir,
+                    name: filename.as_bytes().into(),
+                },
+            })
+            .await
+            .expect("failed to lookup a file");
+
+        match result {
+            Nfs3Result::Ok(ok) => Ok(ok.object),
+            Nfs3Result::Err((status, _)) => Err(status),
+        }
     }
 }
 

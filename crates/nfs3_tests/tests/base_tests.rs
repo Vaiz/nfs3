@@ -64,19 +64,7 @@ async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
-    let LOOKUP3resok {
-        object,
-        obj_attributes: _,
-        dir_attributes: _,
-    } = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"a.txt".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
+    let object = client.just_lookup(root.clone(), "a.txt").await.unwrap();
 
     let setattr = client
         .setattr(SETATTR3args {
@@ -254,16 +242,10 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
 
     // Additional check to verify the file was created
     let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_file.txt".as_slice().into(),
-            },
-        })
-        .await?
+        .just_lookup(root.clone(), "new_file.txt")
+        .await
         .unwrap();
-
-    assert_eq!(lookup.object, create.obj.unwrap());
+    assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
 }
@@ -288,15 +270,10 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
 
     // Additional check to verify the file was created
     let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_file.txt".as_slice().into(),
-            },
-        })
-        .await?
+        .just_lookup(root.clone(), "new_file.txt")
+        .await
         .unwrap();
-    assert_eq!(lookup.object, create.obj.unwrap());
+    assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
 }
@@ -367,16 +344,8 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
     tracing::info!("{mkdir:?}");
 
     // Additional check to verify the directory was created
-    let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_dir".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
-    assert_eq!(lookup.object, mkdir.obj.unwrap());
+    let lookup = client.just_lookup(root.clone(), "new_dir").await.unwrap();
+    assert_eq!(lookup, mkdir.obj.unwrap());
 
     client.shutdown().await
 }
@@ -583,28 +552,9 @@ async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{rename:?}");
-    let old_lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"old_name".as_slice().into(),
-            },
-        })
-        .await?;
-    if !matches!(old_lookup, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
-        panic!("Expected NFS3ERR_NOENT for old_name after rename");
-    }
-
-    let new_lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_name".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
-    tracing::info!("new_name lookup: {new_lookup:?}");
+    let old_lookup = client.just_lookup(root.clone(), "old_name").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+    let _ = client.just_lookup(root.clone(), "new_name").await.unwrap();
 
     client.shutdown().await
 }
@@ -680,27 +630,9 @@ async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
         .unwrap();
 
     // src_file should be gone, dst_file should exist (now with src_file's handle)
-    let old_lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"src_file".as_slice().into(),
-            },
-        })
-        .await?;
-    assert!(matches!(
-        old_lookup,
-        Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))
-    ));
-    let _new_lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"dst_file".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
+    let old_lookup = client.just_lookup(root.clone(), "src_file").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+    let _ = client.just_lookup(root.clone(), "dst_file").await.unwrap();
 
     client.shutdown().await
 }
