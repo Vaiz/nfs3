@@ -247,6 +247,13 @@ impl Entry {
         }
     }
 
+    fn set_name(&mut self, name: filename3<'static>) {
+        match self {
+            Self::File(file) => file.name = name,
+            Self::Dir(dir) => dir.name = name,
+        }
+    }
+
     const fn attr(&self) -> &fattr3 {
         match self {
             Self::File(file) => &file.attr,
@@ -697,11 +704,27 @@ impl NfsFileSystem for MemFs {
 
     async fn rename<'a>(
         &self,
-        _from_dirid: &FileHandleU64,
-        _from_filename: &filename3<'a>,
-        _to_dirid: &FileHandleU64,
-        _to_filename: &filename3<'a>,
+        from_dirid: &FileHandleU64,
+        from_filename: &filename3<'a>,
+        to_dirid: &FileHandleU64,
+        to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
+        let mut fs = self.fs.write().expect("lock is poisoned");
+
+        let to_id = Self::lookup_impl(&fs, *to_dirid, to_filename);
+        if !matches!(to_id, Err(nfsstat3::NFS3ERR_NOENT)) {
+            // if the target file exists, we cannot rename
+            return Err(nfsstat3::NFS3ERR_EXIST);
+        }
+
+        let from_id = Self::lookup_impl(&fs, *from_dirid, from_filename)?;
+        if from_dirid == to_dirid {
+            fs.get_mut(from_id)
+                .ok_or(nfsstat3::NFS3ERR_NOENT)?
+                .set_name(to_filename.clone_to_owned());
+            return Ok(());
+        }
+
         tracing::warn!("rename not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
