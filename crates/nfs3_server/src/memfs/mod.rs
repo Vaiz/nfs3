@@ -446,6 +446,11 @@ impl Fs {
 
         // ✔️ source entry exists
 
+        if from_dirid == to_dirid && from_filename == to_filename {
+            // if source and target are the same, we can skip the rename
+            return Ok(());
+        }
+
         let to_entry = self.lookup(*to_dirid, to_filename);
 
         // ✔️ target directory exists
