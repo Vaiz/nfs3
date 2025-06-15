@@ -6,8 +6,7 @@
 //! # Limitations
 //!
 //! - It's a very naive implementation and does not guarantee the best performance.
-//! - Methods `create_exclusive`, `rename`, `symlink`, and `readlink` are not implemented and return
-//!   `NFS3ERR_NOTSUPP`.
+//! - Methods `symlink` and `readlink` are not implemented and return `NFS3ERR_NOTSUPP`.
 //!
 //! # Examples
 //!
