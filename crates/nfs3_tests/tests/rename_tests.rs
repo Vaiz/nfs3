@@ -330,3 +330,74 @@ async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error>
 
     client.shutdown().await
 }
+
+#[tokio::test]
+async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let src_dir = client.just_mkdir(root.clone(), "src_nonempty_dir").await.unwrap();
+    let _ = client
+        .just_create(src_dir.clone(), "file_inside.txt", b"some content")
+        .await
+        .unwrap();
+
+    let rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: root.clone(),
+                name: b"src_nonempty_dir".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: root.clone(),
+                name: b"renamed_nonempty_dir".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    tracing::info!("{rename:?}");
+
+    let old_lookup = client.just_lookup(root.clone(), "src_nonempty_dir").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+
+    let new_dir = client.just_lookup(root.clone(), "renamed_nonempty_dir").await.unwrap();
+    let file_handle = client
+        .just_lookup(new_dir.clone(), "file_inside.txt")
+        .await
+        .unwrap();
+    let content = client.just_read(file_handle).await.unwrap();
+    assert_eq!(content, b"some content");
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rename_directory_into_its_own_subdirectory() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let parent_dir = client.just_mkdir(root.clone(), "parent_dir").await.unwrap();
+    let _subdir = client.just_mkdir(parent_dir.clone(), "child_dir").await.unwrap();
+
+    let rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: root.clone(),
+                name: b"parent_dir".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: parent_dir.clone(),
+                name: b"child_dir".as_slice().into(),
+            },
+        })
+        .await?;
+
+    tracing::info!("{rename:?}");
+    assert!(
+        matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_INVAL, _))),
+        "Expected NFS3ERR_INVAL error"
+    );
+
+    client.shutdown().await
+}
