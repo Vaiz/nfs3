@@ -435,12 +435,12 @@ impl Fs {
 
     fn rename(
         &mut self,
-        from_dirid: &FileHandleU64,
+        from_dirid: FileHandleU64,
         from_filename: &filename3<'_>,
-        to_dirid: &FileHandleU64,
+        to_dirid: FileHandleU64,
         to_filename: &filename3<'_>,
     ) -> Result<(), nfsstat3> {
-        let from_entry = self.lookup(*from_dirid, from_filename)?;
+        let from_entry = self.lookup(from_dirid, from_filename)?;
         let from_id = from_entry.fileid();
         let is_dir = matches!(from_entry, Entry::Dir(_));
 
@@ -451,7 +451,7 @@ impl Fs {
             return Ok(());
         }
 
-        let to_entry = self.lookup(*to_dirid, to_filename);
+        let to_entry = self.lookup(to_dirid, to_filename);
 
         // ✔️ target directory exists
 
@@ -461,7 +461,7 @@ impl Fs {
             }
             (Entry::File(_), Ok(Entry::File(_))) => {
                 // if both entries are files, we can rename
-                self.remove(*to_dirid, to_filename)?;
+                self.remove(to_dirid, to_filename)?;
             }
             (Entry::Dir(_), Ok(Entry::Dir(tgt_dir))) => {
                 // if both entries are directories, we can rename if the target directory is empty
@@ -469,7 +469,7 @@ impl Fs {
                     tracing::warn!("target directory is not empty");
                     return Err(nfsstat3::NFS3ERR_NOTEMPTY);
                 }
-                self.remove(*to_dirid, to_filename)?;
+                self.remove(to_dirid, to_filename)?;
             }
             (Entry::File(_), Ok(Entry::Dir(_))) => {
                 // cannot rename a file to a directory
@@ -491,7 +491,7 @@ impl Fs {
 
         // Prevent renaming a directory into its own subdirectory
         if is_dir {
-            let mut current = *to_dirid;
+            let mut current = to_dirid;
             loop {
                 if current == from_id {
                     tracing::warn!("cannot move a directory into its own subdirectory");
@@ -517,7 +517,7 @@ impl Fs {
         // Remove from old parent directory
         {
             let from_dir = self
-                .get_mut(*from_dirid)
+                .get_mut(from_dirid)
                 .ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
             from_dir.as_dir_mut()?.content.remove(&from_id);
         }
@@ -525,7 +525,7 @@ impl Fs {
         // Add to new parent directory
         {
             let to_dir = self
-                .get_mut(*to_dirid)
+                .get_mut(to_dirid)
                 .ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
             let added = to_dir.as_dir_mut()?.content.insert(from_id);
             if !added {
@@ -538,7 +538,7 @@ impl Fs {
         let entry = self.get_mut(from_id).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
         entry.set_name(to_filename.clone_to_owned());
         if let Entry::Dir(dir) = entry {
-            dir.parent = *to_dirid;
+            dir.parent = to_dirid;
         }
 
         Ok(())
@@ -697,7 +697,7 @@ impl NfsReadFileSystem for MemFs {
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        fs.lookup(*dirid, filename).map(|entry| entry.fileid())
+        fs.lookup(*dirid, filename).map(Entry::fileid)
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
@@ -819,7 +819,7 @@ impl NfsFileSystem for MemFs {
         to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
-        fs.rename(from_dirid, from_filename, to_dirid, to_filename)
+        fs.rename(*from_dirid, from_filename, *to_dirid, to_filename)
     }
 
     async fn symlink<'a>(

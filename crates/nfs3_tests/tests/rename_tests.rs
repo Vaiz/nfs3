@@ -257,7 +257,10 @@ async fn test_rename_file_in_subdirectory() -> Result<(), anyhow::Error> {
 
     let old_lookup = client.just_lookup(subdir.clone(), "file_in_subdir").await;
     assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
-    let handle = client.just_lookup(subdir.clone(), "file_renamed").await.unwrap();
+    let handle = client
+        .just_lookup(subdir.clone(), "file_renamed")
+        .await
+        .unwrap();
     let read = client.just_read(handle).await.unwrap();
     assert_eq!(read, b"subdir content");
 
@@ -293,7 +296,10 @@ async fn test_rename_file_across_directories() -> Result<(), anyhow::Error> {
 
     let old_lookup = client.just_lookup(src_dir.clone(), "file_to_move").await;
     assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
-    let handle = client.just_lookup(dst_dir.clone(), "file_moved").await.unwrap();
+    let handle = client
+        .just_lookup(dst_dir.clone(), "file_moved")
+        .await
+        .unwrap();
     let read = client.just_read(handle).await.unwrap();
     assert_eq!(read, b"move me");
 
@@ -326,7 +332,10 @@ async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error>
 
     let old_lookup = client.just_lookup(src_dir.clone(), "subdir").await;
     assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
-    let _ = client.just_lookup(dst_dir.clone(), "subdir_moved").await.unwrap();
+    let _ = client
+        .just_lookup(dst_dir.clone(), "subdir_moved")
+        .await
+        .unwrap();
 
     client.shutdown().await
 }
@@ -336,7 +345,10 @@ async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
-    let src_dir = client.just_mkdir(root.clone(), "src_nonempty_dir").await.unwrap();
+    let src_dir = client
+        .just_mkdir(root.clone(), "src_nonempty_dir")
+        .await
+        .unwrap();
     let _ = client
         .just_create(src_dir.clone(), "file_inside.txt", b"some content")
         .await
@@ -361,7 +373,10 @@ async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
     let old_lookup = client.just_lookup(root.clone(), "src_nonempty_dir").await;
     assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
 
-    let new_dir = client.just_lookup(root.clone(), "renamed_nonempty_dir").await.unwrap();
+    let new_dir = client
+        .just_lookup(root.clone(), "renamed_nonempty_dir")
+        .await
+        .unwrap();
     let file_handle = client
         .just_lookup(new_dir.clone(), "file_inside.txt")
         .await
@@ -378,7 +393,10 @@ async fn test_rename_directory_into_its_own_subdirectory() -> Result<(), anyhow:
     let root = client.root_dir().clone();
 
     let parent_dir = client.just_mkdir(root.clone(), "parent_dir").await.unwrap();
-    let _subdir = client.just_mkdir(parent_dir.clone(), "child_dir").await.unwrap();
+    let _subdir = client
+        .just_mkdir(parent_dir.clone(), "child_dir")
+        .await
+        .unwrap();
 
     let rename = client
         .rename(RENAME3args {
