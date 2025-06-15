@@ -526,14 +526,8 @@ async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
     let root = client.root_dir().clone();
 
     let create = client
-        .create(CREATE3args {
-            where_: diropargs3 {
-                dir: root.clone(),
-                name: b"old_name".as_slice().into(),
-            },
-            how: createhow3::UNCHECKED(sattr3::default()),
-        })
-        .await?
+        .just_create(root.clone(), "old_name", b"hello world")
+        .await
         .unwrap();
     tracing::info!("Created file for rename: {create:?}");
 
@@ -592,26 +586,14 @@ async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
 
     // Create the source file
     let _src = client
-        .create(CREATE3args {
-            where_: diropargs3 {
-                dir: root.clone(),
-                name: b"src_file".as_slice().into(),
-            },
-            how: createhow3::UNCHECKED(sattr3::default()),
-        })
-        .await?
+        .just_create(root.clone(), "src_file", b"hello world")
+        .await
         .unwrap();
 
     // Create the target file
     let _dst = client
-        .create(CREATE3args {
-            where_: diropargs3 {
-                dir: root.clone(),
-                name: b"dst_file".as_slice().into(),
-            },
-            how: createhow3::UNCHECKED(sattr3::default()),
-        })
-        .await?
+        .just_create(root.clone(), "dst_file", b"bye bye world")
+        .await
         .unwrap();
 
     // Attempt to rename src_file to dst_file (should overwrite dst_file)
@@ -632,7 +614,9 @@ async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
     // src_file should be gone, dst_file should exist (now with src_file's handle)
     let old_lookup = client.just_lookup(root.clone(), "src_file").await;
     assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
-    let _ = client.just_lookup(root.clone(), "dst_file").await.unwrap();
+    let handle = client.just_lookup(root.clone(), "dst_file").await.unwrap();
+    let read = client.just_read(handle).await.unwrap();
+    assert_eq!(read, b"hello world");
 
     client.shutdown().await
 }
