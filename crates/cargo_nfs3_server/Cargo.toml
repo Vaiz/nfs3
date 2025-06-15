@@ -1,6 +1,6 @@
 [package]
 name = "cargo-nfs3-server"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,8 +12,8 @@ description = "Simple and easy-to-deploy NFSv3 server"
 readme = "README.md"
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.3.3" }
-nfs3_server = { path = "../nfs3_server", version = "0.5.0", features = ["memfs"] }
+nfs3_types = { path = "../nfs3_types", version = "0.3.4" }
+nfs3_server = { path = "../nfs3_server", version = "0.6.0", features = ["memfs"] }
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
 ctrlc = { workspace = true } 
