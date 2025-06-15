@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.3...nfs3_macros-v0.3.4) - 2025-06-15
+
+### Changes
+
+- set MSRV to 1.85 ([#85](https://github.com/Vaiz/nfs3/pull/85))
+
 ## [0.3.3](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.2...nfs3_macros-v0.3.3) - 2025-04-27
 
 ### Changes
