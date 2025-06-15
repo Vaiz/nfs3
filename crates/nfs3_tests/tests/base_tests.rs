@@ -64,19 +64,7 @@ async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
-    let LOOKUP3resok {
-        object,
-        obj_attributes: _,
-        dir_attributes: _,
-    } = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"a.txt".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
+    let object = client.just_lookup(root.clone(), "a.txt").await.unwrap();
 
     let setattr = client
         .setattr(SETATTR3args {
@@ -254,16 +242,10 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
 
     // Additional check to verify the file was created
     let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_file.txt".as_slice().into(),
-            },
-        })
-        .await?
+        .just_lookup(root.clone(), "new_file.txt")
+        .await
         .unwrap();
-
-    assert_eq!(lookup.object, create.obj.unwrap());
+    assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
 }
@@ -288,15 +270,10 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
 
     // Additional check to verify the file was created
     let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_file.txt".as_slice().into(),
-            },
-        })
-        .await?
+        .just_lookup(root.clone(), "new_file.txt")
+        .await
         .unwrap();
-    assert_eq!(lookup.object, create.obj.unwrap());
+    assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
 }
@@ -367,16 +344,8 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
     tracing::info!("{mkdir:?}");
 
     // Additional check to verify the directory was created
-    let lookup = client
-        .lookup(LOOKUP3args {
-            what: diropargs3 {
-                dir: root.clone(),
-                name: b"new_dir".as_slice().into(),
-            },
-        })
-        .await?
-        .unwrap();
-    assert_eq!(lookup.object, mkdir.obj.unwrap());
+    let lookup = client.just_lookup(root.clone(), "new_dir").await.unwrap();
+    assert_eq!(lookup, mkdir.obj.unwrap());
 
     client.shutdown().await
 }
@@ -548,34 +517,6 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{rmdir:?}");
-    client.shutdown().await
-}
-
-#[tokio::test]
-async fn test_rename() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
-    let root = client.root_dir().clone();
-
-    let rename = client
-        .rename(RENAME3args {
-            from: diropargs3 {
-                dir: root.clone(),
-                name: b"old_name".as_slice().into(),
-            },
-            to: diropargs3 {
-                dir: root.clone(),
-                name: b"new_name".as_slice().into(),
-            },
-        })
-        .await?;
-
-    tracing::info!("{rename:?}");
-    if matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
-    }
-
     client.shutdown().await
 }
 

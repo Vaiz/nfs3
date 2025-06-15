@@ -6,8 +6,7 @@
 //! # Limitations
 //!
 //! - It's a very naive implementation and does not guarantee the best performance.
-//! - Methods `create_exclusive`, `rename`, `symlink`, and `readlink` are not implemented and return
-//!   `NFS3ERR_NOTSUPP`.
+//! - Methods `symlink` and `readlink` are not implemented and return `NFS3ERR_NOTSUPP`.
 //!
 //! # Examples
 //!
@@ -97,7 +96,6 @@ impl Dir {
 #[derive(Debug)]
 struct File {
     name: filename3<'static>,
-    _parent: FileHandleU64,
     attr: fattr3,
     content: Vec<u8>,
     verf: createverf3,
@@ -107,7 +105,6 @@ impl File {
     fn new(
         name: filename3<'static>,
         id: FileHandleU64,
-        parent: FileHandleU64,
         content: Vec<u8>,
         verf: createverf3,
     ) -> Self {
@@ -129,11 +126,14 @@ impl File {
         };
         Self {
             name,
-            _parent: parent,
             attr,
             content,
             verf,
         }
+    }
+
+    fn fileid(&self) -> FileHandleU64 {
+        self.attr.fileid.into()
     }
 
     fn resize(&mut self, size: u64) {
@@ -192,12 +192,11 @@ enum Entry {
 impl Entry {
     fn new_file(
         name: filename3<'static>,
-        id: FileHandleU64,
         parent: FileHandleU64,
         content: Vec<u8>,
         verf: createverf3,
     ) -> Self {
-        Self::File(File::new(name, id, parent, content, verf))
+        Self::File(File::new(name, parent, content, verf))
     }
 
     fn new_dir(name: filename3<'static>, id: FileHandleU64, parent: FileHandleU64) -> Self {
@@ -244,6 +243,13 @@ impl Entry {
         match self {
             Self::File(file) => &file.name,
             Self::Dir(dir) => &dir.name,
+        }
+    }
+
+    fn set_name(&mut self, name: filename3<'static>) {
+        match self {
+            Self::File(file) => file.name = name,
+            Self::Dir(dir) => dir.name = name,
         }
     }
 
@@ -393,6 +399,149 @@ impl Fs {
     fn get_mut(&mut self, id: FileHandleU64) -> Option<&mut Entry> {
         self.entries.get_mut(&id)
     }
+
+    fn lookup(&self, dirid: FileHandleU64, filename: &filename3) -> Result<&Entry, nfsstat3> {
+        let entry = self.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+
+        if let Entry::File(_) = entry {
+            return Err(nfsstat3::NFS3ERR_NOTDIR);
+        } else if let Entry::Dir(dir) = &entry {
+            // if looking for dir/. its the current directory
+            if filename.as_ref() == b"." {
+                return Ok(entry);
+            }
+            // if looking for dir/.. its the parent directory
+            if filename.as_ref() == b".." {
+                let parent = self.get(dir.parent).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+                return Ok(parent);
+            }
+            for i in dir.content.iter().copied() {
+                match self.get(i) {
+                    None => {
+                        tracing::error!("invalid entry: {i}");
+                        return Err(nfsstat3::NFS3ERR_SERVERFAULT);
+                    }
+                    Some(f) => {
+                        if f.name() == filename {
+                            return Ok(f);
+                        }
+                    }
+                }
+            }
+        }
+        Err(nfsstat3::NFS3ERR_NOENT)
+    }
+
+    fn rename(
+        &mut self,
+        from_dirid: FileHandleU64,
+        from_filename: &filename3<'_>,
+        to_dirid: FileHandleU64,
+        to_filename: &filename3<'_>,
+    ) -> Result<(), nfsstat3> {
+        let from_entry = self.lookup(from_dirid, from_filename)?;
+        let from_id = from_entry.fileid();
+        let is_dir = matches!(from_entry, Entry::Dir(_));
+
+        // ✔️ source entry exists
+
+        if from_dirid == to_dirid && from_filename == to_filename {
+            // if source and target are the same, we can skip the rename
+            return Ok(());
+        }
+
+        let to_entry = self.lookup(to_dirid, to_filename);
+
+        // ✔️ target directory exists
+
+        match (from_entry, to_entry) {
+            (_, Err(nfsstat3::NFS3ERR_NOENT)) => {
+                // the entry does not exist, we can rename
+            }
+            (Entry::File(_), Ok(Entry::File(_))) => {
+                // if both entries are files, we can rename
+                self.remove(to_dirid, to_filename)?;
+            }
+            (Entry::Dir(_), Ok(Entry::Dir(tgt_dir))) => {
+                // if both entries are directories, we can rename if the target directory is empty
+                if !tgt_dir.content.is_empty() {
+                    tracing::warn!("target directory is not empty");
+                    return Err(nfsstat3::NFS3ERR_NOTEMPTY);
+                }
+                self.remove(to_dirid, to_filename)?;
+            }
+            (Entry::File(_), Ok(Entry::Dir(_))) => {
+                // cannot rename a file to a directory
+                tracing::warn!("cannot rename file to directory");
+                return Err(nfsstat3::NFS3ERR_NOTDIR);
+            }
+            (Entry::Dir(_), Ok(Entry::File(_))) => {
+                // cannot rename a directory to a file
+                tracing::warn!("cannot rename directory to file");
+                return Err(nfsstat3::NFS3ERR_NOTDIR);
+            }
+            (_, Err(e)) => {
+                // unexpected error, we should not continue
+                return Err(e);
+            }
+        }
+
+        // ✔️ target entry doesn't exist
+
+        // Prevent renaming a directory into its own subdirectory
+        if is_dir {
+            let mut current = to_dirid;
+            loop {
+                if current == from_id {
+                    tracing::warn!("cannot move a directory into its own subdirectory");
+                    return Err(nfsstat3::NFS3ERR_INVAL);
+                }
+                let entry = self.get(current).ok_or(nfsstat3::NFS3ERR_NOENT)?;
+                match entry {
+                    Entry::Dir(dir) => {
+                        if current == self.root {
+                            // Reached root
+                            break;
+                        }
+                        current = dir.parent;
+                    }
+                    Entry::File(_) => {
+                        tracing::error!("expected a directory, found a file");
+                        return Err(nfsstat3::NFS3ERR_SERVERFAULT);
+                    }
+                }
+            }
+        }
+
+        // Remove from old parent directory
+        {
+            let from_dir = self
+                .get_mut(from_dirid)
+                .ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+            from_dir.as_dir_mut()?.content.remove(&from_id);
+        }
+
+        // Add to new parent directory
+        {
+            let to_dir = self
+                .get_mut(to_dirid)
+                .ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+            let added = to_dir.as_dir_mut()?.content.insert(from_id);
+            if !added {
+                tracing::error!("failed to add entry to target directory");
+                return Err(nfsstat3::NFS3ERR_SERVERFAULT);
+            }
+        }
+
+        // Update entry's name and parent if needed
+        let entry = self.get_mut(from_id).ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
+        entry.set_name(to_filename.clone_to_owned());
+        if let Entry::Dir(dir) = entry {
+            dir.parent = to_dirid;
+        }
+
+        Ok(())
+    }
 }
 
 /// In-memory file system for `NFSv3`.
@@ -471,20 +620,19 @@ impl MemFs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .into();
 
-        let mut file = Entry::new_file(filename, newid, dirid, content, verf.unwrap_or_default());
+        let mut file = Entry::new_file(filename, newid, content, verf.unwrap_or_default());
         file.set_attr(attr);
         let attr = file.attr().clone();
 
         let mut fs_lock = self.fs.write().expect("lock is poisoned");
-        match Self::lookup_impl(&fs_lock, dirid, file.name()) {
+        match fs_lock.lookup(dirid, file.name()) {
             Err(nfsstat3::NFS3ERR_NOENT) => {
                 // the existing file does not exist, we can add the new file
             }
-            Ok(id) => {
-                let existing_file = fs_lock.get(id).expect("file not found");
+            Ok(existing_file) => {
                 if let Entry::File(existing_file) = existing_file {
                     if verf.is_some_and(|v| v == existing_file.verf) {
-                        return Ok((id, attr));
+                        return Ok((existing_file.fileid(), attr));
                     }
                 }
                 return Err(nfsstat3::NFS3ERR_EXIST);
@@ -499,41 +647,6 @@ impl MemFs {
         Ok((newid, attr))
     }
 
-    fn lookup_impl(
-        fs: &impl std::ops::Deref<Target = Fs>,
-        dirid: FileHandleU64,
-        filename: &filename3,
-    ) -> Result<FileHandleU64, nfsstat3> {
-        let entry = fs.get(dirid).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-
-        if let Entry::File(_) = entry {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        } else if let Entry::Dir(dir) = &entry {
-            // if looking for dir/. its the current directory
-            if filename.as_ref() == b"." {
-                return Ok(dirid);
-            }
-            // if looking for dir/.. its the parent directory
-            if filename.as_ref() == b".." {
-                return Ok(dir.parent);
-            }
-            for i in dir.content.iter().copied() {
-                match fs.get(i) {
-                    None => {
-                        tracing::error!("invalid entry: {i}");
-                        return Err(nfsstat3::NFS3ERR_SERVERFAULT);
-                    }
-                    Some(f) => {
-                        if f.name() == filename {
-                            return Ok(f.fileid());
-                        }
-                    }
-                }
-            }
-        }
-        Err(nfsstat3::NFS3ERR_NOENT)
-    }
-
     fn path_to_id_impl(&self, path: &str) -> Result<FileHandleU64, nfsstat3> {
         let splits = path.split(DELIMITER);
         let mut fid = self.root_dir();
@@ -542,7 +655,8 @@ impl MemFs {
             if component.is_empty() {
                 continue;
             }
-            fid = Self::lookup_impl(&fs, fid, &component.as_bytes().into())?;
+            let entry = fs.lookup(fid, &component.as_bytes().into())?;
+            fid = entry.fileid();
         }
         Ok(fid)
     }
@@ -582,7 +696,7 @@ impl NfsReadFileSystem for MemFs {
         filename: &filename3<'_>,
     ) -> Result<FileHandleU64, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        Self::lookup_impl(&fs, *dirid, filename)
+        fs.lookup(*dirid, filename).map(Entry::fileid)
     }
 
     async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
@@ -590,6 +704,7 @@ impl NfsReadFileSystem for MemFs {
         let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         Ok(entry.attr().clone())
     }
+
     async fn read(
         &self,
         id: &FileHandleU64,
@@ -697,13 +812,13 @@ impl NfsFileSystem for MemFs {
 
     async fn rename<'a>(
         &self,
-        _from_dirid: &FileHandleU64,
-        _from_filename: &filename3<'a>,
-        _to_dirid: &FileHandleU64,
-        _to_filename: &filename3<'a>,
+        from_dirid: &FileHandleU64,
+        from_filename: &filename3<'a>,
+        to_dirid: &FileHandleU64,
+        to_filename: &filename3<'a>,
     ) -> Result<(), nfsstat3> {
-        tracing::warn!("rename not implemented");
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        let mut fs = self.fs.write().expect("lock is poisoned");
+        fs.rename(*from_dirid, from_filename, *to_dirid, to_filename)
     }
 
     async fn symlink<'a>(
