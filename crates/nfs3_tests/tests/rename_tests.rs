@@ -229,3 +229,104 @@ async fn test_rename_directory_to_self() -> Result<(), anyhow::Error> {
 
     client.shutdown().await
 }
+
+#[tokio::test]
+async fn test_rename_file_in_subdirectory() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let subdir = client.just_mkdir(root.clone(), "subdir").await.unwrap();
+    let _ = client
+        .just_create(subdir.clone(), "file_in_subdir", b"subdir content")
+        .await
+        .unwrap();
+
+    let _rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: subdir.clone(),
+                name: b"file_in_subdir".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: subdir.clone(),
+                name: b"file_renamed".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    let old_lookup = client.just_lookup(subdir.clone(), "file_in_subdir").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+    let handle = client.just_lookup(subdir.clone(), "file_renamed").await.unwrap();
+    let read = client.just_read(handle).await.unwrap();
+    assert_eq!(read, b"subdir content");
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rename_file_across_directories() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let src_dir = client.just_mkdir(root.clone(), "src_dir").await.unwrap();
+    let dst_dir = client.just_mkdir(root.clone(), "dst_dir").await.unwrap();
+
+    let _ = client
+        .just_create(src_dir.clone(), "file_to_move", b"move me")
+        .await
+        .unwrap();
+
+    let _rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: src_dir.clone(),
+                name: b"file_to_move".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: dst_dir.clone(),
+                name: b"file_moved".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    let old_lookup = client.just_lookup(src_dir.clone(), "file_to_move").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+    let handle = client.just_lookup(dst_dir.clone(), "file_moved").await.unwrap();
+    let read = client.just_read(handle).await.unwrap();
+    assert_eq!(read, b"move me");
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error> {
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let src_dir = client.just_mkdir(root.clone(), "src_dir").await.unwrap();
+    let dst_dir = client.just_mkdir(root.clone(), "dst_dir").await.unwrap();
+
+    let _subdir = client.just_mkdir(src_dir.clone(), "subdir").await.unwrap();
+
+    let _rename = client
+        .rename(RENAME3args {
+            from: diropargs3 {
+                dir: src_dir.clone(),
+                name: b"subdir".as_slice().into(),
+            },
+            to: diropargs3 {
+                dir: dst_dir.clone(),
+                name: b"subdir_moved".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap();
+
+    let old_lookup = client.just_lookup(src_dir.clone(), "subdir").await;
+    assert!(matches!(old_lookup, Err(nfsstat3::NFS3ERR_NOENT)));
+    let _ = client.just_lookup(dst_dir.clone(), "subdir_moved").await.unwrap();
+
+    client.shutdown().await
+}
