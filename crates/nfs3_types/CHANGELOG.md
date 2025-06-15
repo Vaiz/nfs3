@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.4](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.3...nfs3_types-v0.3.4) - 2025-06-15
 
-### Added
+### Changes
 
-- add createverf parameter to `NfsFileSystem::create_exclusive` method ([#90](https://github.com/Vaiz/nfs3/pull/90))
+- derive `Default` for `createverf3` ([#90](https://github.com/Vaiz/nfs3/pull/90))
 - set MSRV to 1.85 ([#85](https://github.com/Vaiz/nfs3/pull/85))
 
 ## [0.3.3](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.2...nfs3_types-v0.3.3) - 2025-04-27

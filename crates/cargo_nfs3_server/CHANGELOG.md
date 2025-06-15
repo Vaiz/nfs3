@@ -9,11 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0-alpha.2](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0-alpha.1...cargo-nfs3-server-v0.1.0-alpha.2) - 2025-06-15
 
-### Added
+### Changes
 
-- add createverf parameter to `NfsFileSystem::create_exclusive` method ([#90](https://github.com/Vaiz/nfs3/pull/90))
-- set MSRV to 1.85 ([#85](https://github.com/Vaiz/nfs3/pull/85))
-
-### Other
-
-- Update installation instruction ([#80](https://github.com/Vaiz/nfs3/pull/80))
+- MemFs now supports `rename` and `create_exclusive`

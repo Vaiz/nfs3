@@ -11,13 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [**breaking**] add createverf parameter to `NfsFileSystem::create_exclusive` method ([#90](https://github.com/Vaiz/nfs3/pull/90))
 - implement rename for MemFs ([#91](https://github.com/Vaiz/nfs3/pull/91))
-- add createverf parameter to `NfsFileSystem::create_exclusive` method ([#90](https://github.com/Vaiz/nfs3/pull/90))
 - set MSRV to 1.85 ([#85](https://github.com/Vaiz/nfs3/pull/85))
-
-### Other
-
-- cargo-nfs3-server ([#78](https://github.com/Vaiz/nfs3/pull/78))
 
 ## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.4.1...nfs3_server-v0.5.0) - 2025-04-27
 
