@@ -27,7 +27,7 @@ jobs:
           os: macos-latest
 
     runs-on: ${{ matrix.os }}
-    name: Debug Build ${{ matrix.os }}
+    name: ${{ matrix.target }} (debug)
 
     steps:
     - uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
           os: macos-latest
 
     runs-on: ${{ matrix.os }}
-    name: Release Build ${{ matrix.os }}
+    name: ${{ matrix.target }} (release)
 
     steps:
     - uses: actions/checkout@v4
