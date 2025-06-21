@@ -19,13 +19,22 @@ jobs:
           os: windows-latest
         - target: x86_64-unknown-linux-gnu
           os: ubuntu-latest
+        - target: aarch64-unknown-linux-gnu
+          os: ubuntu-24.04-arm
+        - target: x86_64-apple-darwin
+          os: macos-latest
+        - target: aarch64-apple-darwin
+          os: macos-latest
 
     runs-on: ${{ matrix.os }}
-    name: Debug Build ${{ matrix.os }}
+    name: ${{ matrix.target }} (debug)
 
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
+
+    - name: Add target
+      run: rustup target add ${{ matrix.target }}
 
     - name: Build
       run: cargo build --locked --verbose --target ${{ matrix.target }}
@@ -65,13 +74,22 @@ jobs:
           os: windows-latest
         - target: x86_64-unknown-linux-gnu
           os: ubuntu-latest
+        - target: aarch64-unknown-linux-gnu
+          os: ubuntu-24.04-arm
+        - target: x86_64-apple-darwin
+          os: macos-latest
+        - target: aarch64-apple-darwin
+          os: macos-latest
 
     runs-on: ${{ matrix.os }}
-    name: Release Build ${{ matrix.os }}
+    name: ${{ matrix.target }} (release)
 
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
+
+    - name: Add target
+      run: rustup target add ${{ matrix.target }}
 
     - name: Build
       run: cargo build --release --locked --verbose --target ${{ matrix.target }}
