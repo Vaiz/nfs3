@@ -7,6 +7,9 @@
 pub(crate) mod list;
 pub(crate) mod packed_size;
 pub(crate) mod void;
+pub(crate) mod traits;
+pub(crate) mod error;
+pub(crate) mod util;
 
 pub use ::xdr_codec::*;
 /// Derive macro that implements [`Pack`] and [`Unpack`] traits.
