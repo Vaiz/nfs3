@@ -2,14 +2,14 @@ use std::env;
 
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::tokio::TokioConnector;
-use nfs3_types::nfs3;
+use nfs3_client::nfs3_types::nfs3;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = env::args().collect::<Vec<_>>();
     let ip = args.get(1).map_or("127.0.0.1", String::as_str).to_owned();
     let mount_path = args.get(2).map_or("/", String::as_str).to_owned();
-    let portmaper_port = args.get(3).map_or(nfs3_types::portmap::PMAP_PORT, |port| {
+    let portmaper_port = args.get(3).map_or(nfs3_client::nfs3_types::portmap::PMAP_PORT, |port| {
         port.parse::<u16>().expect("invalid port number")
     });
 

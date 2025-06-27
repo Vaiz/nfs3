@@ -18,7 +18,7 @@ use nfs3_server::vfs::{
     FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
 };
-use nfs3_types::nfs3::{
+use nfs3_server::nfs3_types::nfs3::{
     cookie3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
     post_op_fh3, sattr3,
 };
@@ -563,7 +563,7 @@ impl NfsFileSystem for MirrorFs {
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
-        _createverf: nfs3_types::nfs3::createverf3,
+        _createverf: nfs3_server::nfs3_types::nfs3::createverf3,
     ) -> Result<Self::Handle, nfsstat3> {
         let id = self
             .create_fs_object(dirid.as_u64(), filename, &CreateFSObject::Exclusive)

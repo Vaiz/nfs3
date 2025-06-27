@@ -4,8 +4,8 @@ use std::time::{Duration, UNIX_EPOCH};
 use chrono::{DateTime, Utc};
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::tokio::TokioConnector;
-use nfs3_types::nfs3::{self, Nfs3Option};
-use nfs3_types::xdr_codec::Opaque;
+use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,17 +20,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let portmapper_port = args
         .get(3)
         .and_then(|port| port.parse::<u16>().ok())
-        .unwrap_or(nfs3_types::portmap::PMAP_PORT);
+        .unwrap_or(nfs3_client::nfs3_types::portmap::PMAP_PORT);
 
     // This auth values are the same that Windows NFS client uses
-    let auth_unix = nfs3_types::rpc::auth_unix {
+    let auth_unix = nfs3_client::nfs3_types::rpc::auth_unix {
         stamp: 0xaaaa_aaaa,
         machinename: Opaque::borrowed(b"unknown"),
         uid: 0xffff_fffe,
         gid: 0xffff_fffe,
         gids: vec![],
     };
-    let credential = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix);
+    let credential = nfs3_client::nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix);
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmapper_port)
