@@ -77,13 +77,13 @@ When working on code changes:
 1. **Check current state**: Use `Rust-cargo-check` with `workspace: true`
 2. **Make changes**: Edit code using appropriate tools
 3. **Validate**: Use `Rust-cargo-clippy` with `workspace: true, all_targets: true`
-4. **Format**: Use `Rust-cargo-fmt` with `all: true`
+4. **Format**: Use `Rust-cargo-fmt` with `all: true` (requires nightly toolchain)
 5. **Test**: Use `Rust-cargo-test` with `workspace: true, all_features: true`
 6. **Build**: Use `Rust-cargo-build` with `workspace: true` for final verification
 
 ### 3. Dependency Management
 
-- Always use `Rust-cargo-machete` to check for unused dependencies before adding new ones
+- Always use `Rust-cargo-machete` to check for unused dependencies before adding new ones (may require installing tools first)
 - Use `Rust-cargo-deny-check` to verify security and compliance
 - When adding dependencies, prefer workspace-level dependencies in the root `Cargo.toml`
 
@@ -137,12 +137,7 @@ This project implements the NFS3 protocol in Rust with the following key compone
 - `crates/nfs3_client/src/lib.rs`: Client API
 - `crates/nfs3_tests/src/`: Integration test suites
 
-### Common Issues and Solutions
 
-1. **Lifetime Annotations**: This project uses extensive lifetime annotations for zero-copy operations
-2. **Async/Await**: All I/O operations are async and use tokio
-3. **RPC Serialization**: Custom XDR serialization for NFS3 protocol
-4. **Cross-Platform**: Code must work on Windows, Linux, and macOS
 
 ## Toolchain Requirements
 
