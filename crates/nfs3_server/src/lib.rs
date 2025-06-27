@@ -19,6 +19,9 @@ pub mod vfs;
 #[cfg_attr(docsrs, doc(cfg(feature = "memfs")))]
 pub mod memfs;
 
+/// Re-export of `nfs3_types` for convenience
+pub use nfs3_types;
+
 /// Reexport for test purposes
 #[doc(hidden)]
 #[cfg(feature = "__test_reexports")]

@@ -5,9 +5,11 @@ use std::path::{Component, Path, PathBuf};
 
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::io::{AsyncRead, AsyncWrite};
+use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option, filename3};
+use nfs3_client::nfs3_types::portmap::PMAP_PORT;
+use nfs3_client::nfs3_types::rpc::{auth_unix, opaque_auth};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_client::tokio::TokioConnector;
-use nfs3_types::nfs3::{self, Nfs3Option, filename3};
-use nfs3_types::xdr_codec::Opaque;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,16 +29,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let portmapper_port = args
         .get(5)
         .and_then(|port| port.parse::<u16>().ok())
-        .unwrap_or(nfs3_types::portmap::PMAP_PORT);
+        .unwrap_or(PMAP_PORT);
 
-    let auth_unix = nfs3_types::rpc::auth_unix {
+    let auth_unix = auth_unix {
         stamp: 0xaaaa_aaaa,
         machinename: Opaque::borrowed(b"unknown"),
         uid: 0xffff_fffe,
         gid: 0xffff_fffe,
         gids: vec![],
     };
-    let credential = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix);
+    let credential = opaque_auth::auth_unix(&auth_unix);
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmapper_port)

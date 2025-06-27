@@ -13,13 +13,13 @@ use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
+use nfs3_server::nfs3_types::nfs3::{
+    cookie3, createverf3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3,
+    post_op_attr, post_op_fh3, sattr3,
+};
 use nfs3_server::vfs::{
     FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
-};
-use nfs3_types::nfs3::{
-    cookie3, createverf3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3,
-    post_op_attr, post_op_fh3, sattr3,
 };
 use string_ext::{FromOsString, IntoOsString};
 use tokio::fs::{File, OpenOptions};
@@ -530,7 +530,7 @@ impl NfsFileSystem for MirrorFs {
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
-        createverf: nfs3_types::nfs3::createverf3,
+        createverf: createverf3,
     ) -> Result<Self::Handle, nfsstat3> {
         let id = self
             .create_fs_object(
@@ -793,9 +793,9 @@ pub mod string_ext {
     #[cfg(unix)]
     use std::os::unix::ffi::OsStrExt;
 
-    use nfs3_types::nfs3::{filename3, nfspath3};
+    use nfs3_server::nfs3_types::nfs3::{filename3, nfspath3};
     #[cfg(not(unix))]
-    use nfs3_types::xdr_codec::Opaque;
+    use nfs3_server::nfs3_types::xdr_codec::Opaque;
 
     pub trait IntoOsString {
         fn as_os_str(&self) -> &OsStr;

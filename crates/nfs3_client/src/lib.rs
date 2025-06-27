@@ -17,4 +17,6 @@ pub mod tokio;
 pub use connect::*;
 pub use mount::*;
 pub use nfs::*;
+/// Re-export of `nfs3_types` for convenience
+pub use nfs3_types;
 pub use portmapper::*;

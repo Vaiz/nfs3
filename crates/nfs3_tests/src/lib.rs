@@ -248,7 +248,7 @@ pub fn print_hex(data: &[u8]) {
     for (i, chunk) in data.chunks(16).enumerate() {
         print!("{:06x} | ", i * 16);
         for byte in chunk {
-            print!("{:02x} ", byte);
+            print!("{byte:02x} ");
         }
         println!();
     }

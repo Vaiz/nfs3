@@ -141,7 +141,6 @@ dependencies = [
  "ctrlc",
  "intaglio",
  "nfs3_server",
- "nfs3_types",
  "tokio",
  "tracing",
  "tracing-appender",
