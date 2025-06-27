@@ -5,9 +5,9 @@ use std::path::{Component, Path, PathBuf};
 
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::io::{AsyncRead, AsyncWrite};
-use nfs3_client::tokio::TokioConnector;
 use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option, filename3};
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
+use nfs3_client::tokio::TokioConnector;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

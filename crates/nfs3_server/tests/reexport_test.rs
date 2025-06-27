@@ -5,7 +5,7 @@ fn test_nfs3_types_reexport_from_server() {
     // Test creating types using the re-exported path from nfs3_server
     let _handle = nfs3_server::nfs3_types::nfs3::nfs_fh3::default();
     let _auth = nfs3_server::nfs3_types::rpc::opaque_auth::default();
-    
-    // Also test accessing modules
-    let _void = nfs3_server::nfs3_types::xdr_codec::Void;
+
+    // Also test accessing modules - just verify the path compiles
+    let _ = std::mem::size_of::<nfs3_server::nfs3_types::xdr_codec::Void>();
 }

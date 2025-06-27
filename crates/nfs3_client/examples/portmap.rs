@@ -21,7 +21,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     portmapper.null().await?;
 
     let result = portmapper
-        .getport(nfs3_client::nfs3_types::mount::PROGRAM, nfs3_client::nfs3_types::mount::VERSION)
+        .getport(
+            nfs3_client::nfs3_types::mount::PROGRAM,
+            nfs3_client::nfs3_types::mount::VERSION,
+        )
         .await;
     match result {
         Ok(port) => println!("Resolved MOUNT3 port: {port}"),
@@ -32,7 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let result = portmapper
-        .getport(nfs3_client::nfs3_types::nfs3::PROGRAM, nfs3_client::nfs3_types::nfs3::VERSION)
+        .getport(
+            nfs3_client::nfs3_types::nfs3::PROGRAM,
+            nfs3_client::nfs3_types::nfs3::VERSION,
+        )
         .await;
     match result {
         Ok(port) => println!("Resolved NFSv3 port: {port}"),
