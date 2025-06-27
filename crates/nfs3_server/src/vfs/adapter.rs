@@ -78,7 +78,7 @@ where
             .map(ReadOnlyIterator)
     }
 
-    async fn readlink(&self, id: &Self::Handle) -> Result<nfs3_types::nfs3::nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfs3_types::nfs3::nfspath3<'_>, nfsstat3> {
         self.0.readlink(id).await
     }
 }

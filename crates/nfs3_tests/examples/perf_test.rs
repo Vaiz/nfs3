@@ -20,7 +20,7 @@ async fn main() {
     let requests_count = test_dir(&mut client, "dir_10000").await.unwrap();
     let elapsed_time = start_time.elapsed();
 
-    println!("Elapsed time: {:?}", elapsed_time);
+    println!("Elapsed time: {elapsed_time:?}");
     println!("Requests count: {requests_count}");
     println!(
         "Requests per second: {}",

@@ -84,7 +84,7 @@ impl RpcTestContext {
         Ok(())
     }
 
-    pub async fn recv_reply<T>(&mut self) -> anyhow::Result<(rpc_msg, Option<T>)>
+    pub async fn recv_reply<T>(&mut self) -> anyhow::Result<(rpc_msg<'_, '_>, Option<T>)>
     where
         T: Unpack<Cursor<Vec<u8>>>,
     {

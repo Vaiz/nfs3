@@ -59,7 +59,7 @@ impl Connector for TokioConnector {
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
         let socket = TcpSocket::new_v4()?;
-        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), local_port);
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), local_port);
         socket.bind(local_addr)?;
 
         let remote_addr = SocketAddr::new(host.parse().expect("invalid host address"), port);

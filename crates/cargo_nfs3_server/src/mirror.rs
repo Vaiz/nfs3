@@ -451,7 +451,7 @@ impl NfsReadFileSystem for MirrorFs {
         Ok(iter)
     }
 
-    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
