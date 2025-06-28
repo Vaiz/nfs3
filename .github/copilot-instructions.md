@@ -1,4 +1,4 @@
-# Copilot Instructions for NFS3 Rust Project
+# Copilot Instructions
 
 ## Overview
 
@@ -10,23 +10,23 @@ The following Rust-specific tools are available through the MCP server and shoul
 
 ### Core Build & Test Tools
 
-- **`Rust-cargo-build`**: Build the project using Cargo
-  - Use `workspace: true` to build all workspace crates
-  - Use `release: true` for optimized builds
+- **Generic arguments**:
+  - Use `package: "crate-name"` to build a specific crate
   - Use `all_features: true` to build with all features enabled
+  - Use `all_targets: true` to build all targets (e.g., tests, examples)
+  - Use `warnings_as_errors: true` for strict checking
+
+- **`Rust-cargo-build`**: Build the project using Cargo
 
 - **`Rust-cargo-check`**: Fast compilation check without code generation
   - Preferred for quick validation during development
   - Use before making code changes to understand existing issues
 
 - **`Rust-cargo-test`**: Run tests
-  - Use `workspace: true` to test all workspace crates
-  - Use `all_features: true` for comprehensive testing
 
 - **`Rust-cargo-clippy`**: Advanced linting with Clippy
-  - Use `workspace: true` to lint all crates
-  - Use `all_targets: true` to check all targets
-  - Use `warnings_as_errors: true` for strict checking
+  - Use `fix: true` to automatically apply fixes for Clippy warnings
+  - Use `allow_dirty: true` to allow dirty workspaces (useful for CI/CD)
 
 - **`Rust-cargo-fmt`**: Code formatting with rustfmt
   - Use `all: true` to format all packages
@@ -68,23 +68,23 @@ nfs3/
 - **DO**: Use `Rust-cargo-build` instead of `bash` commands like `cargo build`
 - **DO**: Use `Rust-cargo-check` for quick validation
 - **DO**: Use `Rust-cargo-clippy` for linting instead of manual clippy commands
-- **WHY**: MCP tools provide structured output and better error handling
+- **WHY**: MCP tools provide better defaults, better structured output and better error handling
 
 ### 2. Development Workflow
 
 When working on code changes:
 
-1. **Check current state**: Use `Rust-cargo-check` with `workspace: true`
+1. **Check current state**: Use `Rust-cargo-check` with `all_targets: true, all_features: true`
 2. **Make changes**: Edit code using appropriate tools
 3. **Validate**: Use `Rust-cargo-clippy` with `workspace: true, all_targets: true`
-4. **Format**: Use `Rust-cargo-fmt` with `all: true` (requires nightly toolchain)
-5. **Test**: Use `Rust-cargo-test` with `workspace: true, all_features: true`
-6. **Build**: Use `Rust-cargo-build` with `workspace: true` for final verification
+4. **Format**: Use `Rust-cargo-fmt` with `all: true`
+5. **Test**: Use `Rust-cargo-test` with `all_features: true`
+6. **Build**: Use `Rust-cargo-build` with `all_targets: true, all_features: true` for final verification
+7. **Check unused dependencies**: Use `Rust-cargo-machete` to find unused dependencies
+8. **Check security compliance**: Use `Rust-cargo-deny-check` to verify security and compliance
 
 ### 3. Dependency Management
 
-- Always use `Rust-cargo-machete` to check for unused dependencies before adding new ones (may require installing tools first)
-- Use `Rust-cargo-deny-check` to verify security and compliance
 - When adding dependencies, prefer workspace-level dependencies in the root `Cargo.toml`
 
 ### 4. Code Quality Standards
@@ -100,23 +100,23 @@ This project follows strict code quality standards:
 
 #### Checking Project Health
 ```
-1. Rust-cargo-check (workspace: true, all_targets: true)
-2. Rust-cargo-clippy (workspace: true, all_targets: true, warnings_as_errors: true)
-3. Rust-cargo-test (workspace: true, all_features: true)
+1. Rust-cargo-check (all_features: true, all_targets: true)
+2. Rust-cargo-clippy (warnings_as_errors: true)
+3. Rust-cargo-test (all_features: true)
+4. Rust-cargo-fmt (check: true)
 ```
 
 #### Fixing Clippy Issues
 ```
-1. Rust-cargo-clippy (workspace: true, all_targets: true, fix: true)
+1. Rust-cargo-clippy (all_targets: true, fix: true, allow_dirty: true)
 2. Rust-cargo-fmt (all: true)
-3. Rust-cargo-test (workspace: true)
+3. Rust-cargo-test (all_features: true)
 ```
 
 #### Adding New Dependencies
 ```
-1. Rust-cargo-machete (check for unused dependencies first)
-2. Rust-cargo-add (package: "dependency-name", workspace: true if workspace dep)
-3. Rust-cargo-deny-check (verify security compliance)
+1. Rust-cargo-add (package: "dependency-name", workspace: true if workspace dep)
+2. Rust-cargo-deny-check (verify security compliance)
 ```
 
 ## Repository-Specific Context
@@ -136,22 +136,3 @@ This project implements the NFS3 protocol in Rust with the following key compone
 - `crates/nfs3_server/src/vfs/mod.rs`: Virtual file system traits
 - `crates/nfs3_client/src/lib.rs`: Client API
 - `crates/nfs3_tests/src/`: Integration test suites
-
-
-
-## Toolchain Requirements
-
-- **Rust**: MSRV as specified in Cargo.toml
-- **Nightly**: Required for rustfmt formatting
-- **Targets**: Must support multiple architectures (x86_64, aarch64)
-
-## CI/CD Integration
-
-The project uses GitHub Actions with:
-- Multi-platform builds (Windows, Linux, macOS, ARM)
-- Clippy linting with warnings as errors
-- Comprehensive test suites
-- Security scanning with cargo-deny
-- Unused dependency detection with cargo-machete
-
-Always ensure changes pass all CI checks before submission.

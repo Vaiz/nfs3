@@ -13,5 +13,16 @@ jobs:
     steps:
     - name: Install nightly rustfmt
       run: rustup component add --toolchain nightly rustfmt
+    - name: Cache Cargo dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: copilot-cargo
     - name: Install Rust MCP Server
       run: cargo install --git https://github.com/Vaiz/rust-mcp-server.git --tag stable
+    - name: Install machete
+      run: cargo install cargo-machete
+    - name: Install cargo-deny
+      run: cargo install cargo-deny  
