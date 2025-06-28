@@ -11,5 +11,7 @@ jobs:
       contents: write
     environment: copilot
     steps:
+    - name: Install nightly rustfmt
+      run: rustup component add --toolchain nightly rustfmt
     - name: Install Rust MCP Server
       run: cargo install --git https://github.com/Vaiz/rust-mcp-server.git --tag stable
