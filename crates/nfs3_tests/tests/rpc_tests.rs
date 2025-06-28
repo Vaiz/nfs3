@@ -208,7 +208,7 @@ async fn invalid_rpc_ver() -> anyhow::Result<()> {
         panic!("Expected REPLY message, got: {:?}", msg.body);
     };
     let reply_body::MSG_DENIED(denied) = reply else {
-        panic!("Expected MSG_DENIED, got: {:?}", reply);
+        panic!("Expected MSG_DENIED, got: {reply:?}");
     };
     assert!(matches!(
         denied,
@@ -247,7 +247,7 @@ async fn unknown_program() -> anyhow::Result<()> {
         panic!("Expected REPLY message, got: {:?}", msg.body);
     };
     let reply_body::MSG_ACCEPTED(accepted) = reply else {
-        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+        panic!("Expected MSG_ACCEPTED, got: {reply:?}");
     };
     assert!(matches!(
         accepted.reply_data,
@@ -282,7 +282,7 @@ async fn invalid_nfs_version() -> anyhow::Result<()> {
         panic!("Expected REPLY message, got: {:?}", msg.body);
     };
     let reply_body::MSG_ACCEPTED(accepted) = reply else {
-        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+        panic!("Expected MSG_ACCEPTED, got: {reply:?}");
     };
     assert!(matches!(
         accepted.reply_data,
@@ -321,7 +321,7 @@ async fn invalid_procedure() -> anyhow::Result<()> {
         panic!("Expected REPLY message, got: {:?}", msg.body);
     };
     let reply_body::MSG_ACCEPTED(accepted) = reply else {
-        panic!("Expected MSG_ACCEPTED, got: {:?}", reply);
+        panic!("Expected MSG_ACCEPTED, got: {reply:?}");
     };
     assert!(matches!(
         accepted.reply_data,

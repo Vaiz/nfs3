@@ -210,7 +210,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
     }
 
     /// Reads a symlink
-    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3, nfsstat3> {
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
@@ -442,12 +442,12 @@ mod tests {
             let mut file = vfs
                 .new_open_options()
                 .options(file_options.clone())
-                .open(format!("/file_{}", i))?;
+                .open(format!("/file_{i}"))?;
             file.write_all(b"Hello, World!")?;
             file.flush()?;
         }
         let elapsed = start.elapsed();
-        println!("Elapsed: {:?}", elapsed);
+        println!("Elapsed: {elapsed:?}");
 
         let start = std::time::Instant::now();
         for i in 0..1000 {
@@ -455,7 +455,7 @@ mod tests {
             vfs.create_dir(&path)?;
         }
         let elapsed = start.elapsed();
-        println!("Elapsed: {:?}", elapsed);
+        println!("Elapsed: {elapsed:?}");
 
         Ok(())
     }

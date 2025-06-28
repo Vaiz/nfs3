@@ -127,7 +127,7 @@ pub trait NfsReadFileSystem: Send + Sync {
     fn readlink(
         &self,
         id: &Self::Handle,
-    ) -> impl Future<Output = Result<nfspath3, nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<nfspath3<'_>, nfsstat3>> + Send;
 
     /// Get static file system Information
     fn fsinfo(

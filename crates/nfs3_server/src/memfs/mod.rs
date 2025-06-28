@@ -735,7 +735,7 @@ impl NfsReadFileSystem for MemFs {
         Ok(iter)
     }
 
-    async fn readlink(&self, _id: &FileHandleU64) -> Result<nfspath3, nfsstat3> {
+    async fn readlink(&self, _id: &FileHandleU64) -> Result<nfspath3<'_>, nfsstat3> {
         tracing::warn!("readlink not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
