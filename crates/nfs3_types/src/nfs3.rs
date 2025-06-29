@@ -578,10 +578,13 @@ pub struct WRITE3resok {
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct cookieverf3(pub [u8; NFS3_COOKIEVERFSIZE]);
 
-#[derive(Debug)]
+#[derive(Debug, XdrCodec)]
 pub enum createhow3 {
+    #[xdr(0)]
     UNCHECKED(sattr3),
+    #[xdr(1)]
     GUARDED(sattr3),
+    #[xdr(2)]
     EXCLUSIVE(createverf3),
 }
 
@@ -944,24 +947,6 @@ pub type size3 = u64;
 
 pub type uid3 = u32;
 
-impl Pack for createhow3 {
-    fn packed_size(&self) -> usize {
-        match self {
-            Self::UNCHECKED(val) => createmode3::UNCHECKED.packed_size() + val.packed_size(),
-            Self::GUARDED(val) => createmode3::GUARDED.packed_size() + val.packed_size(),
-            Self::EXCLUSIVE(val) => createmode3::EXCLUSIVE.packed_size() + val.packed_size(),
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(match self {
-            Self::UNCHECKED(val) => createmode3::UNCHECKED.pack(out)? + val.pack(out)?,
-            Self::GUARDED(val) => createmode3::GUARDED.pack(out)? + val.pack(out)?,
-            Self::EXCLUSIVE(val) => createmode3::EXCLUSIVE.pack(out)? + val.pack(out)?,
-        })
-    }
-}
-
 impl Pack for mknoddata3 {
     fn packed_size(&self) -> usize {
         4 + match self {
@@ -979,33 +964,6 @@ impl Pack for mknoddata3 {
             Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
             &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
         })
-    }
-}
-
-impl Unpack for createhow3 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, usize) = Unpack::unpack(input)?;
-        sz += dsz;
-
-        match v {
-            0 => {
-                let (value, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::UNCHECKED(value), sz))
-            }
-            1 => {
-                let (value, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::GUARDED(value), sz))
-            }
-            2 => {
-                let (value, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::EXCLUSIVE(value), sz))
-            }
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
-        }
     }
 }
 
