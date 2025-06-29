@@ -169,14 +169,14 @@ fn filename3_edge_cases() {
     let len = empty_name.pack(&mut buffer).unwrap();
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
-    
+
     // Test single character filename
     let single_char = filename3::from(&b"a"[..]);
     let mut buffer = Vec::new();
     let len = single_char.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes length + 1 byte data + 3 bytes padding
     assert_eq!(buffer, [0, 0, 0, 1, b'a', 0, 0, 0]);
-    
+
     // Test filename requiring no padding (multiple of 4)
     let quad_name = filename3::from(&b"test"[..]);
     let mut buffer = Vec::new();
@@ -192,36 +192,36 @@ fn nfs3_result_roundtrip() {
         Nfs3Result::<Void, Void>::Ok(Void),
         Nfs3Result::<Void, Void>::Err((nfsstat3::NFS3ERR_PERM, Void)),
     ];
-    
+
     for original in void_cases {
         let mut buffer = Vec::new();
         let pack_len = original.pack(&mut buffer).unwrap();
         assert_eq!(pack_len, original.packed_size());
-        
+
         let mut cursor = Cursor::new(buffer);
         let (deserialized, unpack_len) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
         assert_eq!(pack_len, unpack_len);
         // Compare the discriminant and data separately since Nfs3Result doesn't implement PartialEq
         match (&original, &deserialized) {
-            (Nfs3Result::Ok(_), Nfs3Result::Ok(_)) => {},
+            (Nfs3Result::Ok(_), Nfs3Result::Ok(_)) => {}
             (Nfs3Result::Err((status1, _)), Nfs3Result::Err((status2, _))) => {
                 assert_eq!(status1, status2);
-            },
+            }
             _ => panic!("Roundtrip mismatch"),
         }
     }
-    
+
     // Test u32 cases
     let u32_cases = [
         Nfs3Result::<u32, u32>::Ok(0x1234_5678),
         Nfs3Result::<u32, u32>::Err((nfsstat3::NFS3ERR_NOENT, 0x8765_4321)),
     ];
-    
+
     for original in u32_cases {
         let mut buffer = Vec::new();
         let pack_len = original.pack(&mut buffer).unwrap();
         assert_eq!(pack_len, original.packed_size());
-        
+
         let mut cursor = Cursor::new(buffer);
         let (deserialized, unpack_len) = Nfs3Result::<u32, u32>::unpack(&mut cursor).unwrap();
         assert_eq!(pack_len, unpack_len);
@@ -229,11 +229,11 @@ fn nfs3_result_roundtrip() {
         match (&original, &deserialized) {
             (Nfs3Result::Ok(val1), Nfs3Result::Ok(val2)) => {
                 assert_eq!(val1, val2);
-            },
+            }
             (Nfs3Result::Err((status1, val1)), Nfs3Result::Err((status2, val2))) => {
                 assert_eq!(status1, status2);
                 assert_eq!(val1, val2);
-            },
+            }
             _ => panic!("Roundtrip mismatch"),
         }
     }
@@ -272,34 +272,34 @@ fn nfs3_error_codes() {
         nfsstat3::NFS3ERR_BADTYPE,
         nfsstat3::NFS3ERR_JUKEBOX,
     ];
-    
+
     for error_code in error_codes {
         let result = Nfs3Result::<Void, Void>::Err((error_code, Void));
         let mut buffer = Vec::new();
         let len = result.pack(&mut buffer).unwrap();
         assert_eq!(len, 4);
-        
+
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
         // Compare error codes manually since Nfs3Result doesn't implement PartialEq
         match deserialized {
             Nfs3Result::Err((deserialized_code, _)) => {
                 assert_eq!(error_code as u32, deserialized_code as u32);
-            },
+            }
             Nfs3Result::Ok(_) => panic!("Expected error result for error code {error_code:?}"),
         }
     }
-    
+
     // Test NFS3_OK separately as a success case
     let success_result = Nfs3Result::<Void, Void>::Ok(Void);
     let mut buffer = Vec::new();
     let len = success_result.pack(&mut buffer).unwrap();
     assert_eq!(len, 4);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
     match deserialized {
-        Nfs3Result::Ok(_) => {}, // Expected success
+        Nfs3Result::Ok(_) => {} // Expected success
         Nfs3Result::Err(_) => panic!("Expected success result for NFS3_OK"),
     }
 }

@@ -133,15 +133,15 @@ fn mount3res_roundtrip() {
         fhandle: fhandle3(Opaque(Cow::Borrowed(&[0x12, 0x34, 0x56, 0x78]))),
         auth_flavors: vec![1, 2, 3],
     });
-    
+
     let mut buffer = Vec::new();
     let pack_len = success_res.pack(&mut buffer).unwrap();
     assert_eq!(pack_len, success_res.packed_size());
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, unpack_len) = mountres3::unpack(&mut cursor).unwrap();
     assert_eq!(pack_len, unpack_len);
-    
+
     match (&success_res, &deserialized) {
         (mountres3::Ok(ok1), mountres3::Ok(ok2)) => {
             assert_eq!(ok1.fhandle.0.as_ref(), ok2.fhandle.0.as_ref());
@@ -149,23 +149,23 @@ fn mount3res_roundtrip() {
         }
         _ => panic!("Expected success response"),
     }
-    
+
     // Test error mount response
     let error_res = mountres3::Err(mountstat3::MNT3ERR_PERM);
     let mut buffer = Vec::new();
     let pack_len = error_res.pack(&mut buffer).unwrap();
     assert_eq!(pack_len, error_res.packed_size());
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, unpack_len) = mountres3::unpack(&mut cursor).unwrap();
     assert_eq!(pack_len, unpack_len);
     match (&error_res, &deserialized) {
-            (mountres3::Err(err1), mountres3::Err(err2)) => {
-                // Compare error codes by their discriminant values
-                assert_eq!(*err1 as u32, *err2 as u32);
-            }
-            _ => panic!("Expected error response"),
+        (mountres3::Err(err1), mountres3::Err(err2)) => {
+            // Compare error codes by their discriminant values
+            assert_eq!(*err1 as u32, *err2 as u32);
         }
+        _ => panic!("Expected error response"),
+    }
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn fhandle3_edge_cases() {
     let len = empty_fh.pack(&mut buffer).unwrap();
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
-    
+
     // Test maximum size file handle (64 bytes)
     let max_data = vec![0x42; 64];
     let max_fh = fhandle3(Opaque(Cow::Borrowed(&max_data)));
@@ -192,7 +192,7 @@ fn opaque_auth_default() {
     let len = auth.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes flavor + 4 bytes length (no data)
     assert_eq!(buffer, [0, 0, 0, 0, 0, 0, 0, 0]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, unpack_len) = opaque_auth::unpack(&mut cursor).unwrap();
     assert_eq!(len, unpack_len);
@@ -206,12 +206,12 @@ fn opaque_auth_with_data() {
         flavor: auth_flavor::AUTH_UNIX,
         body: Opaque(Cow::Borrowed(&[0x12, 0x34, 0x56, 0x78])),
     };
-    
+
     let mut buffer = Vec::new();
     let len = auth.pack(&mut buffer).unwrap();
     assert_eq!(len, 12); // 4 bytes flavor + 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 1, 0, 0, 0, 4, 0x12, 0x34, 0x56, 0x78]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, unpack_len) = opaque_auth::unpack(&mut cursor).unwrap();
     assert_eq!(len, unpack_len);
@@ -232,23 +232,23 @@ fn mount_error_codes() {
         mountstat3::MNT3ERR_NOTSUPP,
         mountstat3::MNT3ERR_SERVERFAULT,
     ];
-    
+
     for error_code in error_codes {
         let res = mountres3::Err(error_code);
         let mut buffer = Vec::new();
         let len = res.pack(&mut buffer).unwrap();
         assert_eq!(len, 4);
-        
+
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _) = mountres3::unpack(&mut cursor).unwrap();
         match deserialized {
             mountres3::Err(deserialized_code) => {
                 assert_eq!(error_code as u32, deserialized_code as u32);
-            },
+            }
             mountres3::Ok(_) => panic!("Expected error result for error code {error_code:?}"),
         }
     }
-    
+
     // Test MNT3_OK separately as a success case would require a valid mount response
     // which is more complex, so we'll skip it in this simple error code test
 }
@@ -257,7 +257,7 @@ fn mount_error_codes() {
 fn rpc_program_constants() {
     // Test that common RPC program numbers are correctly defined
     assert_eq!(RPC_VERSION_2, 2);
-    
+
     // Test typical NFS program numbers (these might be defined elsewhere)
     let call = call_body {
         rpcvers: RPC_VERSION_2,
@@ -267,7 +267,7 @@ fn rpc_program_constants() {
         cred: opaque_auth::default(),
         verf: opaque_auth::default(),
     };
-    
+
     assert_eq!(call.prog, 100_003);
     assert_eq!(call.vers, 3);
     assert_eq!(call.rpcvers, RPC_VERSION_2);
@@ -282,17 +282,17 @@ fn auth_flavors() {
         auth_flavor::AUTH_SHORT,
         auth_flavor::AUTH_DES,
     ];
-    
+
     for flavor in auth_flavors {
         let auth = opaque_auth {
             flavor,
             body: Opaque(Cow::Borrowed(&[])),
         };
-        
+
         let mut buffer = Vec::new();
         let len = auth.pack(&mut buffer).unwrap();
         assert_eq!(len, 8); // 4 bytes flavor + 4 bytes length
-        
+
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _) = opaque_auth::unpack(&mut cursor).unwrap();
         assert_eq!(auth.flavor, deserialized.flavor);

@@ -90,7 +90,7 @@ fn empty_collections() {
     let len = empty_vec.pack(&mut buffer).unwrap();
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
     assert_eq!(len, 4);
@@ -102,7 +102,7 @@ fn empty_collections() {
     let len = empty_list.pack(&mut buffer).unwrap();
     assert_eq!(len, 4); // Just the end marker
     assert_eq!(buffer, [0, 0, 0, 0]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
     assert_eq!(len, 4);
@@ -117,7 +117,7 @@ fn single_item_collections() {
     let len = single_vec.pack(&mut buffer).unwrap();
     assert_eq!(len, 8); // 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
     assert_eq!(len, 8);
@@ -129,7 +129,7 @@ fn single_item_collections() {
     let len = single_list.pack(&mut buffer).unwrap();
     assert_eq!(len, 12); // 4 bytes indicator + 4 bytes data + 4 bytes end marker
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0]);
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
     assert_eq!(len, 12);
@@ -142,13 +142,13 @@ fn bounded_list_edge_cases() {
     // Even zero size should have the end marker, so it should be at least 4
     let mut bounded_list = BoundedList::<u32>::new(4); // Just end marker
     assert!(bounded_list.try_push(0x1234).is_err());
-    
+
     // Test with exactly one item size
     // Each item needs 4 bytes indicator + 4 bytes data, plus 4 bytes end marker = 12 bytes total
     let mut bounded_list = BoundedList::<u32>::new(12);
     assert!(bounded_list.try_push(0x1234).is_ok());
     assert!(bounded_list.try_push(0x5678).is_err());
-    
+
     let list = bounded_list.into_inner();
     assert_eq!(list.0, vec![0x1234]);
 }
@@ -160,12 +160,12 @@ fn large_collections() {
     let mut buffer = Vec::new();
     let len = large_vec.pack(&mut buffer).unwrap();
     assert_eq!(len, 404); // 4 bytes length + 100 * 4 bytes data
-    
+
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
     assert_eq!(len, 404);
     assert_eq!(large_vec, deserialized);
-    
+
     // Test bounded list with many items
     // Each item needs 4 bytes indicator + 4 bytes data = 8 bytes per item
     // Plus 4 bytes for the end marker
@@ -175,7 +175,7 @@ fn large_collections() {
         assert!(bounded_list.try_push(i).is_ok(), "Failed to push item {i}");
     }
     assert!(bounded_list.try_push(100).is_err()); // Should fail on 101st item
-    
+
     let list = bounded_list.into_inner();
     assert_eq!(list.0.len(), 100);
     assert_eq!(list.0, (0..100).collect::<Vec<u32>>());
