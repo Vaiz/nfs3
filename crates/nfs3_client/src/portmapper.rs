@@ -60,7 +60,7 @@ where
         C: Pack,
     {
         self.rpc
-            .call::<C, R>(PROGRAM, VERSION, proc as u32, args)
+            .call::<C, R>(PROGRAM, VERSION, proc as u32, &args)
             .await
     }
 }
