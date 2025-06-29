@@ -13,20 +13,11 @@ pub enum Error {
 
     /// An error occurred while packing an object.
     ObjectTooLarge(usize),
-
-    /// An error occurred while converting from UTF8
-    Utf8(std::string::FromUtf8Error),
 }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)
-    }
-}
-
-impl From<std::string::FromUtf8Error> for Error {
-    fn from(e: std::string::FromUtf8Error) -> Self {
-        Self::Utf8(e)
     }
 }
 
@@ -37,7 +28,6 @@ impl fmt::Display for Error {
             Self::InvalidEnumValue(value) => write!(f, "Invalid enum value: {value}"),
             Self::InvalidLength(len) => write!(f, "Invalid length: {len}"),
             Self::ObjectTooLarge(size) => write!(f, "Object too large: {size} bytes"),
-            Self::Utf8(e) => write!(f, "UTF-8 conversion error: {e}"),
         }
     }
 }
@@ -46,7 +36,6 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(e) => Some(e),
-            Self::Utf8(e) => Some(e),
             _ => None,
         }
     }
