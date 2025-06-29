@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io::{Read, Write};
 
-use crate::xdr_codec::util::{add_padding, zero_padding};
+use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
 use crate::xdr_codec::{Error, Pack, Unpack};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,7 +85,7 @@ impl Unpack for Opaque<'static> {
         input.read_exact(&mut buf).map_err(Error::Io)?;
         bytes_read += len;
 
-        let len = add_padding(len);
+        let len = get_padding(len);
         if len > 0 {
             let mut pad_buf = [0u8; 4];
             input.read_exact(&mut pad_buf[..len]).map_err(Error::Io)?;

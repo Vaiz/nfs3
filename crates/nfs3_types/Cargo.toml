@@ -14,8 +14,6 @@ keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 [dependencies]
 nfs3_macros = { path = "../nfs3_macros", version = "0.3.4" }
 
-byteorder.workspace = true
-
 [package.metadata.cargo-machete]
 ignored = ["byteorder"]
 

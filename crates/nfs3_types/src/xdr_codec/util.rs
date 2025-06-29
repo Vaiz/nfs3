@@ -4,9 +4,14 @@ pub const fn add_padding(sz: usize) -> usize {
 }
 
 #[inline]
+pub fn get_padding(len: usize) -> usize {
+    (-(len as isize) & 3) as usize
+}
+
+#[inline]
 pub fn zero_padding(len: usize) -> &'static [u8] {
     const ZEROES: [u8; 3] = [0, 0, 0];
-    let pad = (-(len as isize) & 3) as usize;
+    let pad = get_padding(len);
     &ZEROES[..pad]
 }
 
