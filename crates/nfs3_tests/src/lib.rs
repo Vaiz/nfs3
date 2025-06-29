@@ -97,7 +97,7 @@ where
 
         let result = self
             .client
-            .lookup(LOOKUP3args {
+            .lookup(&LOOKUP3args {
                 what: diropargs3 {
                     dir,
                     name: filename.as_bytes().into(),
@@ -125,7 +125,7 @@ where
         // Create the file
         let create_result = self
             .client
-            .create(CREATE3args {
+            .create(&CREATE3args {
                 where_: nfs3_types::nfs3::diropargs3 {
                     dir,
                     name: filename.as_bytes().into(),
@@ -144,7 +144,7 @@ where
         if !content.is_empty() {
             let write_result = self
                 .client
-                .write(WRITE3args {
+                .write(&WRITE3args {
                     file: file_handle.clone(),
                     offset: 0,
                     count: content.len() as u32,
@@ -168,7 +168,7 @@ where
 
         let result = self
             .client
-            .mkdir(MKDIR3args {
+            .mkdir(&MKDIR3args {
                 where_: nfs3_types::nfs3::diropargs3 {
                     dir,
                     name: dirname.as_bytes().into(),
@@ -193,7 +193,7 @@ where
         loop {
             let read_result = self
                 .client
-                .read(READ3args {
+                .read(&READ3args {
                     file: file.clone(),
                     offset,
                     count: 1024 * 1024,

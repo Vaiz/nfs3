@@ -9,7 +9,7 @@ async fn lookup_root() -> Result<(), anyhow::Error> {
 
     client.null().await?;
     let lookup = client
-        .lookup(LOOKUP3args {
+        .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: root.clone(),
                 name: b".".as_slice().into(),
@@ -149,7 +149,7 @@ async fn test_read_file() -> Result<(), anyhow::Error> {
         obj_attributes,
         ..
     } = client
-        .lookup(LOOKUP3args {
+        .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: root.clone(),
                 name: b"a.txt".as_slice().into(),

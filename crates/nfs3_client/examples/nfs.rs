@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Calling fsinfo");
     let fsinfo = connection
-        .fsinfo(nfs3::FSINFO3args {
+        .fsinfo(&nfs3::FSINFO3args {
             fsroot: root.clone(),
         })
         .await?;
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Calling access");
     let access = connection
-        .access(nfs3::ACCESS3args {
+        .access(&nfs3::ACCESS3args {
             object: root.clone(),
             access: 0,
         })
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Calling readdir");
     let readdir = connection
-        .readdir(nfs3::READDIR3args {
+        .readdir(&nfs3::READDIR3args {
             dir: root,
             cookie: 0,
             cookieverf: nfs3::cookieverf3::default(),

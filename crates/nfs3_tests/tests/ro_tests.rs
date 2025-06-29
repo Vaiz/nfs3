@@ -281,7 +281,7 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
     let root = client.root_dir().clone();
 
     let create = client
-        .create(CREATE3args {
+        .create(&CREATE3args {
             where_: diropargs3 {
                 dir: root.clone(),
                 name: b"new_file.txt".as_slice().into(),
@@ -304,7 +304,7 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
     let root = client.root_dir().clone();
 
     let create = client
-        .create(CREATE3args {
+        .create(&CREATE3args {
             where_: diropargs3 {
                 dir: root.clone(),
                 name: b"new_file.txt".as_slice().into(),
