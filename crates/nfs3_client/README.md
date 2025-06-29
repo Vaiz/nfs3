@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Calling readdir");
     let readdir = connection
-        .readdir(nfs3::READDIR3args {
+        .readdir(&nfs3::READDIR3args {
             dir: root,
             cookie: 0,
             cookieverf: nfs3::cookieverf3::default(),
