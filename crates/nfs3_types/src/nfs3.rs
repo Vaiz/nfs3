@@ -982,8 +982,6 @@ impl Pack for mknoddata3 {
     }
 }
 
-
-
 impl Unpack for createhow3 {
     fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
@@ -1044,8 +1042,6 @@ impl Unpack for mknoddata3 {
         Ok((v, sz))
     }
 }
-
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, XdrCodec)]
 pub enum NFS_PROGRAM {

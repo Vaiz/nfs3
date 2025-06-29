@@ -1,5 +1,6 @@
-use crate::xdr_codec::{Error, Pack, Unpack, Result};
 use std::io::{Read, Write};
+
+use crate::xdr_codec::{Error, Pack, Result, Unpack};
 
 // Implementation for Vec<u32>
 impl Pack for Vec<u32> {
@@ -9,17 +10,17 @@ impl Pack for Vec<u32> {
 
     fn pack(&self, out: &mut impl Write) -> Result<usize> {
         let mut bytes_written = 0;
-        
+
         // Pack the length first
         bytes_written += u32::try_from(self.len())
             .map_err(|_| Error::ObjectTooLarge(self.len()))?
             .pack(out)?;
-        
+
         // Pack each element
         for item in self {
             bytes_written += item.pack(out)?;
         }
-        
+
         Ok(bytes_written)
     }
 }
@@ -27,20 +28,20 @@ impl Pack for Vec<u32> {
 impl Unpack for Vec<u32> {
     fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
         let mut bytes_read = 0;
-        
+
         // Unpack the length first
         let (len, len_bytes) = u32::unpack(input)?;
         bytes_read += len_bytes;
-        
+
         let mut vec = Self::with_capacity(len as usize);
-        
+
         // Unpack each element
         for _ in 0..len {
             let (item, item_bytes) = u32::unpack(input)?;
             bytes_read += item_bytes;
             vec.push(item);
         }
-        
+
         Ok((vec, bytes_read))
     }
 }

@@ -43,7 +43,9 @@ fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
 }
 
 fn get_file_name(i: usize) -> String {
-    format!("{i}_this_is_a_really_long_file_name_that_keeps_going_and_going_and_going_and_going_0123456789.txt")
+    format!(
+        "{i}_this_is_a_really_long_file_name_that_keeps_going_and_going_and_going_and_going_0123456789.txt"
+    )
 }
 
 async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {

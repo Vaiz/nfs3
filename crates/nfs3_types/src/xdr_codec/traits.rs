@@ -16,8 +16,7 @@ pub trait Unpack: Sized {
     fn unpack(input: &mut impl Read) -> Result<(Self, usize), Error>;
 }
 
-impl<const N: usize> Pack for [u8; N]
-{
+impl<const N: usize> Pack for [u8; N] {
     fn packed_size(&self) -> usize {
         add_padding(N)
     }
@@ -30,7 +29,7 @@ impl<const N: usize> Pack for [u8; N]
         let padding = zero_padding(N);
         out.write_all(padding).map_err(Error::Io)?;
         bytes_written += padding.len();
-        
+
         Ok(bytes_written)
     }
 }
@@ -45,7 +44,9 @@ impl<const N: usize> Unpack for [u8; N] {
         let padding = get_padding(N);
         if padding > 0 {
             let mut pad_buf = [0u8; 4];
-            input.read_exact(&mut pad_buf[..padding]).map_err(Error::Io)?;
+            input
+                .read_exact(&mut pad_buf[..padding])
+                .map_err(Error::Io)?;
             bytes_read += padding;
         }
 
