@@ -32,7 +32,7 @@ pub const NFS3_CREATEVERFSIZE: usize = 8;
 pub const NFS3_FHSIZE: usize = 64;
 pub const NFS3_WRITEVERFSIZE: usize = 8;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Nfs3Result<T, E> {
     Ok(T),
     Err((nfsstat3, E)),
@@ -48,6 +48,18 @@ impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
         match self {
             Self::Ok(val) => val,
             Self::Err((code, res)) => panic!("NFS3 error: {code:?}, result: {res:?}"),
+        }
+    }
+
+    /// Returns the contained value, consuming the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result is an `Err`, with a custom panic message.
+    pub fn expect(self, msg: &str) -> T {
+        match self {
+            Self::Ok(val) => val,
+            Self::Err((code, res)) => panic!("{msg}: NFS3 error: {code:?}, result: {res:?}"),
         }
     }
 }
@@ -116,7 +128,7 @@ pub type SETATTR3res = Nfs3Result<SETATTR3resok, SETATTR3resfail>;
 pub type SYMLINK3res = Nfs3Result<SYMLINK3resok, SYMLINK3resfail>;
 pub type WRITE3res = Nfs3Result<WRITE3resok, WRITE3resfail>;
 
-#[derive(Debug, Clone, Default, XdrCodec)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, XdrCodec)]
 pub enum Nfs3Option<T: Pack + Unpack> {
     #[xdr(1)]
     Some(T),
