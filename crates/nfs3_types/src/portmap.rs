@@ -61,7 +61,7 @@ impl std::convert::TryFrom<u32> for PMAP_PROG {
             3 => Ok(Self::PMAPPROC_GETPORT),
             4 => Ok(Self::PMAPPROC_DUMP),
             5 => Ok(Self::PMAPPROC_CALLIT),
-            _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
         }
     }
 }

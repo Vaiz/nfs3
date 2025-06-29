@@ -8,6 +8,7 @@ pub(crate) mod error;
 pub(crate) mod list;
 pub(crate) mod opaque;
 pub(crate) mod packed_size;
+pub(crate) mod primitives;
 pub(crate) mod traits;
 pub(crate) mod util;
 pub(crate) mod void;
@@ -22,6 +23,7 @@ pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;
 pub use self::packed_size::PackedSize;
+pub use self::primitives::*;
 pub use self::traits::{Pack, Unpack};
 pub use self::void::Void;
 

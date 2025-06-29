@@ -35,6 +35,11 @@ impl<'a> Opaque<'a> {
         self.0.len()
     }
 
+    /// Returns true if the opaque data is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Extracts the owned data.
     ///
     /// Clones the data if it is not already owned.

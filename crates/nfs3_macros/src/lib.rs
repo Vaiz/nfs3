@@ -49,7 +49,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                             total_size
                         }
 
-                        fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
+                        fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
                             use nfs3_types::xdr_codec::Pack;
                             let mut total_write = 0;
                             #(#pack_fields)*
@@ -58,7 +58,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                     }
                     impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                     #where_clause {
-                        fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
+                        fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
                             use nfs3_types::xdr_codec::Unpack;
                             let mut total_read = 0;
                             #(#unpack_fields)*
@@ -100,7 +100,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                             total_size
                         }
 
-                        fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
+                        fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
                             use nfs3_types::xdr_codec::Pack;
                             let mut total_write = 0;
                             #(#pack_fields)*
@@ -109,7 +109,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                     }
                     impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                     #where_clause {
-                        fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
+                        fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
                             use nfs3_types::xdr_codec::Unpack;
                             let mut total_read = 0;
                             #(#unpack_fields)*
@@ -125,13 +125,13 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                         0
                     }
 
-                    fn pack(&self, _out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
+                    fn pack(&self, _out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
                         Ok(0)
                     }
                 }
                 impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    fn unpack(_input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
+                    fn unpack(_input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
                         Ok((Self, 0))
                     }
                 }
@@ -141,7 +141,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
             let pack_variants = data.variants.iter().map(|v| {
                 let ident = &v.ident;
                 quote! {
-                    Self::#ident => (*self as u32).pack(out)?,
+                    Self::#ident => (*self as u32).pack(out),
                 }
             });
             let unpack_variants = data.variants.iter().map(|v| {
@@ -158,7 +158,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                         4
                     }
 
-                    fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
+                    fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
                         use nfs3_types::xdr_codec::Pack;
                         match self {
                             #(#pack_variants)*
@@ -167,7 +167,7 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                 }
                 impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
+                    fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
                         let (tag, bytes_read) = u32::unpack(input)?;
                         let result = match tag {
                             #(#unpack_variants)*
