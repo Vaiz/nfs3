@@ -50,13 +50,19 @@ impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
     }
 }
 
-impl<Out, T, E> Pack<Out> for Nfs3Result<T, E>
+impl<T, E> Pack for Nfs3Result<T, E>
 where
-    Out: Write,
-    T: Pack<Out>,
-    E: Pack<Out>,
+    T: Pack,
+    E: Pack,
 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+    fn packed_size(&self) -> usize {
+        match self {
+            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
+            Self::Err((code, err)) => code.packed_size() + err.packed_size(),
+        }
+    }
+
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
             Self::Err((code, err)) => code.pack(out)? + err.pack(out)?,
@@ -65,13 +71,12 @@ where
     }
 }
 
-impl<In, T, E> Unpack<In> for Nfs3Result<T, E>
+impl<T, E> Unpack for Nfs3Result<T, E>
 where
-    In: Read,
-    T: Unpack<In>,
-    E: Unpack<In>,
+    T: Unpack,
+    E: Unpack,
 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
         let (code, dsz): (nfsstat3, usize) = Unpack::unpack(input)?;
         sz += dsz;
@@ -152,26 +157,31 @@ impl<T> Nfs3Option<T> {
     }
 }
 
-impl<Out, T> Pack<Out> for Nfs3Option<T>
+impl<T> Pack for Nfs3Option<T>
 where
-    Out: Write,
-    T: Pack<Out>,
+    T: Pack,
 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::Some(v) => v.packed_size(),
+            Self::None => 0,
+        }
+    }
+
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
-            Self::Some(v) => 1.pack(out)? + v.pack(out)?,
-            Self::None => 0.pack(out)?,
+            Self::Some(v) => 1u32.pack(out)? + v.pack(out)?,
+            Self::None => 0u32.pack(out)?,
         };
         Ok(len)
     }
 }
 
-impl<In, T> Unpack<In> for Nfs3Option<T>
+impl<T> Unpack for Nfs3Option<T>
 where
-    In: Read,
-    T: Unpack<In>,
+    T: Unpack,
 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
         let (tag, tsz): (u32, usize) = Unpack::unpack(input)?;
         sz += tsz;
@@ -591,7 +601,7 @@ pub struct WRITE3resok {
     pub verf: writeverf3,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct cookieverf3(pub [u8; NFS3_COOKIEVERFSIZE]);
 
 #[derive(Debug)]
@@ -608,7 +618,7 @@ pub enum createmode3 {
     EXCLUSIVE = 2,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]
@@ -734,12 +744,12 @@ pub enum mknoddata3 {
 
 #[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfs_fh3 {
-    pub data: xdr_codec::Opaque<'static>,
+    pub data: Opaque<'static>,
 }
 impl Default for nfs_fh3 {
     fn default() -> Self {
         Self {
-            data: xdr_codec::Opaque::borrowed(&[]),
+            data: Opaque::borrowed(&[]),
         }
     }
 }
@@ -772,7 +782,7 @@ impl nfspath3<'_> {
     }
     #[must_use]
     pub fn into_owned(self) -> nfspath3<'static> {
-        nfspath3(Opaque::owned(self.0.0.into_owned()))
+        nfspath3(Opaque::owned(self.0.into_owned()))
     }
 }
 
@@ -935,7 +945,7 @@ pub struct wcc_data {
     pub after: post_op_attr,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct writeverf3(pub [u8; NFS3_WRITEVERFSIZE]);
 
 pub type cookie3 = u64;
@@ -954,22 +964,16 @@ pub type size3 = u64;
 
 pub type uid3 = u32;
 
-impl<Out: Write> Pack<Out> for cookieverf3 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
-        xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+impl Pack for createhow3 {
+    fn packed_size(&self) -> usize {
+        match self {
+            Self::UNCHECKED(val) => createmode3::UNCHECKED.packed_size() + val.packed_size(),
+            Self::GUARDED(val) => createmode3::GUARDED.packed_size() + val.packed_size(),
+            Self::EXCLUSIVE(val) => createmode3::EXCLUSIVE.packed_size() + val.packed_size(),
+        }
     }
-}
 
-impl PackedSize for cookieverf3 {
-    const PACKED_SIZE: Option<usize> = Some(NFS3_COOKIEVERFSIZE);
-
-    fn count_packed_size(&self) -> usize {
-        NFS3_COOKIEVERFSIZE
-    }
-}
-
-impl<Out: Write> Pack<Out> for createhow3 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         Ok(match self {
             Self::UNCHECKED(val) => createmode3::UNCHECKED.pack(out)? + val.pack(out)?,
             Self::GUARDED(val) => createmode3::GUARDED.pack(out)? + val.pack(out)?,
@@ -991,28 +995,24 @@ impl PackedSize for createhow3 {
     }
 }
 
-impl<Out: Write> Pack<Out> for createverf3 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
-        xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
+impl Pack for mknoddata3 {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::NF3CHR(val) => val.packed_size(),
+            Self::NF3BLK(val) => val.packed_size(),
+            Self::NF3SOCK(val) => val.packed_size(),
+            Self::NF3FIFO(val) => val.packed_size(),
+            Self::default => 0,
+        }
     }
-}
 
-impl PackedSize for createverf3 {
-    const PACKED_SIZE: Option<usize> = Some(NFS3_CREATEVERFSIZE);
-
-    fn count_packed_size(&self) -> usize {
-        NFS3_CREATEVERFSIZE
-    }
-}
-
-impl<Out: Write> Pack<Out> for mknoddata3 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         Ok(match self {
             Self::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
             Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
             Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
             Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &Self::default => return Err(xdr_codec::Error::invalidcase(-1)),
+            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(-1i32 as u32)),
         })
     }
 }
@@ -1032,12 +1032,20 @@ impl PackedSize for mknoddata3 {
     }
 }
 
-impl<Out: Write> Pack<Out> for set_atime {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+impl Pack for set_atime {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
+    }
+
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
-            Self::DONT_CHANGE => 0.pack(out)?,
-            Self::SET_TO_SERVER_TIME => 1.pack(out)?,
-            Self::SET_TO_CLIENT_TIME(val) => 2.pack(out)? + val.pack(out)?,
+            Self::DONT_CHANGE => 0u32.pack(out)?,
+            Self::SET_TO_SERVER_TIME => 1u32.pack(out)?,
+            Self::SET_TO_CLIENT_TIME(val) => 2u32.pack(out)? + val.pack(out)?,
         };
         Ok(len)
     }
@@ -1056,12 +1064,20 @@ impl PackedSize for set_atime {
     }
 }
 
-impl<Out: Write> Pack<Out> for set_mtime {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
+impl Pack for set_mtime {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::DONT_CHANGE => 0,
+            Self::SET_TO_SERVER_TIME => 0,
+            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
+        }
+    }
+
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
-            Self::DONT_CHANGE => 0.pack(out)?,
-            Self::SET_TO_SERVER_TIME => 1.pack(out)?,
-            Self::SET_TO_CLIENT_TIME(val) => 2.pack(out)? + val.pack(out)?,
+            Self::DONT_CHANGE => 0u32.pack(out)?,
+            Self::SET_TO_SERVER_TIME => 1u32.pack(out)?,
+            Self::SET_TO_CLIENT_TIME(val) => 2u32.pack(out)? + val.pack(out)?,
         };
         Ok(len)
     }
@@ -1080,31 +1096,10 @@ impl PackedSize for set_mtime {
     }
 }
 
-impl<Out: Write> Pack<Out> for writeverf3 {
-    fn pack(&self, out: &mut Out) -> Result<usize> {
-        xdr_codec::pack_opaque_array(&self.0[..], self.0.len(), out)
-    }
-}
-
-impl PackedSize for writeverf3 {
-    const PACKED_SIZE: Option<usize> = Some(NFS3_WRITEVERFSIZE);
-
-    fn count_packed_size(&self) -> usize {
-        NFS3_WRITEVERFSIZE
-    }
-}
-
-impl<In: Read> Unpack<In> for cookieverf3 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
-        let (buf, sz) = unpack_array::<NFS3_COOKIEVERFSIZE, _>(input)?;
-        Ok((Self(buf), sz))
-    }
-}
-
-impl<In: Read> Unpack<In> for createhow3 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+impl Unpack for createhow3 {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
-        let (v, dsz): (i32, usize) = Unpack::unpack(input)?;
+        let (v, dsz): (u32, usize) = Unpack::unpack(input)?;
         sz += dsz;
 
         match v {
@@ -1123,22 +1118,15 @@ impl<In: Read> Unpack<In> for createhow3 {
                 sz += fsz;
                 Ok((Self::EXCLUSIVE(value), sz))
             }
-            _ => Err(xdr_codec::Error::invalidcase(v)),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
         }
     }
 }
 
-impl<In: Read> Unpack<In> for createverf3 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
-        let (buf, sz) = unpack_array::<NFS3_CREATEVERFSIZE, _>(input)?;
-        Ok((Self(buf), sz))
-    }
-}
-
-impl<In: Read> Unpack<In> for mknoddata3 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+impl Unpack for mknoddata3 {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
-        let (v, dsz): (i32, _) = Unpack::unpack(input)?;
+        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
         sz += dsz;
 
         let v = match v {
@@ -1169,10 +1157,10 @@ impl<In: Read> Unpack<In> for mknoddata3 {
     }
 }
 
-impl<In: Read> Unpack<In> for set_atime {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+impl Unpack for set_atime {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
-        let (v, dsz): (i32, _) = Unpack::unpack(input)?;
+        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
         sz += dsz;
 
         match v {
@@ -1183,15 +1171,15 @@ impl<In: Read> Unpack<In> for set_atime {
                 sz += fsz;
                 Ok((Self::SET_TO_CLIENT_TIME(v), sz))
             }
-            _ => Err(xdr_codec::Error::invalidcase(v)),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
         }
     }
 }
 
-impl<In: Read> Unpack<In> for set_mtime {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
+impl Unpack for set_mtime {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut sz = 0;
-        let (v, dsz): (i32, _) = Unpack::unpack(input)?;
+        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
         sz += dsz;
 
         match v {
@@ -1202,24 +1190,9 @@ impl<In: Read> Unpack<In> for set_mtime {
                 sz += fsz;
                 Ok((Self::SET_TO_CLIENT_TIME(v), sz))
             }
-            _ => Err(xdr_codec::Error::invalidcase(v)),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
         }
     }
-}
-
-impl<In: Read> Unpack<In> for writeverf3 {
-    fn unpack(input: &mut In) -> Result<(Self, usize)> {
-        let (buf, sz) = unpack_array::<NFS3_WRITEVERFSIZE, _>(input)?;
-        Ok((Self(buf), sz))
-    }
-}
-
-fn unpack_array<const N: usize, In: Read>(input: &mut In) -> Result<([u8; N], usize)> {
-    // TODO: optimize with using MaybeUninit::uninit_array
-    let mut buf = [0u8; N];
-    let sz = xdr_codec::unpack_opaque_array(input, &mut buf, N)?;
-    assert_eq!(sz, N);
-    Ok((buf, sz))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, XdrCodec)]
@@ -1276,7 +1249,7 @@ impl std::convert::TryFrom<u32> for NFS_PROGRAM {
             19 => Ok(Self::NFSPROC3_FSINFO),
             20 => Ok(Self::NFSPROC3_PATHCONF),
             21 => Ok(Self::NFSPROC3_COMMIT),
-            _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
         }
     }
 }
