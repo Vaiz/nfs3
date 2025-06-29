@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0-alpha.2...cargo-nfs3-server-v0.1.0-alpha.3) - 2025-06-29
+
+### Added
+
+- re-export nfs3_types from nfs3_server and nfs3_client crates ([#94](https://github.com/Vaiz/nfs3/pull/94))
+
+### Fixed
+
+- new clippy issues from recent Rust update ([#97](https://github.com/Vaiz/nfs3/pull/97))
+
 ## [0.1.0-alpha.2](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0-alpha.1...cargo-nfs3-server-v0.1.0-alpha.2) - 2025-06-15
 
 ### Changes

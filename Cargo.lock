@@ -129,7 +129,7 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "cargo-nfs3-server"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "clap",
  "ctrlc",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_client"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "nfs3_types",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_macros"
-version = "0.3.4"
+version = "0.4.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_server"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "filetime",
@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_types"
-version = "0.3.4"
+version = "0.4.0"
 dependencies = [
  "nfs3_macros",
 ]

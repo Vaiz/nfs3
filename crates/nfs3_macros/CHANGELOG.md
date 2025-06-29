@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.4...nfs3_macros-v0.4.0) - 2025-06-29
+
+### Added
+
+- [**breaking**] drop xdr-codec dependency ([#98](https://github.com/Vaiz/nfs3/pull/98))
+
 ## [0.3.4](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.3.3...nfs3_macros-v0.3.4) - 2025-06-15
 
 ### Changes
