@@ -33,11 +33,11 @@ impl From<std::string::FromUtf8Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(e) => write!(f, "I/O error: {}", e),
-            Self::InvalidEnumValue(value) => write!(f, "Invalid enum value: {}", value),
-            Self::InvalidLength(len) => write!(f, "Invalid length: {}", len),
-            Self::ObjectTooLarge(size) => write!(f, "Object too large: {} bytes", size),
-            Self::Utf8(e) => write!(f, "UTF-8 conversion error: {}", e),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+            Self::InvalidEnumValue(value) => write!(f, "Invalid enum value: {value}"),
+            Self::InvalidLength(len) => write!(f, "Invalid length: {len}"),
+            Self::ObjectTooLarge(size) => write!(f, "Object too large: {size} bytes"),
+            Self::Utf8(e) => write!(f, "UTF-8 conversion error: {e}"),
         }
     }
 }

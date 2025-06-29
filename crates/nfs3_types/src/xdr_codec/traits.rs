@@ -28,7 +28,7 @@ impl<const N: usize> Pack for [u8; N]
         bytes_written += N;
 
         let padding = zero_padding(N);
-        out.write_all(&padding).map_err(Error::Io)?;
+        out.write_all(padding).map_err(Error::Io)?;
         bytes_written += padding.len();
         
         Ok(bytes_written)

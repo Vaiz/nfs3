@@ -4,7 +4,8 @@ pub const fn add_padding(sz: usize) -> usize {
 }
 
 #[inline]
-pub fn get_padding(len: usize) -> usize {
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+pub const fn get_padding(len: usize) -> usize {
     (-(len as isize) & 3) as usize
 }
 

@@ -204,12 +204,8 @@ pub enum accept_stat_data {
 impl Pack for accept_stat_data {
     fn packed_size(&self) -> usize {
         4 + match self {
-            Self::SUCCESS => 0,
-            Self::PROG_UNAVAIL => 0,
+            Self::SUCCESS | Self::PROG_UNAVAIL | Self::PROC_UNAVAIL | Self::GARBAGE_ARGS | Self::SYSTEM_ERR => 0,
             Self::PROG_MISMATCH { .. } => 8,
-            Self::PROC_UNAVAIL => 0,
-            Self::GARBAGE_ARGS => 0,
-            Self::SYSTEM_ERR => 0,
         }
     }
 

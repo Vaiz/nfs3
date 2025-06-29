@@ -11,7 +11,9 @@ impl Pack for Vec<u32> {
         let mut bytes_written = 0;
         
         // Pack the length first
-        bytes_written += (self.len() as u32).pack(out)?;
+        bytes_written += u32::try_from(self.len())
+            .map_err(|_| Error::ObjectTooLarge(self.len()))?
+            .pack(out)?;
         
         // Pack each element
         for item in self {
@@ -30,7 +32,7 @@ impl Unpack for Vec<u32> {
         let (len, len_bytes) = u32::unpack(input)?;
         bytes_read += len_bytes;
         
-        let mut vec = Vec::with_capacity(len as usize);
+        let mut vec = Self::with_capacity(len as usize);
         
         // Unpack each element
         for _ in 0..len {
@@ -60,7 +62,7 @@ impl Unpack for u32 {
     fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
         let mut bytes = [0u8; 4];
         input.read_exact(&mut bytes).map_err(Error::Io)?;
-        Ok((u32::from_be_bytes(bytes), 4))
+        Ok((Self::from_be_bytes(bytes), 4))
     }
 }
 
@@ -81,7 +83,7 @@ impl Unpack for i32 {
     fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
         let mut bytes = [0u8; 4];
         input.read_exact(&mut bytes).map_err(Error::Io)?;
-        Ok((i32::from_be_bytes(bytes), 4))
+        Ok((Self::from_be_bytes(bytes), 4))
     }
 }
 
@@ -102,7 +104,7 @@ impl Unpack for u64 {
     fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
         let mut bytes = [0u8; 8];
         input.read_exact(&mut bytes).map_err(Error::Io)?;
-        Ok((u64::from_be_bytes(bytes), 8))
+        Ok((Self::from_be_bytes(bytes), 8))
     }
 }
 

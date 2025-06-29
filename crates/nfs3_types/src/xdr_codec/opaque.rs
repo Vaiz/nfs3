@@ -10,33 +10,39 @@ pub struct Opaque<'a>(pub Cow<'a, [u8]>);
 
 impl Opaque<'static> {
     /// Creates a new `Opaque` with owned data.
-    pub fn owned(data: Vec<u8>) -> Self {
+    #[must_use]
+    pub const fn owned(data: Vec<u8>) -> Self {
         Opaque(Cow::Owned(data))
     }
 }
 
 impl<'a> Opaque<'a> {
     /// Creates a new `Opaque`.
-    pub fn new(data: Cow<'a, [u8]>) -> Self {
+    #[must_use]
+    pub const fn new(data: Cow<'a, [u8]>) -> Self {
         Opaque(data)
     }
 
     /// Creates a new `Opaque` from a borrowed slice.
-    pub fn borrowed(data: &'a [u8]) -> Self {
+    #[must_use]
+    pub const fn borrowed(data: &'a [u8]) -> Self {
         Opaque(Cow::Borrowed(data))
     }
 
     /// Creates a new `Opaque` from a `Vec<u8>`.
-    pub fn from_vec(data: Vec<u8>) -> Self {
+    #[must_use]
+    pub const fn from_vec(data: Vec<u8>) -> Self {
         Opaque(Cow::Owned(data))
     }
 
     /// Returns the length of the opaque data.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns true if the opaque data is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -44,16 +50,18 @@ impl<'a> Opaque<'a> {
     /// Extracts the owned data.
     ///
     /// Clones the data if it is not already owned.
+    #[must_use]
     pub fn into_owned(self) -> Vec<u8> {
         self.0.into_owned()
     }
 
+    #[must_use]
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
 }
 
-impl<'a> Pack for Opaque<'a> {
+impl Pack for Opaque<'_> {
     fn packed_size(&self) -> usize {
         4 + add_padding(self.0.len())
     }
@@ -71,7 +79,7 @@ impl<'a> Pack for Opaque<'a> {
         bytes_written += self.0.len();
 
         let padding = zero_padding(self.0.len());
-        out.write_all(&padding).map_err(Error::Io)?;
+        out.write_all(padding).map_err(Error::Io)?;
         bytes_written += padding.len();
         Ok(bytes_written)
     }
@@ -107,7 +115,7 @@ impl Deref for Opaque<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        self.0.deref()
+        &self.0
     }
 }
 

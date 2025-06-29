@@ -864,19 +864,25 @@ pub struct sattr3 {
     pub mtime: set_mtime,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, XdrCodec)]
 pub enum set_atime {
     #[default]
+    #[xdr(0)]
     DONT_CHANGE, // = 0,
-    SET_TO_SERVER_TIME,           // = 1,
+    #[xdr(1)]
+    SET_TO_SERVER_TIME, // = 1,
+    #[xdr(2)]
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, XdrCodec)]
 pub enum set_mtime {
     #[default]
+    #[xdr(0)]
     DONT_CHANGE, // = 0,
-    SET_TO_SERVER_TIME,           // = 1,
+    #[xdr(1)]
+    SET_TO_SERVER_TIME, // = 1,
+    #[xdr(2)]
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
@@ -959,10 +965,8 @@ impl Pack for createhow3 {
 impl Pack for mknoddata3 {
     fn packed_size(&self) -> usize {
         4 + match self {
-            Self::NF3CHR(val) => val.packed_size(),
-            Self::NF3BLK(val) => val.packed_size(),
-            Self::NF3SOCK(val) => val.packed_size(),
-            Self::NF3FIFO(val) => val.packed_size(),
+            Self::NF3CHR(val) | Self::NF3BLK(val) => val.packed_size(),
+            Self::NF3SOCK(val) | Self::NF3FIFO(val) => val.packed_size(),
             Self::default => 0,
         }
     }
@@ -973,48 +977,12 @@ impl Pack for mknoddata3 {
             Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
             Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
             Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(-1i32 as u32)),
+            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
         })
     }
 }
 
-impl Pack for set_atime {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::DONT_CHANGE => 0,
-            Self::SET_TO_SERVER_TIME => 0,
-            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
-        }
-    }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::DONT_CHANGE => 0u32.pack(out)?,
-            Self::SET_TO_SERVER_TIME => 1u32.pack(out)?,
-            Self::SET_TO_CLIENT_TIME(val) => 2u32.pack(out)? + val.pack(out)?,
-        };
-        Ok(len)
-    }
-}
-
-impl Pack for set_mtime {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::DONT_CHANGE => 0,
-            Self::SET_TO_SERVER_TIME => 0,
-            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::DONT_CHANGE => 0u32.pack(out)?,
-            Self::SET_TO_SERVER_TIME => 1u32.pack(out)?,
-            Self::SET_TO_CLIENT_TIME(val) => 2u32.pack(out)? + val.pack(out)?,
-        };
-        Ok(len)
-    }
-}
 
 impl Unpack for createhow3 {
     fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
@@ -1077,43 +1045,7 @@ impl Unpack for mknoddata3 {
     }
 }
 
-impl Unpack for set_atime {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
-        sz += dsz;
 
-        match v {
-            0 => Ok((Self::DONT_CHANGE, sz)),
-            1 => Ok((Self::SET_TO_SERVER_TIME, sz)),
-            2 => {
-                let (v, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::SET_TO_CLIENT_TIME(v), sz))
-            }
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
-        }
-    }
-}
-
-impl Unpack for set_mtime {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
-        sz += dsz;
-
-        match v {
-            0 => Ok((Self::DONT_CHANGE, sz)),
-            1 => Ok((Self::SET_TO_SERVER_TIME, sz)),
-            2 => {
-                let (v, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Ok((Self::SET_TO_CLIENT_TIME(v), sz))
-            }
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(v)),
-        }
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, XdrCodec)]
 pub enum NFS_PROGRAM {
