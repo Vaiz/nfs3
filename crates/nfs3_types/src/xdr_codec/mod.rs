@@ -23,7 +23,6 @@ pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;
 pub use self::packed_size::PackedSize;
-pub use self::primitives::*;
 pub use self::traits::{Pack, Unpack};
 pub use self::void::Void;
 

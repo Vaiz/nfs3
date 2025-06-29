@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Opaque, Pack, PackedSize, Read, Result, Unpack, Write};
+use crate::xdr_codec::{Opaque, Pack, Read, Unpack, Write};
 
 /// RPC header
 ///
@@ -201,11 +201,19 @@ pub enum accept_stat_data {
     SYSTEM_ERR,
 }
 
-impl<Out> Pack<Out> for accept_stat_data
-where
-    Out: Write,
-{
-    fn pack(&self, w: &mut Out) -> Result<usize> {
+impl Pack for accept_stat_data {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::SUCCESS => 0,
+            Self::PROG_UNAVAIL => 0,
+            Self::PROG_MISMATCH { .. } => 8,
+            Self::PROC_UNAVAIL => 0,
+            Self::GARBAGE_ARGS => 0,
+            Self::SYSTEM_ERR => 0,
+        }
+    }
+
+    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::SUCCESS => accept_stat::SUCCESS.pack(w)?,
             Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(w)?,
@@ -220,27 +228,8 @@ where
     }
 }
 
-impl PackedSize for accept_stat_data {
-    const PACKED_SIZE: Option<usize> = None;
-
-    #[allow(clippy::match_same_arms)]
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::SUCCESS => 0,
-            Self::PROG_UNAVAIL => 0,
-            Self::PROG_MISMATCH { .. } => 8,
-            Self::PROC_UNAVAIL => 0,
-            Self::GARBAGE_ARGS => 0,
-            Self::SYSTEM_ERR => 0,
-        }
-    }
-}
-
-impl<In> Unpack<In> for accept_stat_data
-where
-    In: Read,
-{
-    fn unpack(r: &mut In) -> Result<(Self, usize)> {
+impl Unpack for accept_stat_data {
+    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let (accept_stat, len) = accept_stat::unpack(r)?;
         let (body, body_len) = match accept_stat {
             accept_stat::SUCCESS => (Self::SUCCESS, 0),
@@ -275,11 +264,15 @@ impl rejected_reply {
     }
 }
 
-impl<Out> Pack<Out> for rejected_reply
-where
-    Out: Write,
-{
-    fn pack(&self, w: &mut Out) -> Result<usize> {
+impl Pack for rejected_reply {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            Self::RPC_MISMATCH { .. } => 8,
+            Self::AUTH_ERROR(_) => 4,
+        }
+    }
+
+    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::RPC_MISMATCH { low, high } => {
                 reject_stat::RPC_MISMATCH.pack(w)? + low.pack(w)? + high.pack(w)?
@@ -290,22 +283,8 @@ where
     }
 }
 
-impl PackedSize for rejected_reply {
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::RPC_MISMATCH { .. } => 8,
-            Self::AUTH_ERROR(_) => 4,
-        }
-    }
-}
-
-impl<In> Unpack<In> for rejected_reply
-where
-    In: Read,
-{
-    fn unpack(r: &mut In) -> Result<(Self, usize)> {
+impl Unpack for rejected_reply {
+    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let (reject_stat, len) = reject_stat::unpack(r)?;
         let (body, body_len) = match reject_stat {
             reject_stat::RPC_MISMATCH => {
@@ -328,11 +307,15 @@ pub enum reply_body<'a> {
     MSG_DENIED(rejected_reply),
 }
 
-impl<Out> Pack<Out> for reply_body<'_>
-where
-    Out: Write,
-{
-    fn pack(&self, w: &mut Out) -> Result<usize> {
+impl Pack for reply_body<'_> {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            reply_body::MSG_ACCEPTED(accepted_reply) => accepted_reply.packed_size(),
+            reply_body::MSG_DENIED(rejected_reply) => rejected_reply.packed_size(),
+        }
+    }
+
+    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             reply_body::MSG_ACCEPTED(accepted_reply) => {
                 reply_stat::MSG_ACCEPTED.pack(w)? + accepted_reply.pack(w)?
@@ -345,22 +328,8 @@ where
     }
 }
 
-impl PackedSize for reply_body<'_> {
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            reply_body::MSG_ACCEPTED(accepted_reply) => accepted_reply.packed_size(),
-            reply_body::MSG_DENIED(rejected_reply) => rejected_reply.packed_size(),
-        }
-    }
-}
-
-impl<In> Unpack<In> for reply_body<'_>
-where
-    In: Read,
-{
-    fn unpack(r: &mut In) -> Result<(Self, usize)> {
+impl Unpack for reply_body<'_> {
+    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let (reply_stat, len) = reply_stat::unpack(r)?;
         let (body, body_len) = match reply_stat {
             reply_stat::MSG_ACCEPTED => {
@@ -388,11 +357,15 @@ pub enum msg_body<'a, 'b> {
     REPLY(reply_body<'b>),
 }
 
-impl<Out> Pack<Out> for msg_body<'_, '_>
-where
-    Out: Write,
-{
-    fn pack(&self, w: &mut Out) -> Result<usize> {
+impl Pack for msg_body<'_, '_> {
+    fn packed_size(&self) -> usize {
+        4 + match self {
+            msg_body::CALL(call_body) => call_body.packed_size(),
+            msg_body::REPLY(reply_body) => reply_body.packed_size(),
+        }
+    }
+
+    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             msg_body::CALL(call_body) => msg_type::CALL.pack(w)? + call_body.pack(w)?,
             msg_body::REPLY(reply_body) => msg_type::REPLY.pack(w)? + reply_body.pack(w)?,
@@ -401,22 +374,8 @@ where
     }
 }
 
-impl PackedSize for msg_body<'_, '_> {
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            msg_body::CALL(call_body) => call_body.packed_size(),
-            msg_body::REPLY(reply_body) => reply_body.packed_size(),
-        }
-    }
-}
-
-impl<In> Unpack<In> for msg_body<'_, '_>
-where
-    In: Read,
-{
-    fn unpack(r: &mut In) -> Result<(Self, usize)> {
+impl Unpack for msg_body<'_, '_> {
+    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let (msg_type, len) = msg_type::unpack(r)?;
         let (body, body_len) = match msg_type {
             msg_type::CALL => {

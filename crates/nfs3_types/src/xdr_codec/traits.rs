@@ -3,8 +3,6 @@ use std::io::{Read, Write};
 use super::error::Error;
 use crate::xdr_codec::util::{add_padding, zero_padding};
 
-const PADDING: [u8; 4] = [0, 0, 0, 0];
-
 pub trait Pack {
     /// Returns the packed size of the type.
     fn packed_size(&self) -> usize;

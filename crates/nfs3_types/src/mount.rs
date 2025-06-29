@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{Error, List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;

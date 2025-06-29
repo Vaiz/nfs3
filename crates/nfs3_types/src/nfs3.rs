@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Result, Unpack, Void, Write};
+use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Unpack, Void, Write};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
