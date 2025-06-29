@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use super::error::Error;
-use crate::xdr_codec::util::{add_padding, zero_padding};
+use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
 
 pub trait Pack {
     /// Returns the packed size of the type.
@@ -42,7 +42,7 @@ impl<const N: usize> Unpack for [u8; N] {
         input.read_exact(&mut buf).map_err(Error::Io)?;
         bytes_read += N;
 
-        let padding = add_padding(N);
+        let padding = get_padding(N);
         if padding > 0 {
             let mut pad_buf = [0u8; 4];
             input.read_exact(&mut pad_buf[..padding]).map_err(Error::Io)?;
