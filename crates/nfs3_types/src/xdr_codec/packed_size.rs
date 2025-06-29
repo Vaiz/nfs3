@@ -1,4 +1,5 @@
-use super::{util::add_padding, Opaque};
+use super::Opaque;
+use super::util::add_padding;
 
 /// A trait for calculating the packed size of an object.
 ///
