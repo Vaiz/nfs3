@@ -114,14 +114,16 @@ pub type SETATTR3res = Nfs3Result<SETATTR3resok, SETATTR3resfail>;
 pub type SYMLINK3res = Nfs3Result<SYMLINK3resok, SYMLINK3resfail>;
 pub type WRITE3res = Nfs3Result<WRITE3resok, WRITE3resfail>;
 
-#[derive(Debug, Clone, Default)]
-pub enum Nfs3Option<T> {
+#[derive(Debug, Clone, Default, XdrCodec)]
+pub enum Nfs3Option<T: Pack + Unpack> {
+    #[xdr(1)]
     Some(T),
     #[default]
+    #[xdr(0)]
     None,
 }
 
-impl<T> Nfs3Option<T> {
+impl<T: Pack + Unpack> Nfs3Option<T> {
     pub const fn is_some(&self) -> bool {
         matches!(self, Self::Some(_))
     }
@@ -138,45 +140,6 @@ impl<T> Nfs3Option<T> {
         match self {
             Self::Some(val) => val,
             Self::None => panic!("called `Nfs3Option::unwrap()` on a `None` value"),
-        }
-    }
-}
-
-impl<T> Pack for Nfs3Option<T>
-where
-    T: Pack,
-{
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::Some(v) => v.packed_size(),
-            Self::None => 0,
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::Some(v) => 1u32.pack(out)? + v.pack(out)?,
-            Self::None => 0u32.pack(out)?,
-        };
-        Ok(len)
-    }
-}
-
-impl<T> Unpack for Nfs3Option<T>
-where
-    T: Unpack,
-{
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (tag, tsz): (u32, usize) = Unpack::unpack(input)?;
-        sz += tsz;
-        match tag {
-            1 => {
-                let (val, vsz) = Unpack::unpack(input)?;
-                sz += vsz;
-                Ok((Self::Some(val), sz))
-            }
-            _ => Ok((Self::None, sz)),
         }
     }
 }
