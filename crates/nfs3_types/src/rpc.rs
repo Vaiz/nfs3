@@ -8,7 +8,8 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Opaque, Pack, Read, Unpack, Write};
+use std::io::{Read, Write};
+use crate::xdr_codec::{Opaque, Pack, Unpack};
 
 /// RPC header
 ///
