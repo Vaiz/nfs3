@@ -1,10 +1,8 @@
-use std::io::Cursor;
-
 use anyhow::bail;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::{accept_stat_data, fragment_header, msg_body, reply_body, rpc_msg};
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
+use nfs3_types::xdr_codec::{Pack, Unpack};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
 use crate::{Server, init_logging};
@@ -62,7 +60,7 @@ impl RpcTestContext {
 
     pub async fn send_call<T>(&mut self, msg: &rpc_msg<'_, '_>, args: &T) -> anyhow::Result<()>
     where
-        T: Pack<Vec<u8>> + PackedSize,
+        T: Pack,
     {
         let total_len = msg.packed_size() + args.packed_size();
         if total_len % 4 != 0 {
@@ -86,7 +84,7 @@ impl RpcTestContext {
 
     pub async fn recv_reply<T>(&mut self) -> anyhow::Result<(rpc_msg<'_, '_>, Option<T>)>
     where
-        T: Unpack<Cursor<Vec<u8>>>,
+        T: Unpack,
     {
         let mut buf = [0u8; 4];
         self.client_stream.read_exact(&mut buf).await?;
