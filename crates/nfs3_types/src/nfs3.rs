@@ -8,7 +8,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, PackedSize, Read, Unpack, Void, Write};
+use crate::xdr_codec::{List, Opaque, Pack, Read, Unpack, Void, Write};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -88,21 +88,6 @@ where
             let (val, csz) = Unpack::unpack(input)?;
             sz += csz;
             Ok((Self::Err((code, val)), sz))
-        }
-    }
-}
-
-impl<T, E> PackedSize for Nfs3Result<T, E>
-where
-    T: PackedSize,
-    E: PackedSize,
-{
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
-            Self::Err((code, err)) => code.packed_size() + err.packed_size(),
         }
     }
 }
@@ -192,17 +177,6 @@ where
                 Ok((Self::Some(val), sz))
             }
             _ => Ok((Self::None, sz)),
-        }
-    }
-}
-
-impl<T: PackedSize> PackedSize for Nfs3Option<T> {
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::Some(v) => v.packed_size(),
-            Self::None => 0,
         }
     }
 }
@@ -982,19 +956,6 @@ impl Pack for createhow3 {
     }
 }
 
-impl PackedSize for createhow3 {
-    const PACKED_SIZE: Option<usize> = None;
-
-    #[allow(clippy::match_same_arms)]
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::UNCHECKED(val) => val.packed_size(),
-            Self::GUARDED(val) => val.packed_size(),
-            Self::EXCLUSIVE(val) => val.packed_size(),
-        }
-    }
-}
-
 impl Pack for mknoddata3 {
     fn packed_size(&self) -> usize {
         4 + match self {
@@ -1017,21 +978,6 @@ impl Pack for mknoddata3 {
     }
 }
 
-impl PackedSize for mknoddata3 {
-    const PACKED_SIZE: Option<usize> = None;
-
-    #[allow(clippy::match_same_arms)]
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::NF3CHR(val) => val.packed_size(),
-            Self::NF3BLK(val) => val.packed_size(),
-            Self::NF3SOCK(val) => val.packed_size(),
-            Self::NF3FIFO(val) => val.packed_size(),
-            Self::default => 0,
-        }
-    }
-}
-
 impl Pack for set_atime {
     fn packed_size(&self) -> usize {
         4 + match self {
@@ -1051,19 +997,6 @@ impl Pack for set_atime {
     }
 }
 
-impl PackedSize for set_atime {
-    const PACKED_SIZE: Option<usize> = None;
-
-    #[allow(clippy::match_same_arms)]
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::DONT_CHANGE => 0,
-            Self::SET_TO_SERVER_TIME => 0,
-            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
-        }
-    }
-}
-
 impl Pack for set_mtime {
     fn packed_size(&self) -> usize {
         4 + match self {
@@ -1080,19 +1013,6 @@ impl Pack for set_mtime {
             Self::SET_TO_CLIENT_TIME(val) => 2u32.pack(out)? + val.pack(out)?,
         };
         Ok(len)
-    }
-}
-
-impl PackedSize for set_mtime {
-    const PACKED_SIZE: Option<usize> = None;
-
-    #[allow(clippy::match_same_arms)]
-    fn count_packed_size(&self) -> usize {
-        4 + match self {
-            Self::DONT_CHANGE => 0,
-            Self::SET_TO_SERVER_TIME => 0,
-            Self::SET_TO_CLIENT_TIME(val) => val.packed_size(),
-        }
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{Error, Pack, PackedSize, Unpack};
+use super::{Error, Pack, Unpack};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Void;
@@ -10,14 +10,6 @@ impl Pack for Void {
 
     fn pack(&self, _out: &mut impl std::io::Write) -> Result<usize, Error> {
         Ok(0)
-    }
-}
-
-impl PackedSize for Void {
-    const PACKED_SIZE: Option<usize> = Some(0);
-
-    fn count_packed_size(&self) -> usize {
-        0
     }
 }
 

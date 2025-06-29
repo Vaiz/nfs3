@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{Pack, PackedSize, Unpack};
+use crate::xdr_codec::{Pack, Unpack};
 
 /// Represents a sequence of optional values in NFS3.
 ///
@@ -51,27 +51,6 @@ where
     }
 }
 
-impl<T> PackedSize for List<T>
-where
-    T: PackedSize,
-{
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        if let Some(const_len) = T::PACKED_SIZE {
-            return (4 + const_len) * self.0.len() + 4;
-        }
-
-        let mut len = 0;
-        for item in &self.0 {
-            len += <bool as Pack>::packed_size(&true);
-            len += item.packed_size();
-        }
-        len += <bool as Pack>::packed_size(&false);
-        len
-    }
-}
-
 impl<T> Unpack for List<T>
 where
     T: Unpack,
@@ -101,7 +80,7 @@ pub struct BoundedList<T> {
 
 impl<T> BoundedList<T>
 where
-    T: PackedSize + Pack,
+    T: Pack,
 {
     #[must_use]
     pub fn new(max_size: usize) -> Self {
@@ -115,7 +94,7 @@ where
     }
 
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
-        let item_size = <T as PackedSize>::packed_size(&item) + 4;
+        let item_size = item.packed_size() + 4;
         if self.current_size + item_size > self.max_size {
             return Err(item);
         }

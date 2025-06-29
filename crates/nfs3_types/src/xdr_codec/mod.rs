@@ -7,7 +7,6 @@
 pub(crate) mod error;
 pub(crate) mod list;
 pub(crate) mod opaque;
-pub(crate) mod packed_size;
 pub(crate) mod primitives;
 pub(crate) mod traits;
 pub(crate) mod util;
@@ -22,7 +21,6 @@ pub use nfs3_macros::XdrCodec;
 pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;
-pub use self::packed_size::PackedSize;
 pub use self::traits::{Pack, Unpack};
 pub use self::void::Void;
 

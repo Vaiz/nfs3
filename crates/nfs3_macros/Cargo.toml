@@ -20,9 +20,5 @@ proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
 
-[dev-dependencies]
-byteorder.workspace = true
-xdr-codec.workspace = true
-
 [lints]
 workspace = true
