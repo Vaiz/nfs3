@@ -6,9 +6,10 @@
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
 
+use std::io::{Read, Write};
+
 use nfs3_macros::XdrCodec;
 
-use std::io::{Read, Write};
 use crate::xdr_codec::{Opaque, Pack, Unpack};
 
 /// RPC header
