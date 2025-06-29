@@ -201,14 +201,7 @@ fn nfs3_result_roundtrip() {
         let mut cursor = Cursor::new(buffer);
         let (deserialized, unpack_len) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
         assert_eq!(pack_len, unpack_len);
-        // Compare the discriminant and data separately since Nfs3Result doesn't implement PartialEq
-        match (&original, &deserialized) {
-            (Nfs3Result::Ok(_), Nfs3Result::Ok(_)) => {}
-            (Nfs3Result::Err((status1, _)), Nfs3Result::Err((status2, _))) => {
-                assert_eq!(status1, status2);
-            }
-            _ => panic!("Roundtrip mismatch"),
-        }
+        assert_eq!(original, deserialized);
     }
 
     // Test u32 cases
@@ -225,17 +218,7 @@ fn nfs3_result_roundtrip() {
         let mut cursor = Cursor::new(buffer);
         let (deserialized, unpack_len) = Nfs3Result::<u32, u32>::unpack(&mut cursor).unwrap();
         assert_eq!(pack_len, unpack_len);
-        // Compare the discriminant and data separately
-        match (&original, &deserialized) {
-            (Nfs3Result::Ok(val1), Nfs3Result::Ok(val2)) => {
-                assert_eq!(val1, val2);
-            }
-            (Nfs3Result::Err((status1, val1)), Nfs3Result::Err((status2, val2))) => {
-                assert_eq!(status1, status2);
-                assert_eq!(val1, val2);
-            }
-            _ => panic!("Roundtrip mismatch"),
-        }
+        assert_eq!(original, deserialized);
     }
 }
 
@@ -281,13 +264,7 @@ fn nfs3_error_codes() {
 
         let mut cursor = Cursor::new(buffer);
         let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
-        // Compare error codes manually since Nfs3Result doesn't implement PartialEq
-        match deserialized {
-            Nfs3Result::Err((deserialized_code, _)) => {
-                assert_eq!(error_code as u32, deserialized_code as u32);
-            }
-            Nfs3Result::Ok(_) => panic!("Expected error result for error code {error_code:?}"),
-        }
+        assert_eq!(result, deserialized);
     }
 
     // Test NFS3_OK separately as a success case
@@ -298,8 +275,5 @@ fn nfs3_error_codes() {
 
     let mut cursor = Cursor::new(buffer);
     let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
-    match deserialized {
-        Nfs3Result::Ok(_) => {} // Expected success
-        Nfs3Result::Err(_) => panic!("Expected success result for NFS3_OK"),
-    }
+    deserialized.expect("Expected success result for NFS3_OK");
 }
