@@ -9,15 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.6.0...nfs3_server-v0.7.0) - 2025-06-29
 
-### Added
+### Changes
 
 - [**breaking**] pass arguments by reference ([#99](https://github.com/Vaiz/nfs3/pull/99))
 - [**breaking**] drop xdr-codec dependency ([#98](https://github.com/Vaiz/nfs3/pull/98))
 - re-export nfs3_types from nfs3_server and nfs3_client crates ([#94](https://github.com/Vaiz/nfs3/pull/94))
-
-### Fixed
-
-- new clippy issues from recent Rust update ([#97](https://github.com/Vaiz/nfs3/pull/97))
+- fix new clippy issues from recent Rust update ([#97](https://github.com/Vaiz/nfs3/pull/97))
 
 ## [0.6.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.5.0...nfs3_server-v0.6.0) - 2025-06-15
 
