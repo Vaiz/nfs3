@@ -14,37 +14,25 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let mut pack_generics = generics.clone();
-    pack_generics
-        .params
-        .push(syn::parse_quote! { _XdrCodecOut: std::io::Write });
-    let (pack_impl_generics, _, pack_where_clause) = pack_generics.split_for_impl();
-
-    let mut unpack_generics = generics.clone();
-    unpack_generics
-        .params
-        .push(syn::parse_quote! { _XdrCodecIn: std::io::Read });
-    let (unpack_impl_generics, _, unpack_where_clause) = unpack_generics.split_for_impl();
-
     match &input.data {
         Data::Struct(DataStruct { fields, .. }) => match fields {
             Fields::Named(named_fields) => {
-                let serialize_fields = named_fields.named.iter().map(|f| {
+                let pack_fields = named_fields.named.iter().map(|f| {
                     let name = &f.ident;
                     quote! {
-                        total_write += self.#name.pack(dest)?;
+                        total_write += self.#name.pack(out)?;
                     }
                 });
-                let count_fields = named_fields.named.iter().map(|f| {
+                let packed_size_fields = named_fields.named.iter().map(|f| {
                     let name = &f.ident;
                     quote! {
-                        total_write += self.#name.packed_size();
+                        total_size += nfs3_types::xdr_codec::Pack::packed_size(&self.#name);
                     }
                 });
-                let deserialize_fields = named_fields.named.iter().map(|f| {
+                let unpack_fields = named_fields.named.iter().map(|f| {
                     let name = &f.ident;
                     quote! {
-                        let (#name, read_bytes) = Unpack::unpack(src)?;
+                        let (#name, read_bytes) = nfs3_types::xdr_codec::Unpack::unpack(input)?;
                         total_read += read_bytes;
                     }
                 });
@@ -53,53 +41,49 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                     quote! { #name, }
                 });
                 quote! {
-                    impl #pack_impl_generics nfs3_types::xdr_codec::Pack<_XdrCodecOut> for #name #ty_generics
-                    #pack_where_clause {
-                        fn pack(&self, dest: &mut _XdrCodecOut) -> nfs3_types::xdr_codec::Result<usize> {
+                    impl #impl_generics nfs3_types::xdr_codec::Pack for #name #ty_generics
+                    #where_clause {
+                        fn packed_size(&self) -> usize {
+                            let mut total_size = 0;
+                            #(#packed_size_fields)*
+                            total_size
+                        }
+
+                        fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
                             use nfs3_types::xdr_codec::Pack;
                             let mut total_write = 0;
-                            #(#serialize_fields)*
+                            #(#pack_fields)*
                             Ok(total_write)
                         }
                     }
-                    impl #impl_generics nfs3_types::xdr_codec::PackedSize for #name #ty_generics
+                    impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                     #where_clause {
-                        const PACKED_SIZE: Option<usize> = None; // TODO: try to evaluate the value
-
-                        fn count_packed_size(&self) -> usize {
-                            let mut total_write = 0;
-                            #(#count_fields)*
-                            total_write
-                        }
-                    }
-                    impl #unpack_impl_generics nfs3_types::xdr_codec::Unpack<_XdrCodecIn> for #name #ty_generics
-                    #unpack_where_clause {
-                        fn unpack(src: &mut _XdrCodecIn) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
+                        fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
                             use nfs3_types::xdr_codec::Unpack;
                             let mut total_read = 0;
-                            #(#deserialize_fields)*
+                            #(#unpack_fields)*
                             Ok((Self { #(#struct_fields)* }, total_read))
                         }
                     }
                 }
             }
             Fields::Unnamed(unnamed_fields) => {
-                let serialize_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
+                let pack_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
                     let index = syn::Index::from(i);
                     quote! {
-                        total_write += self.#index.pack(dest)?;
+                        total_write += self.#index.pack(out)?;
                     }
                 });
-                let count_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
+                let packed_size_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
                     let index = syn::Index::from(i);
                     quote! {
-                        total_write += self.#index.packed_size();
+                        total_size += nfs3_types::xdr_codec::Pack::packed_size(&self.#index);
                     }
                 });
-                let deserialize_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
+                let unpack_fields = unnamed_fields.unnamed.iter().enumerate().map(|(i, _)| {
                     let var_name = syn::Ident::new(&format!("field_{i}"), proc_macro2::Span::call_site());
                     quote! {
-                        let (#var_name, read_bytes) = Unpack::unpack(src)?;
+                        let (#var_name, read_bytes) = nfs3_types::xdr_codec::Unpack::unpack(input)?;
                         total_read += read_bytes;
                     }
                 });
@@ -108,61 +92,59 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
                     quote! { #var_name }
                 });
                 quote! {
-                    impl #pack_impl_generics nfs3_types::xdr_codec::Pack<_XdrCodecOut> for #name #ty_generics
-                    #pack_where_clause {
-                        fn pack(&self, dest: &mut _XdrCodecOut) -> nfs3_types::xdr_codec::Result<usize> {
+                    impl #impl_generics nfs3_types::xdr_codec::Pack for #name #ty_generics
+                    #where_clause {
+                        fn packed_size(&self) -> usize {
+                            let mut total_size = 0;
+                            #(#packed_size_fields)*
+                            total_size
+                        }
+
+                        fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
                             use nfs3_types::xdr_codec::Pack;
                             let mut total_write = 0;
-                            #(#serialize_fields)*
+                            #(#pack_fields)*
                             Ok(total_write)
                         }
                     }
-                    impl #impl_generics nfs3_types::xdr_codec::PackedSize for #name #ty_generics
+                    impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                     #where_clause {
-                        const PACKED_SIZE: Option<usize> = None; // TODO: try to evaluate the value
-
-                        fn count_packed_size(&self) -> usize {
-                            let mut total_write = 0;
-                            #(#count_fields)*
-                            total_write
-                        }
-                    }
-                    impl #unpack_impl_generics nfs3_types::xdr_codec::Unpack<_XdrCodecIn> for #name #ty_generics
-                    #unpack_where_clause {
-                        fn unpack(src: &mut _XdrCodecIn) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
+                        fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
                             use nfs3_types::xdr_codec::Unpack;
                             let mut total_read = 0;
-                            #(#deserialize_fields)*
+                            #(#unpack_fields)*
                             Ok((Self(#(#struct_fields),*), total_read))
                         }
                     }
                 }
             }
             Fields::Unit => quote! {
-                impl #pack_impl_generics nfs3_types::xdr_codec::Pack<_XdrCodecOut> for #name #ty_generics
-                #pack_where_clause {
-                    fn pack(&self, _dest: &mut _XdrCodecOut) -> nfs3_types::xdr_codec::Result<usize> {
+                impl #impl_generics nfs3_types::xdr_codec::Pack for #name #ty_generics
+                #where_clause {
+                    fn packed_size(&self) -> usize {
+                        0
+                    }
+
+                    fn pack(&self, _out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
                         Ok(0)
                     }
                 }
-                impl #impl_generics nfs3_types::xdr_codec::PackedSize for #name #ty_generics
+                impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    const PACKED_SIZE: Option<usize> = Some(0);
-
-                    fn count_packed_size(&self) -> usize {
-                        0
-                    }
-                }
-                impl #unpack_impl_generics nfs3_types::xdr_codec::Unpack<_XdrCodecIn> for #name #ty_generics
-                #unpack_where_clause {
-                    fn unpack(_src: &mut _XdrCodecIn) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
+                    fn unpack(_input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
                         Ok((Self, 0))
                     }
                 }
             },
         },
         Data::Enum(data) => {
-            let deserialize_variants = data.variants.iter().map(|v| {
+            let pack_variants = data.variants.iter().map(|v| {
+                let ident = &v.ident;
+                quote! {
+                    Self::#ident => (*self as u32).pack(out)?,
+                }
+            });
+            let unpack_variants = data.variants.iter().map(|v| {
                 let ident = &v.ident;
                 quote! {
                     x if x == Self::#ident as u32 => Ok(Self::#ident),
@@ -170,32 +152,28 @@ pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
             });
 
             quote! {
-                impl #pack_impl_generics nfs3_types::xdr_codec::Pack<_XdrCodecOut> for #name #ty_generics
-                #pack_where_clause {
-                    fn pack(&self, dest: &mut _XdrCodecOut) -> nfs3_types::xdr_codec::Result<usize> {
-                        use byteorder::WriteBytesExt;
-                        dest.write_u32::<byteorder::BigEndian>(*self as u32)?;
-                        Ok(4)
-                    }
-                }
-                impl #impl_generics nfs3_types::xdr_codec::PackedSize for #name #ty_generics
+                impl #impl_generics nfs3_types::xdr_codec::Pack for #name #ty_generics
                 #where_clause {
-                    const PACKED_SIZE: Option<usize> = Some(4);
-
-                    fn count_packed_size(&self) -> usize {
+                    fn packed_size(&self) -> usize {
                         4
                     }
+
+                    fn pack(&self, out: &mut impl std::io::Write) -> Result<usize, nfs3_types::xdr_codec::Error> {
+                        use nfs3_types::xdr_codec::Pack;
+                        match self {
+                            #(#pack_variants)*
+                        }
+                    }
                 }
-                impl #unpack_impl_generics nfs3_types::xdr_codec::Unpack<_XdrCodecIn> for #name #ty_generics
-                #unpack_where_clause {
-                    fn unpack(src: &mut _XdrCodecIn) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                        use byteorder::ReadBytesExt;
-                        let tag = src.read_u32::<byteorder::BigEndian>()?;
+                impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
+                #where_clause {
+                    fn unpack(input: &mut impl std::io::Read) -> Result<(Self, usize), nfs3_types::xdr_codec::Error> {
+                        let (tag, bytes_read) = u32::unpack(input)?;
                         let result = match tag {
-                            #(#deserialize_variants)*
-                            _ => Err(xdr_codec::ErrorKind::InvalidEnum(tag as i32).into()),
+                            #(#unpack_variants)*
+                            _ => Err(nfs3_types::xdr_codec::Error::InvalidEnumValue(tag)),
                         };
-                        result.map(|value| (value, 4usize))
+                        result.map(|value| (value, bytes_read))
                     }
                 }
             }
