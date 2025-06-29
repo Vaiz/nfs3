@@ -12,6 +12,9 @@ pub(crate) mod traits;
 pub(crate) mod util;
 pub(crate) mod void;
 
+// Re-export std traits for compatibility
+pub use std::io::{Read, Write};
+
 /// Derive macro that implements [`Pack`] and [`Unpack`] traits.
 pub use nfs3_macros::XdrCodec;
 
@@ -21,3 +24,6 @@ pub use self::opaque::Opaque;
 pub use self::packed_size::PackedSize;
 pub use self::traits::{Pack, Unpack};
 pub use self::void::Void;
+
+// Type alias for the common Result type used throughout the codebase
+pub type Result<T> = std::result::Result<T, Error>;

@@ -7,10 +7,22 @@ use crate::xdr_codec::{Error, Pack, Unpack};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Opaque<'a>(pub Cow<'a, [u8]>);
 
+impl Opaque<'static> {
+    /// Creates a new `Opaque` with owned data.
+    pub fn owned(data: Vec<u8>) -> Self {
+        Opaque(Cow::Owned(data))
+    }
+}
+
 impl<'a> Opaque<'a> {
     /// Creates a new `Opaque`.
     pub fn new(data: Cow<'a, [u8]>) -> Self {
         Opaque(data)
+    }
+
+    /// Creates a new `Opaque` from a borrowed slice.
+    pub fn borrowed(data: &'a [u8]) -> Self {
+        Opaque(Cow::Borrowed(data))
     }
 
     /// Creates a new `Opaque` from a `Vec<u8>`.
@@ -18,11 +30,20 @@ impl<'a> Opaque<'a> {
         Opaque(Cow::Owned(data))
     }
 
+    /// Returns the length of the opaque data.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     /// Extracts the owned data.
     ///
     /// Clones the data if it is not already owned.
     pub fn into_owned(self) -> Vec<u8> {
         self.0.into_owned()
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
 }
 

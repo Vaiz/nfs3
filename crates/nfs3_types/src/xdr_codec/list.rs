@@ -26,12 +26,21 @@ impl<T> List<T> {
     }
 }
 
-impl<T, Out> Pack<Out> for List<T>
+impl<T> Pack for List<T>
 where
-    Out: Write,
-    T: Pack<Out>,
+    T: Pack,
 {
-    fn pack(&self, output: &mut Out) -> xdr_codec::Result<usize> {
+    fn packed_size(&self) -> usize {
+        let mut len = 0;
+        for item in &self.0 {
+            len += <bool as Pack>::packed_size(&true);
+            len += item.packed_size();
+        }
+        len += <bool as Pack>::packed_size(&false);
+        len
+    }
+
+    fn pack(&self, output: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let mut len = 0;
         for item in &self.0 {
             len += true.pack(output)?;
@@ -55,20 +64,19 @@ where
 
         let mut len = 0;
         for item in &self.0 {
-            len += true.packed_size();
+            len += <bool as Pack>::packed_size(&true);
             len += item.packed_size();
         }
-        len += false.packed_size();
+        len += <bool as Pack>::packed_size(&false);
         len
     }
 }
 
-impl<T, In> Unpack<In> for List<T>
+impl<T> Unpack for List<T>
 where
-    In: Read,
-    T: Unpack<In>,
+    T: Unpack,
 {
-    fn unpack(input: &mut In) -> xdr_codec::Result<(Self, usize)> {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let mut items = Vec::new();
         let mut len = 0;
         loop {
@@ -93,12 +101,12 @@ pub struct BoundedList<T> {
 
 impl<T> BoundedList<T>
 where
-    T: PackedSize,
+    T: PackedSize + Pack,
 {
     #[must_use]
     pub fn new(max_size: usize) -> Self {
         let list = List(Vec::new());
-        let current_size = list.packed_size();
+        let current_size = <List<T> as Pack>::packed_size(&list);
         Self {
             list,
             current_size,
@@ -107,7 +115,7 @@ where
     }
 
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
-        let item_size = item.packed_size() + 4;
+        let item_size = <T as PackedSize>::packed_size(&item) + 4;
         if self.current_size + item_size > self.max_size {
             return Err(item);
         }

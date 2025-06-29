@@ -78,3 +78,40 @@ impl Unpack for u64 {
         Ok((u64::from_le_bytes(buf), 8))
     }
 }
+
+impl<const N: usize> Pack for [u8; N]
+{
+    fn packed_size(&self) -> usize {
+        add_padding(N)
+    }
+
+    fn pack(&self, out: &mut impl Write) -> Result<usize, Error> {
+        let mut bytes_written = 0;
+        out.write_all(self).map_err(Error::Io)?;
+        bytes_written += N;
+
+        let padding = zero_padding(N);
+        out.write_all(&padding).map_err(Error::Io)?;
+        bytes_written += padding.len();
+        
+        Ok(bytes_written)
+    }
+}
+
+impl<const N: usize> Unpack for [u8; N] {
+    fn unpack(input: &mut impl Read) -> Result<(Self, usize), Error> {
+        let mut bytes_read = 0;
+        let mut buf = [0u8; N];
+        input.read_exact(&mut buf).map_err(Error::Io)?;
+        bytes_read += N;
+
+        let padding = add_padding(N);
+        if padding > 0 {
+            let mut pad_buf = [0u8; 4];
+            input.read_exact(&mut pad_buf[..padding]).map_err(Error::Io)?;
+            bytes_read += padding;
+        }
+
+        Ok((buf, bytes_read))
+    }
+}
