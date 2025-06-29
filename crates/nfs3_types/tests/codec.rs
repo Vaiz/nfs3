@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::io::Cursor;
 
 use nfs3_types::nfs3::{Nfs3Option, Nfs3Result, nfsstat3};
-use nfs3_types::xdr_codec::{List, Opaque, Pack, PackedSize, Unpack, Void, XdrCodec};
+use nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack, Void, XdrCodec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -193,7 +193,7 @@ fn test_list_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.count_packed_size(), 28);
+    assert_eq!(original.packed_size(), 28);
     assert_eq!(len, 28);
     assert_eq!(
         buffer,
@@ -220,7 +220,7 @@ fn test_empty_dirlist3_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.count_packed_size(), 8); // 4 bytes for entries + 4 bytes for eof
+    assert_eq!(original.packed_size(), 8); // 4 bytes for entries + 4 bytes for eof
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
@@ -253,7 +253,7 @@ fn test_dirlist3_with_entries_serialization() {
 
     let mut buffer = Vec::new();
     let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.count_packed_size(), 72); // 2 entries * (4 + 4 + 8 + 4) + 4 for eof
+    assert_eq!(original.packed_size(), 72); // 2 entries * (4 + 4 + 8 + 4) + 4 for eof
     assert_eq!(len, 72);
     assert_eq!(
         buffer,

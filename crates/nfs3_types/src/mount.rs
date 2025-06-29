@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{Error, List, Opaque, Pack, PackedSize, Unpack, XdrCodec};
+use crate::xdr_codec::{List, Opaque, Pack, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -88,11 +88,15 @@ pub enum mountres3<'a> {
     Err(mountstat3),
 }
 
-impl<Out> Pack<Out> for mountres3<'_>
-where
-    Out: Write,
-{
-    fn pack(&self, output: &mut Out) -> Result<usize, Error> {
+impl Pack for mountres3<'_> {
+    fn packed_size(&self) -> usize {
+        match self {
+            Self::Ok(ok) => mountstat3::MNT3_OK.packed_size() + ok.packed_size(),
+            Self::Err(err) => err.packed_size(),
+        }
+    }
+
+    fn pack(&self, output: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::Ok(ok) => {
                 let mut len = mountstat3::MNT3_OK.pack(output)?;
@@ -105,22 +109,8 @@ where
     }
 }
 
-impl PackedSize for mountres3<'_> {
-    const PACKED_SIZE: Option<usize> = None;
-
-    fn count_packed_size(&self) -> usize {
-        match self {
-            Self::Ok(ok) => mountstat3::MNT3_OK.packed_size() + ok.packed_size(),
-            Self::Err(err) => err.packed_size(),
-        }
-    }
-}
-
-impl<In> Unpack<In> for mountres3<'_>
-where
-    In: Read,
-{
-    fn unpack(input: &mut In) -> Result<(Self, usize), Error> {
+impl Unpack for mountres3<'_> {
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
         let (stat, len) = mountstat3::unpack(input)?;
         let (res, res_len) = match stat {
             mountstat3::MNT3_OK => {
@@ -172,7 +162,7 @@ impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
             3 => Ok(Self::MOUNTPROC3_UMNT),
             4 => Ok(Self::MOUNTPROC3_UMNTALL),
             5 => Ok(Self::MOUNTPROC3_EXPORT),
-            _ => Err(crate::xdr_codec::ErrorKind::InvalidEnum(value as i32).into()),
+            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
         }
     }
 }

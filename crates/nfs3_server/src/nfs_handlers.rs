@@ -3,7 +3,7 @@
 #[allow(clippy::wildcard_imports)]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, PackedSize, Void};
+use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, Unpack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
@@ -943,7 +943,7 @@ where
     }
 }
 
-fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
+fn nfs_option_from_result<T: Pack + Unpack, E>(result: Result<T, E>) -> Nfs3Option<T> {
     result.map_or(Nfs3Option::None, Nfs3Option::Some)
 }
 

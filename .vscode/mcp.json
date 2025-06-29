@@ -1,0 +1,9 @@
+{
+    "servers": {
+        "Rust": {
+            "type": "stdio",
+            "command": "rust-mcp-server",
+            "args": []
+        }
+    }
+}

@@ -38,7 +38,7 @@ const HOSTPORT: u16 = 11111;
 // [bind_port] is the port to bind to (default: 11111)
 //
 // To mount the NFS server on Linux, use the following command:
-// mount -t nfs -o nolock,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ mnt/
+// mount -t nfs -o nolock,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ /mnt/nfs
 
 #[tokio::main]
 async fn main() {

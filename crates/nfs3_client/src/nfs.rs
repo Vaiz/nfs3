@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use nfs3_types::nfs3::{
     ACCESS3args, ACCESS3res, COMMIT3args, COMMIT3res, CREATE3args, CREATE3res, FSINFO3args,
     FSINFO3res, FSSTAT3args, FSSTAT3res, GETATTR3args, GETATTR3res, LINK3args, LINK3res,
@@ -10,7 +8,7 @@ use nfs3_types::nfs3::{
     SYMLINK3res, VERSION, WRITE3args, WRITE3res,
 };
 use nfs3_types::rpc::opaque_auth;
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 
 use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
@@ -161,8 +159,8 @@ where
 
     async fn call<C, R>(&mut self, proc: NFS_PROGRAM, args: C) -> Result<R, crate::error::Error>
     where
-        R: Unpack<Cursor<Vec<u8>>>,
-        C: Pack<Vec<u8>> + PackedSize,
+        R: Unpack,
+        C: Pack,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, args)

@@ -1,13 +1,12 @@
 //! RPC client implementation
 
 use std::fmt::Debug;
-use std::io::Cursor;
 
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, call_body, fragment_header, msg_body, opaque_auth, reply_body,
     rpc_msg,
 };
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
+use nfs3_types::xdr_codec::{Pack, Unpack};
 
 use crate::error::{Error, RpcError};
 use crate::io::{AsyncRead, AsyncWrite};
@@ -56,8 +55,8 @@ where
     #[allow(clippy::similar_names)] // prog and proc are part of call_body struct
     pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
     where
-        R: Unpack<Cursor<Vec<u8>>>,
-        C: Pack<Vec<u8>> + PackedSize,
+        R: Unpack,
+        C: Pack,
     {
         let call = call_body {
             rpcvers: RPC_VERSION_2,
@@ -79,7 +78,7 @@ where
 
     async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error>
     where
-        T: Pack<Vec<u8>> + PackedSize,
+        T: Pack,
     {
         let total_len = msg.packed_size() + args.packed_size();
         if total_len % 4 != 0 {
@@ -103,7 +102,7 @@ where
 
     async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, Error>
     where
-        T: Unpack<Cursor<Vec<u8>>>,
+        T: Unpack,
     {
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;

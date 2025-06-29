@@ -5,7 +5,7 @@ use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, call_body, fragment_header, msg_body, opaque_auth,
     rejected_reply, reply_body, rpc_msg,
 };
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 #[derive(Debug)]
@@ -113,7 +113,7 @@ impl IncomingRpcMessage {
 
     pub fn into_success_reply<T>(self, message: &T) -> anyhow::Result<HandleResult>
     where
-        T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
+        T: Pack + 'static,
     {
         let rpc = rpc_msg {
             xid: self.xid,
@@ -158,7 +158,7 @@ pub enum HandleResult {
 
 fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<CompleteRpcMessage>
 where
-    T: Pack<Cursor<Vec<u8>>> + PackedSize + 'static,
+    T: Pack + 'static,
 {
     let size = rpc
         .packed_size()

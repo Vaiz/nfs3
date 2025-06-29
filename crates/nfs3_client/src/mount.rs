@@ -1,10 +1,8 @@
-use std::io::Cursor;
-
 use nfs3_types::mount::{
     MOUNT_PROGRAM, PROGRAM, VERSION, dirpath, exports, mountlist, mountres3, mountres3_ok,
 };
 use nfs3_types::rpc::opaque_auth;
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 
 use crate::error::Error;
 use crate::io::{AsyncRead, AsyncWrite};
@@ -82,8 +80,8 @@ where
 
     async fn call<C, R>(&mut self, proc: MOUNT_PROGRAM, args: C) -> Result<R, crate::error::Error>
     where
-        R: Unpack<Cursor<Vec<u8>>>,
-        C: Pack<Vec<u8>> + PackedSize,
+        R: Unpack,
+        C: Pack,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, args)
