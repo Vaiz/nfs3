@@ -114,6 +114,7 @@ impl Pack for bool {
         4
     }
 
+    #[expect(clippy::bool_to_int_with_if, reason = "we want to be explicit")]
     fn pack(&self, out: &mut impl Write) -> Result<usize> {
         let val = if *self { 1u32 } else { 0u32 };
         val.pack(out)
