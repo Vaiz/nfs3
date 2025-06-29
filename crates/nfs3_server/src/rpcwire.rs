@@ -6,7 +6,7 @@ use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMe
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header,
 };
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack};
+use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::sync::mpsc;
@@ -45,7 +45,7 @@ where
     }
 
     if call.cred.flavor == auth_flavor::AUTH_UNIX {
-        let auth = auth_unix::unpack(&mut Cursor::new(&*call.cred.body))?.0;
+        let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
         context.auth = auth;
     }
 
@@ -87,8 +87,8 @@ pub async fn handle<I, O, T>(
     handler: impl AsyncFnOnce(&RPCContext<T>, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
-    I: Unpack<Cursor<Vec<u8>>>,
-    O: Pack<Cursor<Vec<u8>>> + PackedSize + Send + 'static,
+    I: Unpack,
+    O: Pack + Send + 'static,
     T: NfsFileSystem,
 {
     let mut cursor = message.take_data();

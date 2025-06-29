@@ -3,7 +3,7 @@
 #[allow(clippy::wildcard_imports)]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, PackedSize, Void};
+use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;

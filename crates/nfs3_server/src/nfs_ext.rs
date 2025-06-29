@@ -1,5 +1,5 @@
-use nfs3_types::nfs3::{cookie3, cookieverf3, entryplus3, fileid3, post_op_attr};
-use nfs3_types::xdr_codec::{BoundedList, List, PackedSize};
+use nfs3_types::nfs3::{cookieverf3, entryplus3, post_op_attr};
+use nfs3_types::xdr_codec::{BoundedList, List, Pack};
 
 pub trait CookieVerfExt {
     const NONE_COOKIE_VERF: cookieverf3 = cookieverf3(0u64.to_be_bytes());
@@ -48,10 +48,10 @@ impl BoundedEntryPlusList {
     pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3<'static>> {
         // dircount - the maximum number of bytes of directory information returned. This number
         // should not include the size of the attributes and file handle portions of the result.
-        let added_dircount = fileid3::PACKED_SIZE.expect("should be set")
+        let added_dircount = entry.fileid.packed_size()
             + 4
             + entry.name.packed_size()
-            + cookie3::PACKED_SIZE.expect("should be set");
+            + entry.cookie.packed_size();
 
         if self.accumulated_dircount + added_dircount > self.dircount {
             return Err(entry);
@@ -72,7 +72,7 @@ impl BoundedEntryPlusList {
 #[cfg(test)]
 mod tests {
     use nfs3_types::nfs3::{filename3, post_op_fh3};
-    use nfs3_types::xdr_codec::{Opaque, PackedSize};
+    use nfs3_types::xdr_codec::Opaque;
 
     use super::*;
 

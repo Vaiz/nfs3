@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::{Read, Write};
+use std::ops::Deref;
 
 use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
 use crate::xdr_codec::{Error, Pack, Unpack};
@@ -99,6 +100,14 @@ impl Unpack for Opaque<'static> {
 impl AsRef<[u8]> for Opaque<'_> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl Deref for Opaque<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
     }
 }
 
