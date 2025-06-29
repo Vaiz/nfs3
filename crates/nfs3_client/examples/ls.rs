@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cookieverf = nfs3::cookieverf3::default();
     loop {
         let readdir = connection
-            .readdir(nfs3::READDIR3args {
+            .readdir(&nfs3::READDIR3args {
                 dir: root.clone(),
                 cookie,
                 cookieverf,
@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cookieverf = nfs3::cookieverf3::default();
     loop {
         let readdirplus = connection
-            .readdirplus(nfs3::READDIRPLUS3args {
+            .readdirplus(&nfs3::READDIRPLUS3args {
                 dir: root.clone(),
                 cookie,
                 cookieverf,

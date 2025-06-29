@@ -53,7 +53,13 @@ where
     /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
     /// the reply.
     #[allow(clippy::similar_names)] // prog and proc are part of call_body struct
-    pub async fn call<C, R>(&mut self, prog: u32, vers: u32, proc: u32, args: C) -> Result<R, Error>
+    pub async fn call<C, R>(
+        &mut self,
+        prog: u32,
+        vers: u32,
+        proc: u32,
+        args: &C,
+    ) -> Result<R, Error>
     where
         R: Unpack,
         C: Pack,
@@ -76,7 +82,7 @@ where
         Self::recv_reply::<R>(&mut self.io, msg.xid).await
     }
 
-    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: T) -> Result<(), Error>
+    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), Error>
     where
         T: Pack,
     {

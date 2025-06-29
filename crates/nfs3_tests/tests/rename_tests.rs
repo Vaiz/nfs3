@@ -13,7 +13,7 @@ async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
     tracing::info!("Created file for rename: {create:?}");
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"old_name".as_slice().into(),
@@ -40,7 +40,7 @@ async fn test_rename_noent() -> Result<(), anyhow::Error> {
     let root = client.root_dir().clone();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"nonexistent_file".as_slice().into(),
@@ -76,7 +76,7 @@ async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
         .unwrap();
 
     let _rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"src_file".as_slice().into(),
@@ -109,7 +109,7 @@ async fn test_rename_directory() -> Result<(), anyhow::Error> {
         .unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"dir_to_rename".as_slice().into(),
@@ -144,7 +144,7 @@ async fn test_rename_directory_over_existing_empty_directory() -> Result<(), any
     let _ = client.just_mkdir(root.clone(), "dst_dir").await.unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"src_dir".as_slice().into(),
@@ -180,7 +180,7 @@ async fn test_rename_directory_over_existing_nonempty_directory() -> Result<(), 
         .unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"src_dir".as_slice().into(),
@@ -208,7 +208,7 @@ async fn test_rename_directory_to_self() -> Result<(), anyhow::Error> {
     let dir = client.just_mkdir(root.clone(), "dir_self").await.unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"dir_self".as_slice().into(),
@@ -242,7 +242,7 @@ async fn test_rename_file_in_subdirectory() -> Result<(), anyhow::Error> {
         .unwrap();
 
     let _rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: subdir.clone(),
                 name: b"file_in_subdir".as_slice().into(),
@@ -281,7 +281,7 @@ async fn test_rename_file_across_directories() -> Result<(), anyhow::Error> {
         .unwrap();
 
     let _rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: src_dir.clone(),
                 name: b"file_to_move".as_slice().into(),
@@ -317,7 +317,7 @@ async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error>
     let _subdir = client.just_mkdir(src_dir.clone(), "subdir").await.unwrap();
 
     let _rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: src_dir.clone(),
                 name: b"subdir".as_slice().into(),
@@ -355,7 +355,7 @@ async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
         .unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"src_nonempty_dir".as_slice().into(),
@@ -399,7 +399,7 @@ async fn test_rename_directory_into_its_own_subdirectory() -> Result<(), anyhow:
         .unwrap();
 
     let rename = client
-        .rename(RENAME3args {
+        .rename(&RENAME3args {
             from: diropargs3 {
                 dir: root.clone(),
                 name: b"parent_dir".as_slice().into(),

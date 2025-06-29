@@ -76,7 +76,7 @@ async fn lookup<IO: AsyncRead + AsyncWrite>(
     name: &str,
 ) -> anyhow::Result<nfs_fh3> {
     let lookup = client
-        .lookup(LOOKUP3args {
+        .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: parent,
                 name: filename3(Opaque::borrowed(name.as_bytes())),
@@ -111,7 +111,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
             count,
         };
 
-        let resok = client.readdir(args).await?.unwrap();
+        let resok = client.readdir(&args).await?.unwrap();
         request_count += 1;
 
         let dirlist3 { entries, eof } = resok.reply;
@@ -160,7 +160,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
             maxcount,
         };
 
-        let resok = client.readdirplus(args).await?.unwrap();
+        let resok = client.readdirplus(&args).await?.unwrap();
         request_count += 1;
 
         let dirlistplus3 { entries, eof } = resok.reply;

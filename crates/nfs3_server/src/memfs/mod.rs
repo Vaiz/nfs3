@@ -12,7 +12,7 @@
 //!
 //! ```no_run
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
-//! use nfs3_server::tcp::NFSTcpListener;
+//! use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 //!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();

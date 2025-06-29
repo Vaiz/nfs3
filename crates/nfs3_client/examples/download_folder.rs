@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Component::Normal(name) = component {
             let name = name.to_str().expect("failed to convert name to utf-8");
             let lookup = connection
-                .lookup(nfs3::LOOKUP3args {
+                .lookup(&nfs3::LOOKUP3args {
                     what: nfs3::diropargs3 {
                         dir: remote_folder_fh.clone(),
                         name: filename3(Opaque::borrowed(name.as_bytes())),
@@ -87,7 +87,7 @@ async fn download_folder(
         let mut cookieverf = nfs3::cookieverf3::default();
         loop {
             let readdirplus = connection
-                .readdirplus(nfs3::READDIRPLUS3args {
+                .readdirplus(&nfs3::READDIRPLUS3args {
                     dir: folder_fh.clone(),
                     cookie,
                     cookieverf,
@@ -115,7 +115,7 @@ async fn download_folder(
                     (fh, attr)
                 } else {
                     let lookup = connection
-                        .lookup(nfs3::LOOKUP3args {
+                        .lookup(&nfs3::LOOKUP3args {
                             what: nfs3::diropargs3 {
                                 dir: folder_fh.clone(),
                                 name: entry.name,
@@ -160,7 +160,7 @@ async fn download_file(
     let mut offset = 0;
     loop {
         let read = connection
-            .read(nfs3::READ3args {
+            .read(&nfs3::READ3args {
                 file: file_fh.clone(),
                 offset,
                 count: 128 * 1024,
