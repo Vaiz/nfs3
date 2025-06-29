@@ -1,7 +1,5 @@
-use std::io::Cursor;
-
 use nfs3_types::portmap::{PMAP_PROG, PROGRAM, VERSION, mapping, pmaplist};
-use nfs3_types::xdr_codec::{Pack, PackedSize, Unpack, Void};
+use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
@@ -58,8 +56,8 @@ where
 
     async fn call<C, R>(&mut self, proc: PMAP_PROG, args: C) -> Result<R, crate::error::Error>
     where
-        R: Unpack<Cursor<Vec<u8>>>,
-        C: Pack<Vec<u8>> + PackedSize,
+        R: Unpack,
+        C: Pack,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, args)

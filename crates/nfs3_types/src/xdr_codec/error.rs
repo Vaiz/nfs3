@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug)]
 pub enum Error {
     /// An error occurred while reading or writing data.
@@ -25,5 +27,27 @@ impl From<std::io::Error> for Error {
 impl From<std::string::FromUtf8Error> for Error {
     fn from(e: std::string::FromUtf8Error) -> Self {
         Self::Utf8(e)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "I/O error: {}", e),
+            Self::InvalidEnumValue(value) => write!(f, "Invalid enum value: {}", value),
+            Self::InvalidLength(len) => write!(f, "Invalid length: {}", len),
+            Self::ObjectTooLarge(size) => write!(f, "Object too large: {} bytes", size),
+            Self::Utf8(e) => write!(f, "UTF-8 conversion error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Utf8(e) => Some(e),
+            _ => None,
+        }
     }
 }
