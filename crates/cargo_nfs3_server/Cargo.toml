@@ -1,6 +1,6 @@
 [package]
 name = "cargo-nfs3-server"
-version = "0.1.0-alpha.3"
+version = "0.0.1"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true

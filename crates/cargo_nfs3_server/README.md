@@ -14,10 +14,11 @@
 ## Usage
 
 ### Installation
+
 To use `cargo-nfs3-server`, ensure you have Rust installed. Then run cargo install
 
 ```bash
-cargo install cargo-nfs3-server@0.1.0-alpha.2
+cargo install cargo-nfs3-server
 ```
 
 ### Running the Server
