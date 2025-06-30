@@ -13,11 +13,13 @@ readme = "README.md"
 
 [features]
 tokio = ["dep:tokio"]
+smol = ["dep:smol"]
 
 [dependencies]
 nfs3_types = { path = "../nfs3_types", version = "0.4.0" }
 
 rand.workspace = true
+smol = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, default-features = false, features = ["net", "io-util"] }
 
 [dev-dependencies]
