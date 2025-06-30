@@ -42,6 +42,10 @@ name = "nfs"
 required-features = ["tokio"]
 
 [[example]]
+name = "nfs_smol"
+required-features = ["smol"]
+
+[[example]]
 name = "ls"
 required-features = ["tokio"]
 
