@@ -14,6 +14,10 @@ pub mod rpc;
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
 pub mod tokio;
 
+#[cfg(feature = "smol")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
+pub mod smol;
+
 pub use connect::*;
 pub use mount::*;
 pub use nfs::*;
