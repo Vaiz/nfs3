@@ -56,6 +56,7 @@ impl Connector for SmolConnector {
         addr: SocketAddr,
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
+        #[cfg(unix)]
         const EINPROGRESS: i32 = 115;
 
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), local_port);

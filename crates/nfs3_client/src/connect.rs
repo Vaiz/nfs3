@@ -85,15 +85,15 @@ where
 {
     /// Creates a new `NFSv3` connection builder.
     /// The `mount_path` is the path to mount on the server.
-    pub fn new(connector: C, host: String, mount_path: String) -> Self {
+    pub fn new(connector: C, host: impl AsRef<str>, mount_path: impl AsRef<str>) -> Self {
         Self {
-            host,
+            host: host.as_ref().into(),
             connector,
             connect_from_privileged_port: true,
             portmapper_port: nfs3_types::portmap::PMAP_PORT,
             mount_port: None,
             nfs3_port: None,
-            mount_path: dirpath(Opaque::owned(mount_path.into_bytes())),
+            mount_path: dirpath(Opaque::owned(mount_path.as_ref().as_bytes().to_vec())),
             credential: opaque_auth::default(),
             verifier: opaque_auth::default(),
         }

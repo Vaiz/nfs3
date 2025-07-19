@@ -20,10 +20,7 @@ use nfs3_types::nfs3;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ip = "127.0.0.1".to_string();
-    let mount_path = "/".to_string();
-
-    let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
+    let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, "127.0.0.1", "/")
         .mount()
         .await?;
 
@@ -56,10 +53,7 @@ use nfs3_client::nfs3_types::nfs3;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
-        let ip = "127.0.0.1".to_string();
-        let mount_path = "/".to_string();
-
-        let mut connection = Nfs3ConnectionBuilder::new(SmolConnector, ip, mount_path)
+        let mut connection = Nfs3ConnectionBuilder::new(SmolConnector, "127.0.0.1", "/")
             .mount()
             .await?;
 
