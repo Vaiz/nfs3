@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust,no_run
 use nfs3_client::smol::SmolConnector;
 use nfs3_client::Nfs3ConnectionBuilder;
-use nfs3_types::nfs3;
+use nfs3_client::nfs3_types::nfs3;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     smol::block_on(async {
