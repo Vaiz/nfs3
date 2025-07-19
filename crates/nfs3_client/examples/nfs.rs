@@ -3,6 +3,8 @@ use std::env;
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::nfs3_types::nfs3;
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;
+use nfs3_client::nfs3_types::rpc::{auth_unix, opaque_auth};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_client::tokio::TokioConnector;
 
 #[tokio::main(flavor = "current_thread")]
@@ -14,8 +16,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port.parse::<u16>().expect("invalid port number")
     });
 
+    let auth_unix = auth_unix {
+        stamp: 0xaaaa_aaaa,
+        machinename: Opaque::borrowed(b"unknown"),
+        uid: 0xffff_fffe,
+        gid: 0xffff_fffe,
+        gids: vec![],
+    };
+    let credential = opaque_auth::auth_unix(&auth_unix);
+
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmaper_port)
+        .credential(credential)
         .mount()
         .await?;
 
@@ -70,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  eof: {}", ok.reply.eof);
         }
         nfs3::READDIR3res::Err((err, _)) => {
-            eprintln!("readdir error: {}", err as u32);
+            eprintln!("readdir error: {err} ({})", err as u32);
         }
     }
 

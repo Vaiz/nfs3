@@ -3,7 +3,7 @@
         "Rust": {
             "type": "stdio",
             "command": "rust-mcp-server",
-            "args": []
+            "args": ["--log-file", "./target/logs/rust_mcp.log"],
         }
     }
 }
