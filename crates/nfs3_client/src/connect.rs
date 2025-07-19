@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::LazyLock;
 use std::sync::atomic::AtomicU16;
@@ -168,9 +169,11 @@ where
             return Ok((mount_port, nfs3_port));
         }
 
+        let addr = self.host.parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         let io = self
             .connector
-            .connect(&self.host, self.portmapper_port)
+            .connect(SocketAddr::new(addr, self.portmapper_port))
             .await?;
 
         let mut portmapper = portmapper::PortmapperClient::new(io);
@@ -194,18 +197,21 @@ where
     }
 
     async fn connect(&self, port: u16) -> std::io::Result<S> {
+        let addr = self.host.parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        let socket_addr = SocketAddr::new(addr, port);
+        
         if self.connect_from_privileged_port {
-            connect_from_privileged_port(&self.connector, &self.host, port).await
+            connect_from_privileged_port(&self.connector, socket_addr).await
         } else {
-            self.connector.connect(&self.host, port).await
+            self.connector.connect(socket_addr).await
         }
     }
 }
 
 async fn connect_from_privileged_port<C, S>(
     connector: &C,
-    host: &str,
-    port: u16,
+    addr: SocketAddr,
 ) -> std::io::Result<S>
 where
     C: crate::net::Connector<Connection = S>,
@@ -222,7 +228,7 @@ where
         let index = PORT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let local_port = MIN_PORT + (index % (MAX_PORT - MIN_PORT));
 
-        let result = connector.connect_with_port(host, port, local_port).await;
+        let result = connector.connect_with_port(addr, local_port).await;
 
         match &result {
             Err(e) if e.kind() == IoErrorKind::AddrInUse => {

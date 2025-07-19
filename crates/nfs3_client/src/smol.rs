@@ -46,22 +46,19 @@ pub struct SmolConnector;
 impl Connector for SmolConnector {
     type Connection = SmolIo<TcpStream>;
 
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection> {
-        let stream = TcpStream::connect((host, port)).await?;
+    async fn connect(&self, addr: SocketAddr) -> std::io::Result<Self::Connection> {
+        let stream = TcpStream::connect(addr).await?;
         Ok(SmolIo::new(stream))
     }
 
     async fn connect_with_port(
         &self,
-        host: &str,
-        port: u16,
+        addr: SocketAddr,
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
         const EINPROGRESS: i32 = 115;
 
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), local_port);
-        let host = host.parse::<IpAddr>()?;
-        let remote_addr = SocketAddr::new(host, port);
 
         let domain = socket2::Domain::for_address(local_addr);
         let ty = socket2::Type::STREAM;
@@ -69,7 +66,7 @@ impl Connector for SmolConnector {
         let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
         socket.set_nonblocking(true)?;
         socket.bind(&local_addr.into())?;
-        if let Err(err) = socket.connect(&remote_addr.into()) {
+        if let Err(err) = socket.connect(&addr.into()) {
             #[cfg(unix)]
             if err.raw_os_error() != Some(EINPROGRESS) {
                 return Err(err);
