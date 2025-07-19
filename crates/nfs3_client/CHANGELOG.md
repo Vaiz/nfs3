@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.5.0...nfs3_client-v0.6.0) - 2025-07-19
+
+### Added
+
+- [**breaking**] add support for smol runtime ([#104](https://github.com/Vaiz/nfs3/pull/104))
+
 ## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.4.2...nfs3_client-v0.5.0) - 2025-06-29
 
 ### Changes
