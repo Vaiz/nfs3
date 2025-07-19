@@ -1,8 +1,9 @@
 //! Provides wrappers for smol's types
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
 use smol::io::{AsyncRead as SmolAsyncRead, AsyncWrite as SmolAsyncWrite};
 use smol::net::TcpStream;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::net::Connector;
@@ -61,12 +62,12 @@ impl Connector for SmolConnector {
 
         let domain = socket2::Domain::for_address(local_addr);
         let ty = socket2::Type::STREAM;
-        
+
         let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
         socket.set_nonblocking(true)?;
         socket.bind(&local_addr.into())?;
         socket.connect(&remote_addr.into())?;
-        
+
         let std_stream: std::net::TcpStream = socket.into();
         let tcp_stream = TcpStream::try_from(std_stream)?;
         Ok(SmolIo::new(tcp_stream))
