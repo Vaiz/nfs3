@@ -76,9 +76,12 @@ impl Connector for SmolConnector {
                 return Err(err);
             }
         }
-
+        
         let std_stream: std::net::TcpStream = socket.into();
-        let tcp_stream = TcpStream::try_from(std_stream)?;
-        Ok(SmolIo::new(tcp_stream))
+        let async_socket = smol::Async::new_nonblocking(std_stream)?;
+        // The stream becomes writable when connected.
+        async_socket.writable().await?;
+
+        Ok(SmolIo::new(async_socket.into()))
     }
 }
