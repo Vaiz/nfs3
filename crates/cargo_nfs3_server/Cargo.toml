@@ -7,7 +7,7 @@ rust-version.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
-publish = true
+publish = false
 description = "Simple and easy-to-deploy NFSv3 server"
 readme = "README.md"
 
