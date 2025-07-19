@@ -2,6 +2,7 @@
 
 use smol::io::{AsyncRead as SmolAsyncRead, AsyncWrite as SmolAsyncWrite};
 use smol::net::TcpStream;
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::net::Connector;
@@ -45,8 +46,7 @@ impl Connector for SmolConnector {
     type Connection = SmolIo<TcpStream>;
 
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<Self::Connection> {
-        let addr = format!("{host}:{port}");
-        let stream = TcpStream::connect(&addr).await?;
+        let stream = TcpStream::connect((host, port)).await?;
         Ok(SmolIo::new(stream))
     }
 
@@ -56,10 +56,19 @@ impl Connector for SmolConnector {
         port: u16,
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
-        // TODO: Implement proper local port binding for smol
-        // For now, fall back to regular connect. This covers most use cases.
-        // The privileged port binding is mainly needed for some NFS server configurations
-        let _ = local_port; // Suppress unused parameter warning
-        self.connect(host, port).await
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), local_port);
+        let remote_addr = SocketAddr::new(host.parse().unwrap(), port);
+
+        let domain = socket2::Domain::for_address(local_addr);
+        let ty = socket2::Type::STREAM;
+        
+        let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
+        socket.set_nonblocking(true)?;
+        socket.bind(&local_addr.into())?;
+        socket.connect(&remote_addr.into())?;
+        
+        let std_stream: std::net::TcpStream = socket.into();
+        let tcp_stream = TcpStream::try_from(std_stream)?;
+        Ok(SmolIo::new(tcp_stream))
     }
 }
