@@ -57,8 +57,11 @@ impl Connector for SmolConnector {
         port: u16,
         local_port: u16,
     ) -> std::io::Result<Self::Connection> {
+        const EINPROGRESS: i32 = 115;
+
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), local_port);
-        let remote_addr = SocketAddr::new(host.parse().unwrap(), port);
+        let host = host.parse::<IpAddr>()?;
+        let remote_addr = SocketAddr::new(host, port);
 
         let domain = socket2::Domain::for_address(local_addr);
         let ty = socket2::Type::STREAM;
@@ -68,7 +71,7 @@ impl Connector for SmolConnector {
         socket.bind(&local_addr.into())?;
         if let Err(err) = socket.connect(&remote_addr.into()) {
             #[cfg(unix)]
-            if err.raw_os_error() != Some(libc::EINPROGRESS) {
+            if err.raw_os_error() != Some(EINPROGRESS) {
                 return Err(err);
             }
             #[cfg(windows)]
