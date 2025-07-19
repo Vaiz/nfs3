@@ -66,7 +66,16 @@ impl Connector for SmolConnector {
         let socket = socket2::Socket::new(domain, ty, Some(socket2::Protocol::TCP))?;
         socket.set_nonblocking(true)?;
         socket.bind(&local_addr.into())?;
-        socket.connect(&remote_addr.into())?;
+        if let Err(err) = socket.connect(&remote_addr.into()) {
+            #[cfg(unix)]
+            if err.raw_os_error() != Some(libc::EINPROGRESS) {
+                return Err(err);
+            }
+            #[cfg(windows)]
+            if err.kind() != std::io::ErrorKind::WouldBlock {
+                return Err(err);
+            }
+        }
 
         let std_stream: std::net::TcpStream = socket.into();
         let tcp_stream = TcpStream::try_from(std_stream)?;
