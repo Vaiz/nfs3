@@ -169,7 +169,9 @@ where
             return Ok((mount_port, nfs3_port));
         }
 
-        let addr = self.host.parse()
+        let addr = self
+            .host
+            .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         let io = self
             .connector
@@ -197,10 +199,12 @@ where
     }
 
     async fn connect(&self, port: u16) -> std::io::Result<S> {
-        let addr = self.host.parse()
+        let addr = self
+            .host
+            .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         let socket_addr = SocketAddr::new(addr, port);
-        
+
         if self.connect_from_privileged_port {
             connect_from_privileged_port(&self.connector, socket_addr).await
         } else {
@@ -209,10 +213,7 @@ where
     }
 }
 
-async fn connect_from_privileged_port<C, S>(
-    connector: &C,
-    addr: SocketAddr,
-) -> std::io::Result<S>
+async fn connect_from_privileged_port<C, S>(connector: &C, addr: SocketAddr) -> std::io::Result<S>
 where
     C: crate::net::Connector<Connection = S>,
     S: AsyncRead + AsyncWrite,
