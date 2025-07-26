@@ -70,8 +70,8 @@ impl Dir {
             rdev: specdata3::default(),
             fsid: 0,
             fileid: id.into(),
-            atime: current_time.clone(),
-            mtime: current_time.clone(),
+            atime: current_time,
+            mtime: current_time,
             ctime: current_time,
         };
         Self {
@@ -120,8 +120,8 @@ impl File {
             rdev: specdata3::default(),
             fsid: 0,
             fileid: id.into(),
-            atime: current_time.clone(),
-            mtime: current_time.clone(),
+            atime: current_time,
+            mtime: current_time,
             ctime: current_time,
         };
         Self {
@@ -267,7 +267,7 @@ impl Entry {
         }
     }
 
-    fn set_attr(&mut self, setattr: sattr3) {
+    fn set_attr(&mut self, setattr: &sattr3) {
         {
             let attr = self.attr_mut();
             match setattr.atime {
@@ -621,7 +621,7 @@ impl MemFs {
             .into();
 
         let mut file = Entry::new_file(filename, newid, content, verf.unwrap_or_default());
-        file.set_attr(attr);
+        file.set_attr(&attr);
         let attr = file.attr().clone();
 
         let mut fs_lock = self.fs.write().expect("lock is poisoned");
@@ -749,7 +749,7 @@ impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
         let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        entry.set_attr(setattr);
+        entry.set_attr(&setattr);
         Ok(entry.attr().clone())
     }
 
