@@ -128,7 +128,7 @@ pub type SETATTR3res = Nfs3Result<SETATTR3resok, SETATTR3resfail>;
 pub type SYMLINK3res = Nfs3Result<SYMLINK3resok, SYMLINK3resfail>;
 pub type WRITE3res = Nfs3Result<WRITE3resok, WRITE3resfail>;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, XdrCodec)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, XdrCodec)]
 pub enum Nfs3Option<T: Pack + Unpack> {
     #[xdr(1)]
     Some(T),
@@ -565,8 +565,9 @@ pub enum createhow3 {
     EXCLUSIVE(createverf3),
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum createmode3 {
+    #[default]
     UNCHECKED = 0,
     GUARDED = 1,
     EXCLUSIVE = 2,
@@ -632,7 +633,7 @@ pub struct fattr3 {
     pub ctime: nfstime3,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Debug, Clone, Eq, PartialEq, XdrCodec)]
 pub struct filename3<'a>(pub Opaque<'a>);
 
 impl From<Vec<u8>> for filename3<'static> {
@@ -676,8 +677,9 @@ impl PartialEq<[u8]> for filename3<'_> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum ftype3 {
+    #[default]
     NF3REG = 1,
     NF3DIR = 2,
     NF3BLK = 3,
@@ -746,8 +748,9 @@ impl PartialEq<[u8]> for nfspath3<'_> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum nfsstat3 {
+    #[default]
     NFS3_OK = 0,
     NFS3ERR_PERM = 1,
     NFS3ERR_NOENT = 2,
@@ -816,7 +819,7 @@ impl std::fmt::Display for nfsstat3 {
     }
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfstime3 {
     pub seconds: u32,
     pub nseconds: u32,
@@ -844,7 +847,7 @@ pub struct sattr3 {
     pub mtime: set_mtime,
 }
 
-#[derive(Default, Debug, Clone, XdrCodec)]
+#[derive(Default, Debug, Clone, Copy, XdrCodec)]
 pub enum set_atime {
     #[default]
     #[xdr(0)]
@@ -855,7 +858,7 @@ pub enum set_atime {
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Default, Debug, Clone, XdrCodec)]
+#[derive(Default, Debug, Clone, Copy, XdrCodec)]
 pub enum set_mtime {
     #[default]
     #[xdr(0)]
@@ -872,8 +875,9 @@ pub struct specdata3 {
     pub specdata2: u32,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum stable_how {
+    #[default]
     UNSTABLE = 0,
     DATA_SYNC = 1,
     FILE_SYNC = 2,
@@ -885,14 +889,15 @@ pub struct symlinkdata3<'a> {
     pub symlink_data: nfspath3<'a>,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum time_how {
+    #[default]
     DONT_CHANGE = 0,
     SET_TO_SERVER_TIME = 1,
     SET_TO_CLIENT_TIME = 2,
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, Clone, Copy, XdrCodec)]
 pub struct wcc_attr {
     pub size: size3,
     pub mtime: nfstime3,
@@ -905,7 +910,7 @@ pub struct wcc_data {
     pub after: post_op_attr,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct writeverf3(pub [u8; NFS3_WRITEVERFSIZE]);
 
 pub type cookie3 = u64;
@@ -978,8 +983,9 @@ impl Unpack for mknoddata3 {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, XdrCodec)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, XdrCodec)]
 pub enum NFS_PROGRAM {
+    #[default]
     NFSPROC3_NULL = 0,
     NFSPROC3_GETATTR = 1,
     NFSPROC3_SETATTR = 2,
