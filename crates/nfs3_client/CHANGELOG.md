@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.6.0...nfs3_client-v0.7.0) - 2025-07-26
 
-### Fixed
+### Changes
 
 - enable future_not_send lint ([#109](https://github.com/Vaiz/nfs3/pull/109))
 
