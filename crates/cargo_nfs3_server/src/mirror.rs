@@ -14,12 +14,12 @@ use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
 use nfs3_server::nfs3_types::nfs3::{
-    cookie3, createverf3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3,
-    post_op_attr, post_op_fh3, sattr3,
+    cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
+    sattr3,
 };
 use nfs3_server::vfs::{
-    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator,
+    DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem,
+    ReadDirIterator, ReadDirPlusIterator,
 };
 use string_ext::{FromOsString, IntoOsString};
 use tokio::fs::{File, OpenOptions};
@@ -444,7 +444,7 @@ impl NfsReadFileSystem for MirrorFs {
         &self,
         dirid: &Self::Handle,
         start_after: cookie3,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         let dirid = dirid.as_u64();
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
@@ -742,10 +742,11 @@ impl MirrorFsIterator {
             index: 0,
         })
     }
-}
 
-impl ReadDirPlusIterator for MirrorFsIterator {
-    async fn next(&mut self) -> NextResult<entryplus3<'static>> {
+    async fn visit_next_entry<R>(
+        &mut self,
+        f: fn(fileid3, &FSEntry, filename3<'static>) -> R,
+    ) -> NextResult<R> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -769,18 +770,33 @@ impl ReadDirPlusIterator for MirrorFsIterator {
 
             let name = fsmap.sym_to_fname(&fs_entry.name);
             debug!("\t --- {fileid} {name:?}");
-            let attr = fs_entry.fsmeta.clone();
-
-            let entryplus = entryplus3 {
-                fileid,
-                name: filename3::from_os_string(name),
-                cookie: fileid,
-                name_attributes: post_op_attr::Some(attr),
-                name_handle: post_op_fh3::None,
-            };
-
-            return NextResult::Ok(entryplus);
+            let name = filename3::from_os_string(name);
+            return NextResult::Ok(f(fileid, fs_entry, name));
         }
+    }
+}
+
+impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
+        self.visit_next_entry(|fileid, fs_entry, name| DirEntryPlus {
+            fileid,
+            name,
+            cookie: fileid,
+            name_attributes: post_op_attr::Some(fs_entry.fsmeta.clone()),
+            handle: Some(FileHandleU64::new(fileid)),
+        })
+        .await
+    }
+}
+
+impl ReadDirIterator for MirrorFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntry> {
+        self.visit_next_entry(|fileid, _fs_entry, name| DirEntry {
+            fileid,
+            name,
+            cookie: fileid,
+        })
+        .await
     }
 }
 

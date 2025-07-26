@@ -364,7 +364,8 @@ where
     let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
     loop {
         match iter.next().await {
-            NextResult::Ok(entry) => {
+            NextResult::Ok(dir_entry_plus) => {
+                let entry = dir_entry_plus.into_entry(&context.file_handle_converter);
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");

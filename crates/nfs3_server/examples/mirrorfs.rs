@@ -14,13 +14,12 @@ use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
 use nfs3_server::nfs3_types::nfs3::{
-    cookie3, createverf3, entryplus3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3,
-    post_op_attr, post_op_fh3, sattr3,
+    cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
+    sattr3,
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
-    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator,
+    DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
 };
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -462,22 +461,11 @@ impl NfsReadFileSystem for MirrorFs {
         Ok((buf, eof))
     }
 
-    async fn readdir(
-        &self,
-        dirid: &Self::Handle,
-        start_after: cookie3,
-    ) -> Result<impl ReadDirIterator, nfsstat3> {
-        let dirid = dirid.as_u64();
-        let fsmap = Arc::clone(&self.fsmap);
-        let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
-        Ok(iter)
-    }
-
     async fn readdirplus(
         &self,
         dirid: &Self::Handle,
         start_after: cookie3,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         let dirid = dirid.as_u64();
         let fsmap = Arc::clone(&self.fsmap);
         let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
@@ -773,8 +761,8 @@ impl MirrorFsIterator {
     }
 }
 
-impl ReadDirPlusIterator for MirrorFsIterator {
-    async fn next(&mut self) -> NextResult<entryplus3<'static>> {
+impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -800,15 +788,15 @@ impl ReadDirPlusIterator for MirrorFsIterator {
             debug!("\t --- {fileid} {name:?}");
             let attr = fs_entry.fsmeta.clone();
 
-            let entryplus = entryplus3 {
+            let entry_plus = DirEntryPlus {
                 fileid,
                 name: filename3::from_os_string(name),
                 cookie: fileid,
                 name_attributes: post_op_attr::Some(attr),
-                name_handle: post_op_fh3::None,
+                handle: Some(FileHandleU64::new(fileid)),
             };
 
-            return NextResult::Ok(entryplus);
+            return NextResult::Ok(entry_plus);
         }
     }
 }

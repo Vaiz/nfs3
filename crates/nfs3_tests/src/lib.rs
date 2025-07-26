@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
-use nfs3_server::vfs::adapter::ReadOnlyAdapter;
+use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 use nfs3_types::nfs3::{Nfs3Result, nfs_fh3, nfsstat3};
 use nfs3_types::xdr_codec::Opaque;
 pub use rpc_tests::RpcTestContext;

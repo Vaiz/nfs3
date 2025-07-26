@@ -5,8 +5,8 @@ use std::path::Path;
 
 use intaglio::Symbol;
 use nfs3_server::vfs::{
-    FileHandle, FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator, VFSCapabilities,
+    DirEntry, DirEntryPlus, FileHandle, FileHandleU64, NfsFileSystem, NfsReadFileSystem,
+    ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
 };
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
@@ -205,7 +205,7 @@ impl<FS: wasmer_vfs::FileSystem> NfsReadFileSystem for WasmFs<FS> {
         &self,
         dirid: &Self::Handle,
         start_after: cookie3,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         Err::<ReadDirStubIterator, nfsstat3>(nfsstat3::NFS3ERR_NOTSUPP)
     }
 
@@ -400,8 +400,14 @@ fn io_error_to_nfsstat3(err: std::io::Error) -> nfsstat3 {
 
 struct ReadDirStubIterator;
 
-impl ReadDirPlusIterator for ReadDirStubIterator {
-    async fn next(&mut self) -> nfs3_server::vfs::NextResult<entryplus3<'static>> {
+impl ReadDirPlusIterator<FileHandleU64> for ReadDirStubIterator {
+    async fn next(&mut self) -> nfs3_server::vfs::NextResult<DirEntryPlus<FileHandleU64>> {
+        nfs3_server::vfs::NextResult::Err(nfsstat3::NFS3ERR_NOTSUPP)
+    }
+}
+
+impl ReadDirIterator for ReadDirStubIterator {
+    async fn next(&mut self) -> nfs3_server::vfs::NextResult<DirEntry> {
         nfs3_server::vfs::NextResult::Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
 }

@@ -1,11 +1,15 @@
-//! An adapter for read-only NFS filesystems.
+//! Adapters VFS types
 
+mod iterator;
+
+pub use iterator::ReadDirPlusToReadDir;
 use nfs3_types::nfs3::{Nfs3Option, fattr3, filename3, nfsstat3, sattr3};
 
 use super::{
-    NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
-    VFSCapabilities,
+    DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
+    ReadDirPlusIterator, VFSCapabilities,
 };
+use crate::vfs::FileHandle;
 
 /// An internal adapter that allows to reuse the same code with `ReadOnly` filesystems.
 ///
@@ -71,7 +75,7 @@ where
         &self,
         dirid: &Self::Handle,
         cookie3: u64,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         self.0
             .readdirplus(dirid, cookie3)
             .await
@@ -165,11 +169,12 @@ where
 #[derive(Debug)]
 struct ReadOnlyIterator<T>(T);
 
-impl<T> ReadDirPlusIterator for ReadOnlyIterator<T>
+impl<H, T> ReadDirPlusIterator<H> for ReadOnlyIterator<T>
 where
-    T: ReadDirPlusIterator,
+    H: FileHandle,
+    T: ReadDirPlusIterator<H>,
 {
-    async fn next(&mut self) -> NextResult<nfs3_types::nfs3::entryplus3<'static>> {
+    async fn next(&mut self) -> NextResult<DirEntryPlus<H>> {
         let mut result = self.0.next().await;
         if let NextResult::Ok(entry) = &mut result {
             if let Nfs3Option::Some(attr) = &mut entry.name_attributes {
