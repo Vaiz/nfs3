@@ -22,7 +22,7 @@ __test_reexports = [] # should not be used outside nfs3_tests crate
 memfs = []
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.5.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.4.1" }
 
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
