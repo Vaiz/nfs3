@@ -38,7 +38,7 @@ impl<I: ReadDirPlusIterator<H>, H: FileHandle> ReadDirIterator for ReadDirPlusTo
 
 #[cfg(test)]
 mod tests {
-    use nfs3_types::nfs3::{filename3, post_op_attr};
+    use nfs3_types::nfs3::filename3;
 
     use super::*;
     use crate::vfs::{DirEntryPlus, FileHandleU64};
@@ -74,14 +74,14 @@ mod tests {
                 fileid: 1,
                 name: filename3::from(b"file1.txt".to_vec()),
                 cookie: 100,
-                name_attributes: post_op_attr::None,
+                name_attributes: None,
                 name_handle: Some(42u64.into()),
             },
             DirEntryPlus {
                 fileid: 2,
                 name: filename3::from(b"file2.txt".to_vec()),
                 cookie: 200,
-                name_attributes: post_op_attr::None,
+                name_attributes: None,
                 name_handle: None,
             },
         ];
