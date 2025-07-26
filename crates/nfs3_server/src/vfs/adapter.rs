@@ -173,8 +173,8 @@ where
 {
     async fn next(&mut self) -> NextResult<DirEntryPlus<H>> {
         let mut result = self.0.next().await;
-        if let NextResult::Ok(ref mut entry) = result {
-            if let Nfs3Option::Some(ref mut attr) = entry.name_attributes {
+        if let NextResult::Ok(entry) = &mut result {
+            if let Nfs3Option::Some(attr) = &mut entry.name_attributes {
                 remove_write_permissions(attr);
             }
         }

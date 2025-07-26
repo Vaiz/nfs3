@@ -743,7 +743,10 @@ impl MirrorFsIterator {
         })
     }
 
-    async fn visit_next_entry<R>(&mut self, f: fn(fileid3, &FSEntry, filename3<'static>) -> R) -> NextResult<R> {
+    async fn visit_next_entry<R>(
+        &mut self,
+        f: fn(fileid3, &FSEntry, filename3<'static>) -> R,
+    ) -> NextResult<R> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -775,14 +778,12 @@ impl MirrorFsIterator {
 
 impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        self.visit_next_entry(|fileid, fs_entry, name| {
-            DirEntryPlus {
-                fileid,
-                name,
-                cookie: fileid,
-                name_attributes: post_op_attr::Some(fs_entry.fsmeta.clone()),
-                handle: Some(FileHandleU64::new(fileid)),
-            }
+        self.visit_next_entry(|fileid, fs_entry, name| DirEntryPlus {
+            fileid,
+            name,
+            cookie: fileid,
+            name_attributes: post_op_attr::Some(fs_entry.fsmeta.clone()),
+            handle: Some(FileHandleU64::new(fileid)),
         })
         .await
     }
@@ -790,12 +791,10 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
 
 impl ReadDirIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        self.visit_next_entry(|fileid, _fs_entry, name| {
-            DirEntry {
-                fileid,
-                name,
-                cookie: fileid,
-            }
+        self.visit_next_entry(|fileid, _fs_entry, name| DirEntry {
+            fileid,
+            name,
+            cookie: fileid,
         })
         .await
     }
