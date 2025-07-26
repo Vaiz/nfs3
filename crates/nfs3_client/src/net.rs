@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// Trait for connecting to an endpoint.
-pub trait Connector: Send {
+pub trait Connector: Send + Sync {
     type Connection: AsyncRead + AsyncWrite + Send;
 
     /// Connect to a remote address.

@@ -62,7 +62,7 @@ where
     ) -> Result<R, Error>
     where
         R: Unpack,
-        C: Pack,
+        C: Pack + Send + Sync,
     {
         let call = call_body {
             rpcvers: RPC_VERSION_2,
@@ -84,7 +84,7 @@ where
 
     async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), Error>
     where
-        T: Pack,
+        T: Pack + Send + Sync,
     {
         let total_len = msg.packed_size() + args.packed_size();
         if total_len % 4 != 0 {

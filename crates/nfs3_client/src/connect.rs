@@ -216,7 +216,7 @@ where
 async fn connect_from_privileged_port<C, S>(connector: &C, addr: SocketAddr) -> std::io::Result<S>
 where
     C: crate::net::Connector<Connection = S>,
-    S: AsyncRead + AsyncWrite,
+    S: AsyncRead + AsyncWrite + Send,
 {
     use std::io::{Error as IoError, ErrorKind as IoErrorKind};
     const MIN_PORT: u16 = 300;
