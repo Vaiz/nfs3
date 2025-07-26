@@ -81,7 +81,7 @@ where
     async fn call<C, R>(&mut self, proc: MOUNT_PROGRAM, args: C) -> Result<R, crate::error::Error>
     where
         R: Unpack,
-        C: Pack,
+        C: Pack + Send + Sync,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, &args)

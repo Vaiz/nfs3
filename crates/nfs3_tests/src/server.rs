@@ -4,7 +4,7 @@ use nfs3_server::test_reexports::RPCContext;
 use nfs3_server::vfs::NfsFileSystem;
 use nfs3_types::nfs3::nfs_fh3;
 
-pub struct Server<IO, FS> {
+pub struct Server<IO, FS: NfsFileSystem> {
     context: RPCContext<FS>,
     io: IO,
 }

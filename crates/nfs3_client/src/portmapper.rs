@@ -57,7 +57,7 @@ where
     async fn call<C, R>(&mut self, proc: PMAP_PROG, args: C) -> Result<R, crate::error::Error>
     where
         R: Unpack,
-        C: Pack,
+        C: Pack + Send + Sync,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, &args)

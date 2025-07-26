@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::handle::FileHandleConverter;
 
-pub struct RPCContext<T> {
+pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
     pub local_port: u16,
     pub client_addr: String,
     pub auth: auth_unix,
@@ -19,7 +19,10 @@ pub struct RPCContext<T> {
 }
 
 #[allow(clippy::missing_fields_in_debug)]
-impl<T> fmt::Debug for RPCContext<T> {
+impl<T> fmt::Debug for RPCContext<T>
+where
+    T: crate::vfs::NfsFileSystem,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("RPCContext")
             .field("local_port", &self.local_port)
@@ -32,7 +35,10 @@ impl<T> fmt::Debug for RPCContext<T> {
     }
 }
 
-impl<T> Clone for RPCContext<T> {
+impl<T> Clone for RPCContext<T>
+where
+    T: crate::vfs::NfsFileSystem,
+{
     fn clone(&self) -> Self {
         Self {
             local_port: self.local_port,

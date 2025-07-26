@@ -66,9 +66,9 @@ where
     }
 
     match prog {
-        portmap::PROGRAM => portmap_handlers::handle_portmap(&context, message).await,
-        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(&context, message).await,
-        nfs::PROGRAM => nfs_handlers::handle_nfs(&context, message).await,
+        portmap::PROGRAM => portmap_handlers::handle_portmap(context, message).await,
+        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message).await,
+        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
@@ -82,9 +82,9 @@ where
 
 /// Handles the RPC message and returns a result. The handler is an async function
 pub async fn handle<I, O, T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     mut message: IncomingRpcMessage,
-    handler: impl AsyncFnOnce(&RPCContext<T>, u32, I) -> O,
+    handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
 ) -> anyhow::Result<HandleResult>
 where
     I: Unpack,
