@@ -28,8 +28,8 @@ mod iterator;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 use nfs3_types::nfs3::{
-    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    nfspath3, nfstime3, sattr3,
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3,
+    nfspath3, nfstime3, post_op_attr, sattr3,
 };
 
 use crate::units::{GIBIBYTE, MEBIBYTE};

@@ -1,11 +1,9 @@
-pub use crate::nfs3_types::nfs3::{
-    cookie3, fileid3, filename3, nfsstat3, post_op_attr, post_op_fh3,
-};
+pub use crate::nfs3_types::nfs3::{cookie3, fattr3, fileid3, filename3, nfsstat3};
 
 /// Same as `entry3`
 pub type DirEntry = entry3<'static>;
 
-use crate::nfs3_types::nfs3::{entry3, entryplus3};
+use crate::nfs3_types::nfs3::{entry3, entryplus3, post_op_attr, post_op_fh3};
 use crate::vfs::FileHandle;
 use crate::vfs::handle::FileHandleConverter;
 
@@ -15,8 +13,8 @@ pub struct DirEntryPlus<H: FileHandle> {
     pub fileid: fileid3,
     pub name: filename3<'static>,
     pub cookie: cookie3,
-    pub name_attributes: post_op_attr,
-    pub handle: Option<H>,
+    pub name_attributes: Option<fattr3>,
+    pub name_handle: Option<H>,
 }
 
 impl<H: FileHandle> DirEntryPlus<H> {
@@ -25,8 +23,10 @@ impl<H: FileHandle> DirEntryPlus<H> {
             fileid: self.fileid,
             name: self.name,
             cookie: self.cookie,
-            name_attributes: self.name_attributes,
-            name_handle: self.handle.map_or(post_op_fh3::None, |h| {
+            name_attributes: self
+                .name_attributes
+                .map_or(post_op_attr::None, post_op_attr::Some),
+            name_handle: self.name_handle.map_or(post_op_fh3::None, |h| {
                 post_op_fh3::Some(converter.fh_to_nfs(&h))
             }),
         }

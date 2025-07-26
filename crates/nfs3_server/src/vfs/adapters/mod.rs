@@ -3,7 +3,7 @@
 mod iterator;
 
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::nfs3::{Nfs3Option, fattr3, filename3, nfsstat3, sattr3};
+use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3};
 
 use super::{
     DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
@@ -177,7 +177,7 @@ where
     async fn next(&mut self) -> NextResult<DirEntryPlus<H>> {
         let mut result = self.0.next().await;
         if let NextResult::Ok(entry) = &mut result {
-            if let Nfs3Option::Some(attr) = &mut entry.name_attributes {
+            if let Some(attr) = &mut entry.name_attributes {
                 remove_write_permissions(attr);
             }
         }

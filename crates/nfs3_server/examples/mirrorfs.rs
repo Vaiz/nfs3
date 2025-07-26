@@ -14,8 +14,7 @@ use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
 use nfs3_server::nfs3_types::nfs3::{
-    cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, post_op_attr,
-    sattr3,
+    cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
@@ -792,8 +791,8 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
                 fileid,
                 name: filename3::from_os_string(name),
                 cookie: fileid,
-                name_attributes: post_op_attr::Some(attr),
-                handle: Some(FileHandleU64::new(fileid)),
+                name_attributes: Some(attr),
+                name_handle: Some(FileHandleU64::new(fileid)),
             };
 
             return NextResult::Ok(entry_plus);
