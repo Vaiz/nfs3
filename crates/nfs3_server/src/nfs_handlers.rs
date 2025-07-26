@@ -365,16 +365,7 @@ where
     loop {
         match iter.next().await {
             NextResult::Ok(dir_entry_plus) => {
-                let entry = entryplus3 {
-                    fileid: dir_entry_plus.fileid,
-                    name: dir_entry_plus.name,
-                    cookie: dir_entry_plus.cookie,
-                    name_attributes: dir_entry_plus.name_attributes,
-                    name_handle: match dir_entry_plus.handle {
-                        Some(h) => post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&h)),
-                        None => post_op_fh3::None,
-                    },
-                };
+                let entry = dir_entry_plus.into_entry(&context.file_handle_converter);
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");

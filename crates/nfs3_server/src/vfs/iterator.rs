@@ -3,11 +3,12 @@ pub use nfs3_types::nfs3::{
 };
 
 use crate::vfs::FileHandle;
+use crate::vfs::handle::FileHandleConverter;
 
-/// Directory entry without handle (for readdir operation)
+/// Same as `entry3`
 pub type DirEntry = entry3<'static>;
 
-/// Directory entry plus with Handle instead of nfs3_fh  
+/// Represents `entryplus3` with Handle instead of nfs3_fh
 #[derive(Debug)]
 pub struct DirEntryPlus<H: FileHandle> {
     pub fileid: fileid3,
@@ -15,6 +16,21 @@ pub struct DirEntryPlus<H: FileHandle> {
     pub cookie: cookie3,
     pub name_attributes: post_op_attr,
     pub handle: Option<H>,
+}
+
+impl<H: FileHandle> DirEntryPlus<H> {
+    pub(crate) fn into_entry(self, converter: &FileHandleConverter) -> entryplus3<'static> {
+        entryplus3 {
+            fileid: self.fileid,
+            name: self.name,
+            cookie: self.cookie,
+            name_attributes: self.name_attributes,
+            name_handle: match self.handle {
+                Some(h) => post_op_fh3::Some(converter.fh_to_nfs(&h)),
+                None => post_op_fh3::None,
+            },
+        }
+    }
 }
 
 /// Represents the result of `next()` in [`ReadDirIterator`] and [`ReadDirPlusIterator`].
