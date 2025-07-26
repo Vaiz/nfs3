@@ -44,9 +44,6 @@ pub enum NextResult<T> {
 }
 
 /// Iterator for [`NfsReadFileSystem::readdir`](super::NfsReadFileSystem::readdir)
-///
-/// All [`ReadDirPlusIterator`] implementations automatically implement `ReadDirIterator`.
-/// In general, there is no need to implement `ReadDirIterator` directly.
 pub trait ReadDirIterator: Send + Sync {
     /// Returns the next entry in the directory.
     fn next(&mut self) -> impl Future<Output = NextResult<DirEntry>> + Send;

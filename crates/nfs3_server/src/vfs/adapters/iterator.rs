@@ -1,7 +1,10 @@
 use crate::vfs::{DirEntry, FileHandle, NextResult, ReadDirIterator, ReadDirPlusIterator};
 
-/// Wrapper that transforms a [`ReadDirPlusIterator`] into a [`ReadDirIterator`]
-/// by stripping the handle and attributes from directory entries.
+/// Transforms a [`ReadDirPlusIterator`] into a [`ReadDirIterator`].
+///
+/// This adapter allows to have only one Iterator type for both `readdir` and `readdirplus`
+/// methods. The default implementation of [`NfsReadFileSystem::readdir`] calls `readdirplus`
+/// internally and then adapts the result to `ReadDirIterator`.
 pub struct ReadDirPlusToReadDir<H: FileHandle, I: ReadDirPlusIterator<H>> {
     inner: I,
     _phantom: std::marker::PhantomData<H>,
