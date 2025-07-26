@@ -579,7 +579,7 @@ impl MemFs {
             if entry.is_dir {
                 fs.add_dir(id, name)?;
             } else {
-                fs.add_file(id, name, sattr3::default(), entry.content, None)?;
+                fs.add_file(id, name, &sattr3::default(), entry.content, None)?;
             }
         }
 
@@ -611,7 +611,7 @@ impl MemFs {
         &self,
         dirid: FileHandleU64,
         filename: filename3<'static>,
-        attr: sattr3,
+        attr: &sattr3,
         content: Vec<u8>,
         verf: Option<createverf3>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
@@ -621,7 +621,7 @@ impl MemFs {
             .into();
 
         let mut file = Entry::new_file(filename, newid, content, verf.unwrap_or_default());
-        file.set_attr(&attr);
+        file.set_attr(attr);
         let attr = file.attr().clone();
 
         let mut fs_lock = self.fs.write().expect("lock is poisoned");
@@ -772,7 +772,7 @@ impl NfsFileSystem for MemFs {
         filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_file(*dirid, filename.clone_to_owned(), attr, Vec::new(), None)
+        self.add_file(*dirid, filename.clone_to_owned(), &attr, Vec::new(), None)
     }
 
     async fn create_exclusive(
@@ -784,7 +784,7 @@ impl NfsFileSystem for MemFs {
         self.add_file(
             *dirid,
             filename.clone_to_owned(),
-            sattr3::default(),
+            &sattr3::default(),
             Vec::new(),
             Some(createverf),
         )
