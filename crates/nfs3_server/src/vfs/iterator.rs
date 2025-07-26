@@ -9,7 +9,7 @@ use crate::vfs::handle::FileHandleConverter;
 pub type DirEntry = entry3<'static>;
 
 /// Represents `entryplus3` with Handle instead of `nfs3_fh`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirEntryPlus<H: FileHandle> {
     pub fileid: fileid3,
     pub name: filename3<'static>,
@@ -114,7 +114,8 @@ mod tests {
             if self.index >= self.entries.len() {
                 NextResult::Eof
             } else {
-                let entry = self.entries.remove(0);
+                let entry = self.entries[self.index].clone();
+                self.index += 1;
                 NextResult::Ok(entry)
             }
         }
