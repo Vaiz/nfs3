@@ -664,7 +664,7 @@ where
     let ctime;
     let before = match get_wcc_attr(context, &id).await {
         Ok(wccattr) => {
-            ctime = wccattr.ctime.clone();
+            ctime = wccattr.ctime;
             pre_op_attr::Some(wccattr)
         }
         Err(stat) => {

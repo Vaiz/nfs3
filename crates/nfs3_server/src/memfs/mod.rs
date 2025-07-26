@@ -70,8 +70,8 @@ impl Dir {
             rdev: specdata3::default(),
             fsid: 0,
             fileid: id.into(),
-            atime: current_time.clone(),
-            mtime: current_time.clone(),
+            atime: current_time,
+            mtime: current_time,
             ctime: current_time,
         };
         Self {
@@ -120,8 +120,8 @@ impl File {
             rdev: specdata3::default(),
             fsid: 0,
             fileid: id.into(),
-            atime: current_time.clone(),
-            mtime: current_time.clone(),
+            atime: current_time,
+            mtime: current_time,
             ctime: current_time,
         };
         Self {
@@ -267,7 +267,7 @@ impl Entry {
         }
     }
 
-    fn set_attr(&mut self, setattr: sattr3) {
+    fn set_attr(&mut self, setattr: &sattr3) {
         {
             let attr = self.attr_mut();
             match setattr.atime {
@@ -579,7 +579,7 @@ impl MemFs {
             if entry.is_dir {
                 fs.add_dir(id, name)?;
             } else {
-                fs.add_file(id, name, sattr3::default(), entry.content, None)?;
+                fs.add_file(id, name, &sattr3::default(), entry.content, None)?;
             }
         }
 
@@ -611,7 +611,7 @@ impl MemFs {
         &self,
         dirid: FileHandleU64,
         filename: filename3<'static>,
-        attr: sattr3,
+        attr: &sattr3,
         content: Vec<u8>,
         verf: Option<createverf3>,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
@@ -749,7 +749,7 @@ impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
         let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        entry.set_attr(setattr);
+        entry.set_attr(&setattr);
         Ok(entry.attr().clone())
     }
 
@@ -772,7 +772,7 @@ impl NfsFileSystem for MemFs {
         filename: &filename3<'_>,
         attr: sattr3,
     ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_file(*dirid, filename.clone_to_owned(), attr, Vec::new(), None)
+        self.add_file(*dirid, filename.clone_to_owned(), &attr, Vec::new(), None)
     }
 
     async fn create_exclusive(
@@ -784,7 +784,7 @@ impl NfsFileSystem for MemFs {
         self.add_file(
             *dirid,
             filename.clone_to_owned(),
-            sattr3::default(),
+            &sattr3::default(),
             Vec::new(),
             Some(createverf),
         )
