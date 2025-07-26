@@ -25,10 +25,9 @@ impl<H: FileHandle> DirEntryPlus<H> {
             name: self.name,
             cookie: self.cookie,
             name_attributes: self.name_attributes,
-            name_handle: match self.handle {
-                Some(h) => post_op_fh3::Some(converter.fh_to_nfs(&h)),
-                None => post_op_fh3::None,
-            },
+            name_handle: self.handle.map_or(post_op_fh3::None, |h| {
+                post_op_fh3::Some(converter.fh_to_nfs(&h))
+            }),
         }
     }
 }
