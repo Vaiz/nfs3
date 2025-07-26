@@ -29,7 +29,7 @@ pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 use nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    filename3, nfspath3, nfstime3, post_op_attr, sattr3,
+    nfspath3, nfstime3, sattr3,
 };
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -102,13 +102,20 @@ pub trait NfsReadFileSystem: Send + Sync {
         count: u32,
     ) -> impl Future<Output = Result<(Vec<u8>, bool), nfsstat3>> + Send;
 
-    /// Simple version of readdir.
-    /// Only need to return filename and id
+    /// Simple version of readdir. Only need to return filename and id
+    ///
+    /// By default it uses `readdirplus` method to create an iterator
     fn readdir(
         &self,
         dirid: &Self::Handle,
         cookie: u64,
-    ) -> impl Future<Output = Result<impl ReadDirIterator, nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<impl ReadDirIterator, nfsstat3>> + Send {
+        async move {
+            self.readdirplus(dirid, cookie)
+                .await
+                .map(|iter| ReadDirPlusToReadDirAdapter::new(iter))
+        }
+    }
 
     /// Returns the contents of a directory with pagination.
     /// Directory listing should be deterministic.
@@ -121,7 +128,7 @@ pub trait NfsReadFileSystem: Send + Sync {
         &self,
         dirid: &Self::Handle,
         cookie: u64,
-    ) -> impl Future<Output = Result<impl ReadDirPlusIterator, nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3>> + Send;
 
     /// Reads a symlink
     fn readlink(

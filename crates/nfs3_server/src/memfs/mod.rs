@@ -36,14 +36,14 @@ use std::time::SystemTime;
 
 pub use config::MemFsConfig;
 use nfs3_types::nfs3::{
-    self as nfs, cookie3, createverf3, entryplus3, fattr3, filename3, ftype3, nfspath3, nfsstat3,
-    nfstime3, sattr3, specdata3,
+    self as nfs, cookie3, createverf3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
+    sattr3, specdata3,
 };
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
-    FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator,
+    DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem,
+    ReadDirIterator, ReadDirPlusIterator,
 };
 
 const DELIMITER: char = '/';
@@ -730,7 +730,7 @@ impl NfsReadFileSystem for MemFs {
         &self,
         dirid: &FileHandleU64,
         cookie: u64,
-    ) -> Result<impl ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<impl ReadDirPlusIterator<FileHandleU64>, nfsstat3> {
         let iter = Self::make_iter(self, *dirid, cookie)?;
         Ok(iter)
     }
@@ -847,10 +847,8 @@ impl MemFsIterator {
             index: 0,
         }
     }
-}
 
-impl ReadDirPlusIterator for MemFsIterator {
-    async fn next(&mut self) -> NextResult<entryplus3<'static>> {
+    async fn visit_next_entry<R>(&mut self, f: fn(FileHandleU64, &Entry) -> R) -> NextResult<R> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -865,15 +863,34 @@ impl ReadDirPlusIterator for MemFsIterator {
                 tracing::warn!("entry not found: {id}");
                 continue;
             };
+            return NextResult::Ok(f(id, entry));
+        }
+    }
+}
+
+impl ReadDirIterator for MemFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntry> {
+        self.visit_next_entry(|id, entry| DirEntry {
+            fileid: id.into(),
+            name: entry.name().clone_to_owned(),
+            cookie: id.into(),
+        })
+        .await
+    }
+}
+
+impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
+        self.visit_next_entry(|id, entry| {
             let attr = entry.attr().clone();
-            // let fh = DEFAULT_FH_CONVERTER.id_to_fh(id);
-            return NextResult::Ok(entryplus3 {
+            DirEntryPlus {
                 fileid: id.into(),
                 name: entry.name().clone_to_owned(),
                 cookie: id.into(),
                 name_attributes: nfs::post_op_attr::Some(attr),
-                name_handle: nfs::Nfs3Option::None,
-            });
-        }
+                handle: Some(id),
+            }
+        })
+        .await
     }
 }
