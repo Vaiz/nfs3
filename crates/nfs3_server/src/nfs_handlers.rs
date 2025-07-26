@@ -15,7 +15,7 @@ use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 
 #[allow(clippy::enum_glob_use)]
 pub async fn handle_nfs<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
@@ -79,12 +79,12 @@ macro_rules! fh_to_id {
     };
 }
 
-async fn nfsproc3_null<T>(_: &RPCContext<T>, _: u32, _: Void) -> Void {
+async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void {
     Void
 }
 
 async fn nfsproc3_getattr<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     getattr3args: GETATTR3args,
 ) -> GETATTR3res
@@ -107,7 +107,7 @@ where
 }
 
 async fn nfsproc3_lookup<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     lookup3args: LOOKUP3args<'_>,
 ) -> LOOKUP3res
@@ -135,7 +135,7 @@ where
 }
 
 async fn nfsproc3_read<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     read3args: READ3args,
 ) -> READ3res<'static>
@@ -166,7 +166,7 @@ where
     }
 }
 
-async fn nfsproc3_fsinfo<T>(context: &RPCContext<T>, xid: u32, args: FSINFO3args) -> FSINFO3res
+async fn nfsproc3_fsinfo<T>(context: RPCContext<T>, xid: u32, args: FSINFO3args) -> FSINFO3res
 where
     T: NfsFileSystem,
 {
@@ -189,7 +189,7 @@ where
     }
 }
 
-async fn nfsproc3_access<T>(context: &RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
+async fn nfsproc3_access<T>(context: RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
 where
     T: NfsFileSystem,
 {
@@ -210,11 +210,7 @@ where
     })
 }
 
-async fn nfsproc3_pathconf<T>(
-    context: &RPCContext<T>,
-    xid: u32,
-    args: PATHCONF3args,
-) -> PATHCONF3res
+async fn nfsproc3_pathconf<T>(context: RPCContext<T>, xid: u32, args: PATHCONF3args) -> PATHCONF3res
 where
     T: NfsFileSystem,
 {
@@ -237,7 +233,7 @@ where
     PATHCONF3res::Ok(res)
 }
 
-async fn nfsproc3_fsstat<T>(context: &RPCContext<T>, xid: u32, args: FSSTAT3args) -> FSSTAT3res
+async fn nfsproc3_fsstat<T>(context: RPCContext<T>, xid: u32, args: FSSTAT3args) -> FSSTAT3res
 where
     T: NfsFileSystem,
 {
@@ -260,7 +256,7 @@ where
 }
 
 async fn nfsproc3_readdirplus<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     args: READDIRPLUS3args,
 ) -> READDIRPLUS3res<'static>
@@ -408,7 +404,7 @@ where
 
 #[allow(clippy::too_many_lines)]
 async fn nfsproc3_readdir<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     readdir3args: READDIR3args,
 ) -> READDIR3res<'static>
@@ -519,7 +515,7 @@ where
 }
 
 async fn nfsproc3_write<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     write3args: WRITE3args<'_>,
 ) -> WRITE3res
@@ -541,7 +537,7 @@ where
     }
 
     let id = fh_to_id!(context, &write3args.file);
-    let before = get_wcc_attr(context, &id)
+    let before = get_wcc_attr(&context, &id)
         .await
         .map_or(pre_op_attr::None, pre_op_attr::Some);
 
@@ -578,7 +574,7 @@ where
 }
 
 #[allow(clippy::collapsible_if, clippy::too_many_lines)]
-async fn nfsproc3_create<T>(context: &RPCContext<T>, xid: u32, args: CREATE3args<'_>) -> CREATE3res
+async fn nfsproc3_create<T>(context: RPCContext<T>, xid: u32, args: CREATE3args<'_>) -> CREATE3res
 where
     T: NfsFileSystem,
 {
@@ -593,7 +589,7 @@ where
     debug!("nfsproc3_create({xid}, {dirops:?}, {createhow:?})");
     let dirid = fh_to_id!(context, &dirops.dir);
     // get the object attributes before the write
-    let before = match get_wcc_attr(context, &dirid).await {
+    let before = match get_wcc_attr(&context, &dirid).await {
         Ok(wccattr) => pre_op_attr::Some(wccattr),
         Err(stat) => {
             warn!("Cannot stat directory {xid} -> {stat}");
@@ -652,7 +648,7 @@ where
     }
 }
 
-async fn nfsproc3_setattr<T>(context: &RPCContext<T>, xid: u32, args: SETATTR3args) -> SETATTR3res
+async fn nfsproc3_setattr<T>(context: RPCContext<T>, xid: u32, args: SETATTR3args) -> SETATTR3res
 where
     T: NfsFileSystem,
 {
@@ -663,7 +659,7 @@ where
 
     let id = fh_to_id!(context, &args.object);
     let ctime;
-    let before = match get_wcc_attr(context, &id).await {
+    let before = match get_wcc_attr(&context, &id).await {
         Ok(wccattr) => {
             ctime = wccattr.ctime;
             pre_op_attr::Some(wccattr)
@@ -714,7 +710,7 @@ where
     }
 }
 
-async fn nfsproc3_remove<T>(context: &RPCContext<T>, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res
+async fn nfsproc3_remove<T>(context: RPCContext<T>, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res
 where
     T: NfsFileSystem,
 {
@@ -724,7 +720,7 @@ where
     }
 
     let dirid = fh_to_id!(context, &args.object.dir);
-    let before = match get_wcc_attr(context, &dirid).await {
+    let before = match get_wcc_attr(&context, &dirid).await {
         Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} -> {stat}");
@@ -754,7 +750,7 @@ where
 }
 
 async fn nfsproc3_rename<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     args: RENAME3args<'_, '_>,
 ) -> RENAME3res
@@ -768,7 +764,7 @@ where
 
     let from_dirid = fh_to_id!(context, &args.from.dir);
     let to_dirid = fh_to_id!(context, &args.to.dir);
-    let pre_from_dir_attr = match get_wcc_attr(context, &from_dirid).await {
+    let pre_from_dir_attr = match get_wcc_attr(&context, &from_dirid).await {
         Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat source directory {xid} --> {stat}");
@@ -776,7 +772,7 @@ where
         }
     };
 
-    let pre_to_dir_attr = match get_wcc_attr(context, &to_dirid).await {
+    let pre_to_dir_attr = match get_wcc_attr(&context, &to_dirid).await {
         Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat target directory {xid} --> {stat}");
@@ -820,7 +816,7 @@ where
         }
     }
 }
-async fn nfsproc3_mkdir<T>(context: &RPCContext<T>, xid: u32, args: MKDIR3args<'_>) -> MKDIR3res
+async fn nfsproc3_mkdir<T>(context: RPCContext<T>, xid: u32, args: MKDIR3args<'_>) -> MKDIR3res
 where
     T: NfsFileSystem,
 {
@@ -831,7 +827,7 @@ where
 
     let dirid = fh_to_id!(context, &args.where_.dir);
 
-    let before = match get_wcc_attr(context, &dirid).await {
+    let before = match get_wcc_attr(&context, &dirid).await {
         Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} --> {stat}");
@@ -860,7 +856,7 @@ where
 }
 
 async fn nfsproc3_symlink<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     args: SYMLINK3args<'_>,
 ) -> SYMLINK3res
@@ -874,7 +870,7 @@ where
 
     let dirid = fh_to_id!(context, &args.where_.dir);
 
-    let pre_dir_attr = match get_wcc_attr(context, &dirid).await {
+    let pre_dir_attr = match get_wcc_attr(&context, &dirid).await {
         Ok(v) => pre_op_attr::Some(v),
         Err(stat) => {
             warn!("Cannot stat directory {xid} --> {stat}");
@@ -919,7 +915,7 @@ where
 }
 
 async fn nfsproc3_readlink<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     xid: u32,
     args: READLINK3args,
 ) -> READLINK3res<'static>

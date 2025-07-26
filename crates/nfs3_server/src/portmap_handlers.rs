@@ -9,7 +9,7 @@ use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::vfs::NfsFileSystem;
 
 pub async fn handle_portmap<T>(
-    context: &RPCContext<T>,
+    context: RPCContext<T>,
     message: IncomingRpcMessage,
 ) -> anyhow::Result<HandleResult>
 where
@@ -39,13 +39,13 @@ where
     }
 }
 
-async fn pmapproc_null<T>(_: &RPCContext<T>, xid: u32, _: Void) -> Void {
+async fn pmapproc_null<T>(_: RPCContext<T>, xid: u32, _: Void) -> Void {
     debug!("pmapproc_null({})", xid);
     Void
 }
 
 // We fake a portmapper here. And always direct back to the same host port
-async fn pmapproc_getport<T>(context: &RPCContext<T>, xid: u32, m: mapping) -> u32 {
+async fn pmapproc_getport<T>(context: RPCContext<T>, xid: u32, m: mapping) -> u32 {
     debug!("pmapproc_getport({xid}, {m:?})");
     let port = u32::from(context.local_port);
     debug!("\t{xid} --> {port}");
