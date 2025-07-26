@@ -1,11 +1,11 @@
-pub use crate::nfs3_types::nfs3::{cookie3, fattr3, fileid3, filename3, nfsstat3};
+use crate::nfs3_types::nfs3::{
+    cookie3, entry3, entryplus3, fattr3, fileid3, filename3, nfsstat3, post_op_attr, post_op_fh3,
+};
+use crate::vfs::FileHandle;
+use crate::vfs::handle::FileHandleConverter;
 
 /// Same as `entry3`
 pub type DirEntry = entry3<'static>;
-
-use crate::nfs3_types::nfs3::{entry3, entryplus3, post_op_attr, post_op_fh3};
-use crate::vfs::FileHandle;
-use crate::vfs::handle::FileHandleConverter;
 
 /// Represents `entryplus3` with Handle instead of `nfs3_fh`
 #[derive(Debug, Clone)]
