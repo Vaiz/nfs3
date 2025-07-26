@@ -742,10 +742,8 @@ impl MirrorFsIterator {
             index: 0,
         })
     }
-}
 
-impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
-    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
+    async fn visit_next_entry<R>(&mut self, f: fn(fileid3, &FSEntry, filename3<'static>) -> R) -> NextResult<R> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -769,55 +767,37 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
 
             let name = fsmap.sym_to_fname(&fs_entry.name);
             debug!("\t --- {fileid} {name:?}");
-            let attr = fs_entry.fsmeta.clone();
-
-            let entry_plus = DirEntryPlus {
-                fileid,
-                name: filename3::from_os_string(name),
-                cookie: fileid,
-                name_attributes: post_op_attr::Some(attr),
-                handle: Some(FileHandleU64::new(fileid)),
-            };
-
-            return NextResult::Ok(entry_plus);
+            let name = filename3::from_os_string(name);
+            return NextResult::Ok(f(fileid, fs_entry, name));
         }
+    }
+}
+
+impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
+        self.visit_next_entry(|fileid, fs_entry, name| {
+            DirEntryPlus {
+                fileid,
+                name,
+                cookie: fileid,
+                name_attributes: post_op_attr::Some(fs_entry.fsmeta.clone()),
+                handle: Some(FileHandleU64::new(fileid)),
+            }
+        })
+        .await
     }
 }
 
 impl ReadDirIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        loop {
-            if self.index >= self.entries.len() {
-                return NextResult::Eof;
-            }
-
-            let fileid = self.entries[self.index];
-            self.index += 1;
-
-            let fsmap = self.fsmap.read().await;
-            let fs_entry = match fsmap.find_entry(fileid) {
-                Ok(entry) => entry,
-                Err(nfsstat3::NFS3ERR_NOENT) => {
-                    // skip missing entries
-                    debug!("missing entry {fileid}");
-                    continue;
-                }
-                Err(e) => {
-                    return NextResult::Err(e);
-                }
-            };
-
-            let name = fsmap.sym_to_fname(&fs_entry.name);
-            debug!("\t --- {fileid} {name:?}");
-
-            let entry = DirEntry {
+        self.visit_next_entry(|fileid, _fs_entry, name| {
+            DirEntry {
                 fileid,
-                name: filename3::from_os_string(name),
+                name,
                 cookie: fileid,
-            };
-
-            return NextResult::Ok(entry);
-        }
+            }
+        })
+        .await
     }
 }
 
