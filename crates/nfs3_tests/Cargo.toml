@@ -10,9 +10,9 @@ license.workspace = true
 publish = false # this crate contains only tests
 
 [dependencies]
-nfs3_client = { path = "../nfs3_client", version = "0.6.0", features = ["tokio"] }
-nfs3_server = { path = "../nfs3_server", version = "0.7.0", features = ["__test_reexports", "memfs"] }
-nfs3_types = { path = "../nfs3_types", version = "0.4.0" }
+nfs3_client = { path = "../nfs3_client", version = "0.7.0", features = ["tokio"] }
+nfs3_server = { path = "../nfs3_server", version = "0.8.0", features = ["__test_reexports", "memfs"] }
+nfs3_types = { path = "../nfs3_types", version = "0.5.0" }
 
 anyhow.workspace = true
 intaglio.workspace = true

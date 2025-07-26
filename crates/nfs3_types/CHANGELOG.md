@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.4.0...nfs3_types-v0.5.0) - 2025-07-26
+
+### Added
+
+- [**breaking**] remove nfs_fh3 from Iterator trait ([#108](https://github.com/Vaiz/nfs3/pull/108))
+- implement additional traits for nfs types ([#106](https://github.com/Vaiz/nfs3/pull/106))
+
 ## [0.4.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.3.4...nfs3_types-v0.4.0) - 2025-06-29
 
 ### Changes

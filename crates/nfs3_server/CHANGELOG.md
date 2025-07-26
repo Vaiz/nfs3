@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.7.0...nfs3_server-v0.8.0) - 2025-07-26
+
+### Added
+
+- [**breaking**] remove nfs_fh3 from Iterator trait ([#108](https://github.com/Vaiz/nfs3/pull/108))
+- implement additional traits for nfs types ([#106](https://github.com/Vaiz/nfs3/pull/106))
+
+### Fixed
+
+- small fixes ([#110](https://github.com/Vaiz/nfs3/pull/110))
+- enable future_not_send lint ([#109](https://github.com/Vaiz/nfs3/pull/109))
+
+### Other
+
+- [**breaking**] remove duplicated reexports ([#111](https://github.com/Vaiz/nfs3/pull/111))
+
 ## [0.7.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.6.0...nfs3_server-v0.7.0) - 2025-06-29
 
 ### Changes
