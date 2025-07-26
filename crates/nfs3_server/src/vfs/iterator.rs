@@ -147,7 +147,7 @@ mod tests {
         match readdir_iter.next().await {
             NextResult::Ok(entry) => {
                 assert_eq!(entry.fileid, 1);
-                assert_eq!(&entry.name.0, &filename3::from(b"file1.txt".to_vec()).0);
+                assert_eq!(&entry.name.as_ref(), b"file1.txt");
                 assert_eq!(entry.cookie, 100);
             }
             _ => panic!("Expected Ok result"),
@@ -157,7 +157,7 @@ mod tests {
         match readdir_iter.next().await {
             NextResult::Ok(entry) => {
                 assert_eq!(entry.fileid, 2);
-                assert_eq!(&entry.name.0, &filename3::from(b"file2.txt".to_vec()).0);
+                assert_eq!(&entry.name.as_ref(), b"file2.txt");
                 assert_eq!(entry.cookie, 200);
             }
             _ => panic!("Expected Ok result"),
