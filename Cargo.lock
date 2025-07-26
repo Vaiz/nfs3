@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_client"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "nfs3_types",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_server"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "filetime",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_types"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nfs3_macros",
 ]

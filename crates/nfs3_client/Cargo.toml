@@ -1,6 +1,6 @@
 [package]
 name = "nfs3_client"
-version = "0.6.0"
+version = "0.7.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,7 +16,7 @@ tokio = ["dep:tokio"]
 smol = ["dep:smol", "dep:socket2"]
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.4.0" }
+nfs3_types = { path = "../nfs3_types", version = "0.4.1" }
 
 rand.workspace = true
 socket2 = { workspace = true, optional = true }
