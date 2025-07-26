@@ -793,7 +793,7 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
                 name: filename3::from_os_string(name),
                 cookie: fileid,
                 name_attributes: post_op_attr::Some(attr),
-                handle: Some(FileHandleU64::new(fileid)),
+                name_handle: Some(FileHandleU64::new(fileid)),
             };
 
             return NextResult::Ok(entry_plus);

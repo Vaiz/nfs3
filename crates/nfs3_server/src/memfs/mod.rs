@@ -887,7 +887,7 @@ impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
                 name: entry.name().clone_to_owned(),
                 cookie: id.into(),
                 name_attributes: nfs::post_op_attr::Some(attr),
-                handle: Some(id),
+                name_handle: Some(id),
             }
         })
     }

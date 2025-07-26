@@ -783,7 +783,7 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
             name,
             cookie: fileid,
             name_attributes: post_op_attr::Some(fs_entry.fsmeta.clone()),
-            handle: Some(FileHandleU64::new(fileid)),
+            name_handle: Some(FileHandleU64::new(fileid)),
         })
         .await
     }

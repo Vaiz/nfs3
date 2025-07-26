@@ -16,7 +16,7 @@ pub struct DirEntryPlus<H: FileHandle> {
     pub name: filename3<'static>,
     pub cookie: cookie3,
     pub name_attributes: post_op_attr,
-    pub handle: Option<H>,
+    pub name_handle: Option<H>,
 }
 
 impl<H: FileHandle> DirEntryPlus<H> {
@@ -26,7 +26,7 @@ impl<H: FileHandle> DirEntryPlus<H> {
             name: self.name,
             cookie: self.cookie,
             name_attributes: self.name_attributes,
-            name_handle: self.handle.map_or(post_op_fh3::None, |h| {
+            name_handle: self.name_handle.map_or(post_op_fh3::None, |h| {
                 post_op_fh3::Some(converter.fh_to_nfs(&h))
             }),
         }

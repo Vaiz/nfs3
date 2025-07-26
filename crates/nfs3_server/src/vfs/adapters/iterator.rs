@@ -75,14 +75,14 @@ mod tests {
                 name: filename3::from(b"file1.txt".to_vec()),
                 cookie: 100,
                 name_attributes: post_op_attr::None,
-                handle: Some(42u64.into()),
+                name_handle: Some(42u64.into()),
             },
             DirEntryPlus {
                 fileid: 2,
                 name: filename3::from(b"file2.txt".to_vec()),
                 cookie: 200,
                 name_attributes: post_op_attr::None,
-                handle: None,
+                name_handle: None,
             },
         ];
 
