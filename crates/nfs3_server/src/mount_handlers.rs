@@ -136,11 +136,7 @@ where
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export<T>(
-    context: RPCContext<T>,
-    _: u32,
-    _: Void,
-) -> exports<'static, 'static>
+async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> exports<'static, 'static>
 where
     T: crate::vfs::NfsFileSystem,
 {
