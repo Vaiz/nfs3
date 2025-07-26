@@ -113,7 +113,7 @@ pub trait NfsReadFileSystem: Send + Sync {
         async move {
             self.readdirplus(dirid, cookie)
                 .await
-                .map(|iter| ReadDirPlusToReadDirAdapter::new(iter))
+                .map(ReadDirPlusToReadDirAdapter::new)
         }
     }
 

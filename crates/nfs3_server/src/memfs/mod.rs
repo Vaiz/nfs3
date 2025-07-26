@@ -848,7 +848,7 @@ impl MemFsIterator {
         }
     }
 
-    async fn visit_next_entry<R>(&mut self, f: fn(FileHandleU64, &Entry) -> R) -> NextResult<R> {
+    fn visit_next_entry<R>(&mut self, f: fn(FileHandleU64, &Entry) -> R) -> NextResult<R> {
         loop {
             if self.index >= self.entries.len() {
                 return NextResult::Eof;
@@ -875,7 +875,6 @@ impl ReadDirIterator for MemFsIterator {
             name: entry.name().clone_to_owned(),
             cookie: id.into(),
         })
-        .await
     }
 }
 
@@ -891,6 +890,5 @@ impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
                 handle: Some(id),
             }
         })
-        .await
     }
 }

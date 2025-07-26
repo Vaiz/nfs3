@@ -8,7 +8,7 @@ use crate::vfs::handle::FileHandleConverter;
 /// Same as `entry3`
 pub type DirEntry = entry3<'static>;
 
-/// Represents `entryplus3` with Handle instead of nfs3_fh
+/// Represents `entryplus3` with Handle instead of `nfs3_fh`
 #[derive(Debug)]
 pub struct DirEntryPlus<H: FileHandle> {
     pub fileid: fileid3,
@@ -67,7 +67,7 @@ pub struct ReadDirPlusToReadDirAdapter<H: FileHandle, I: ReadDirPlusIterator<H>>
 
 impl<H: FileHandle, I: ReadDirPlusIterator<H>> ReadDirPlusToReadDirAdapter<H, I> {
     /// Create a new adapter that wraps a [`ReadDirPlusIterator`]
-    pub fn new(inner: I) -> Self {
+    pub const fn new(inner: I) -> Self {
         Self {
             inner,
             _phantom: std::marker::PhantomData,
