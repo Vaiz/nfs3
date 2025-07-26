@@ -3,7 +3,7 @@ use crate::vfs::{DirEntry, FileHandle, NextResult, ReadDirIterator, ReadDirPlusI
 /// Transforms a [`ReadDirPlusIterator`] into a [`ReadDirIterator`].
 ///
 /// This adapter allows to have only one Iterator type for both `readdir` and `readdirplus`
-/// methods. The default implementation of [`NfsReadFileSystem::readdir`](1) calls `readdirplus`
+/// methods. The default implementation of [`NfsReadFileSystem::readdir`][1] calls `readdirplus`
 /// internally and then adapts the result to `ReadDirIterator`.
 ///
 /// [1]: crate::vfs::NfsReadFileSystem::readdir
