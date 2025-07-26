@@ -52,7 +52,10 @@ where
     }
 }
 
-async fn mountproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void {
+async fn mountproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
+where
+    T: crate::vfs::NfsFileSystem,
+{
     Void
 }
 
@@ -137,7 +140,10 @@ async fn mountproc3_export<T>(
     context: RPCContext<T>,
     _: u32,
     _: Void,
-) -> exports<'static, 'static> {
+) -> exports<'static, 'static>
+where
+    T: crate::vfs::NfsFileSystem,
+{
     let export_name = context.export_name.as_bytes().to_vec();
     List(vec![export_node {
         ex_dir: dirpath(Opaque::owned(export_name)),
@@ -145,7 +151,10 @@ async fn mountproc3_export<T>(
     }])
 }
 
-async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void {
+async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void
+where
+    T: crate::vfs::NfsFileSystem,
+{
     let utf8path = match std::str::from_utf8(&path.0) {
         Ok(path) => path,
         Err(e) => {
@@ -161,7 +170,10 @@ async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>)
     Void
 }
 
-pub async fn mountproc3_umnt_all<T>(context: RPCContext<T>, xid: u32, _: Void) -> Void {
+pub async fn mountproc3_umnt_all<T>(context: RPCContext<T>, xid: u32, _: Void) -> Void
+where
+    T: crate::vfs::NfsFileSystem,
+{
     debug!("mountproc3_umnt_all({xid})");
     if let Some(ref chan) = context.mount_signal {
         let _ = chan.send(false).await;

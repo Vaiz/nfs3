@@ -79,7 +79,10 @@ macro_rules! fh_to_id {
     };
 }
 
-async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void {
+async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
+where
+    T: crate::vfs::NfsFileSystem,
+{
     Void
 }
 
