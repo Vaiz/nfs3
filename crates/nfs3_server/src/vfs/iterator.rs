@@ -5,12 +5,7 @@ pub use nfs3_types::nfs3::{
 use crate::vfs::FileHandle;
 
 /// Directory entry without handle (for readdir operation)
-#[derive(Debug)]
-pub struct DirEntry {
-    pub fileid: fileid3,
-    pub name: filename3<'static>,
-    pub cookie: cookie3,
-}
+pub type DirEntry = entry3<'static>;
 
 /// Directory entry plus with Handle instead of nfs3_fh  
 #[derive(Debug)]

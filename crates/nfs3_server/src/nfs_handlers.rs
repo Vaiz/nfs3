@@ -486,12 +486,7 @@ where
     let eof;
     loop {
         match iter.next().await {
-            NextResult::Ok(dir_entry) => {
-                let entry = entry3 {
-                    fileid: dir_entry.fileid,
-                    name: dir_entry.name,
-                    cookie: dir_entry.cookie,
-                };
+            NextResult::Ok(entry) => {
                 let result = entries.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
