@@ -1,5 +1,8 @@
-//! An adapter for read-only NFS filesystems.
+//! Adapters VFS types
 
+mod iterator;
+
+pub use iterator::ReadDirPlusToReadDir;
 use nfs3_types::nfs3::{Nfs3Option, fattr3, filename3, nfsstat3, sattr3};
 
 use super::{

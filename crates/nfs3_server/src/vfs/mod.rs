@@ -21,7 +21,7 @@
 //!
 //!  The 0 fileid is reserved and should not be used
 
-pub mod adapter;
+pub mod adapters;
 pub(crate) mod handle;
 mod iterator;
 
@@ -33,6 +33,7 @@ use nfs3_types::nfs3::{
 };
 
 use crate::units::{GIBIBYTE, MEBIBYTE};
+use crate::vfs::adapters::ReadDirPlusToReadDir;
 
 /// What capabilities are supported
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,7 +114,7 @@ pub trait NfsReadFileSystem: Send + Sync {
         async move {
             self.readdirplus(dirid, cookie)
                 .await
-                .map(ReadDirPlusToReadDirAdapter::new)
+                .map(ReadDirPlusToReadDir::new)
         }
     }
 

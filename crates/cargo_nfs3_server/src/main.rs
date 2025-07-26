@@ -4,7 +4,7 @@ use clap::Parser;
 use nfs3_server::memfs::MemFs;
 use nfs3_server::tcp::NFSTcp;
 use nfs3_server::vfs::NfsFileSystem;
-use nfs3_server::vfs::adapter::ReadOnlyAdapter;
+use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 use tracing_appender::non_blocking::WorkerGuard;
 
 mod logging;

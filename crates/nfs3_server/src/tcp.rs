@@ -13,7 +13,7 @@ use crate::context::RPCContext;
 use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
-use crate::vfs::adapter::ReadOnlyAdapter;
+use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
 /// A NFS Tcp Connection Handler
