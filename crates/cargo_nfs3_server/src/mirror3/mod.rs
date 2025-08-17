@@ -116,29 +116,37 @@ impl Cache {
     fn lookup_by_id(
         &mut self,
         parent_id: &FileHandleU64,
-        name: Cow<OsStr>,
+        name: &Cow<OsStr>,
+        check_path: bool,
     ) -> Result<FileHandleU64, nfsstat3> {
         let parent = self.symbols_path(parent_id)?.clone();
-        self.lookup(&parent, name)
+        self.lookup(&parent, name, check_path)
     }
 
-    fn lookup(&mut self, parent: &SymbolsPath, name: Cow<OsStr>) -> Result<FileHandleU64, nfsstat3> {
+    /// To avoid cache thrashing, we only insert the new entry if object exists
+    fn lookup(
+        &mut self,
+        parent: &SymbolsPath,
+        name: &Cow<OsStr>,
+        check_path: bool,
+    ) -> Result<FileHandleU64, nfsstat3> {
         use std::collections::hash_map::Entry;
         use std::sync::atomic::Ordering;
 
-        let symbol = self.symbols.insert_or_resolve(name);
+        let symbol = self.symbols.insert_or_resolve(name.clone());
         let mut entry = self.path_to_id.entry(parent.join(symbol));
         match entry {
             Entry::Occupied(occupied_entry) => Ok(*occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
-                // to avoid cache thrashing, we only insert the new entry if object exists
-                let mut test_path = self.root.join(self.symbols.resolve_path(&parent));
-                if !test_path.exists() {
-                    return Err(nfsstat3::NFS3ERR_BADHANDLE);
-                }
-                test_path.push(name);
-                if !test_path.exists() {
-                    return Err(nfsstat3::NFS3ERR_NOENT);
+                if check_path {
+                    let mut test_path = self.root.join(self.symbols.resolve_path(&parent));
+                    if !test_path.exists() {
+                        return Err(nfsstat3::NFS3ERR_BADHANDLE);
+                    }
+                    test_path.push(name);
+                    if !test_path.exists() {
+                        return Err(nfsstat3::NFS3ERR_NOENT);
+                    }
                 }
                 let id = FileHandleU64::new(self.next_id.fetch_add(1, Ordering::Relaxed));
                 vacant_entry.insert(id);
@@ -171,8 +179,7 @@ impl NfsReadFileSystem for Fs {
     ) -> Result<Self::Handle, nfsstat3> {
         let mut lock = self.inner.write().unwrap();
         lock.cache
-            .lookup_by_id(dirid, filename.to_os_str())
-            .ok_or(nfsstat3::NFS3ERR_BADHANDLE)
+            .lookup_by_id(dirid, &filename.as_os_str().into(), true)
     }
 
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
