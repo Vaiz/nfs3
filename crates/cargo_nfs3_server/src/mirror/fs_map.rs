@@ -21,6 +21,18 @@ pub(super) struct FSEntry {
     pub(super) children: Option<Vec<fileid3>>,
 }
 
+impl FSEntry {
+    fn new(path: Vec<Symbol>, id: fileid3, fsmeta: &std::fs::Metadata) -> Self {
+        let meta = metadata_to_fattr3(id, fsmeta);
+        Self {
+            name: path,
+            fsmeta: meta.clone(),
+            children_meta: meta,
+            children: None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct FSMap {
     pub(super) root: PathBuf,
@@ -43,12 +55,8 @@ pub(super) enum RefreshResult {
 impl FSMap {
     pub(super) fn new(root: PathBuf) -> Self {
         // create root entry
-        let root_entry = FSEntry {
-            name: Vec::new(),
-            fsmeta: metadata_to_fattr3(1, &root.metadata().unwrap()),
-            children_meta: metadata_to_fattr3(1, &root.metadata().unwrap()),
-            children: None,
-        };
+        let root_meta = root.metadata().expect("Failed to get root metadata");
+        let root_entry = FSEntry::new(Vec::new(), 1, &root_meta);
         Self {
             root,
             next_fileid: AtomicU64::new(1),
@@ -212,14 +220,8 @@ impl FSMap {
         } else {
             // path does not exist
             let next_id = self.next_fileid.fetch_add(1, Ordering::Relaxed);
-            let metafattr = metadata_to_fattr3(next_id, meta);
-            let new_entry = FSEntry {
-                name: fullpath.clone(),
-                fsmeta: metafattr.clone(),
-                children_meta: metafattr,
-                children: None,
-            };
             debug!("creating new entry {:?}: {:?}", next_id, meta);
+            let new_entry = FSEntry::new(fullpath.clone(), next_id, meta);
             self.id_to_path.insert(next_id, new_entry);
             self.path_to_id.insert(fullpath.clone(), next_id);
             next_id
