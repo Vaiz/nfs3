@@ -11,6 +11,7 @@ mod logging;
 mod memfs;
 mod mirror;
 mod mirror2;
+mod mirror3;
 
 /// CLI tool for the `nfs3_server`
 #[allow(clippy::struct_excessive_bools)]
