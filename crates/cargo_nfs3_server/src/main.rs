@@ -10,6 +10,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 mod logging;
 mod memfs;
 mod mirror;
+mod mirror2;
 
 /// CLI tool for the `nfs3_server`
 #[derive(Parser, Debug)]
@@ -38,6 +39,10 @@ struct Args {
     /// Use an in-memory filesystem
     #[arg(long)]
     memfs: bool,
+
+    /// Use MirrorFs2 (caches only file names for handle resolution)
+    #[arg(long)]
+    mirrorfs2: bool,
 
     /// Log level (default is "info")
     #[arg(long, default_value = "info")]
@@ -75,17 +80,33 @@ async fn main() {
             .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
 
         assert!(Path::new(path).exists(), "path [{path}] does not exist",);
-        let mirror_fs = mirror::MirrorFs::new(path);
-        if args.readonly {
-            start_server(
-                bind_addr,
-                export_path,
-                ReadOnlyAdapter::new(mirror_fs),
-                guards,
-            )
-            .await;
+
+        if args.mirrorfs2 {
+            let mirror_fs2 = mirror2::MirrorFs2::new(path);
+            if args.readonly {
+                start_server(
+                    bind_addr,
+                    export_path,
+                    ReadOnlyAdapter::new(mirror_fs2),
+                    guards,
+                )
+                .await;
+            } else {
+                start_server(bind_addr, export_path, mirror_fs2, guards).await;
+            }
         } else {
-            start_server(bind_addr, export_path, mirror_fs, guards).await;
+            let mirror_fs = mirror::MirrorFs::new(path);
+            if args.readonly {
+                start_server(
+                    bind_addr,
+                    export_path,
+                    ReadOnlyAdapter::new(mirror_fs),
+                    guards,
+                )
+                .await;
+            } else {
+                start_server(bind_addr, export_path, mirror_fs, guards).await;
+            }
         }
     }
 }
