@@ -1,13 +1,15 @@
 #![allow(unused)] // FIXME
-#![allow(clippy::unwrap_used)] // For experimental code
+#![allow(clippy::unwrap_used)] // FIXME
+// FIXME: map IO errors to nfsstat3
+
+mod iterator;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, RwLock, atomic::AtomicU64};
 
 use intaglio::{Symbol, path};
 use nfs3_server::fs_util::metadata_to_fattr3;
@@ -20,6 +22,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
 use crate::mirror::string_ext::{FromOsString, IntoOsString};
+use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
 
 pub struct OsStrRef<'a>(Cow<'a, OsStr>);
 
@@ -96,6 +99,7 @@ impl SymbolsTable {
     }
 }
 
+#[derive(Debug)]
 pub struct Cache {
     root: PathBuf,
     symbols: SymbolsTable,
@@ -178,22 +182,25 @@ impl Cache {
     }
 }
 
+#[derive(Debug)]
 pub struct FsInner {
-    root: PathBuf,
     cache: Cache,
 }
 
+#[derive(Debug, Clone)]
 pub struct Fs {
-    inner: std::sync::Arc<std::sync::RwLock<FsInner>>,
+    root: PathBuf,
+    inner: Arc<RwLock<FsInner>>,
 }
 
 impl Fs {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
         let cache = Cache::new(root.clone());
-        let fs_inner = FsInner { root, cache };
+        let fs_inner = FsInner { cache };
         Self {
-            inner: std::sync::Arc::new(std::sync::RwLock::new(fs_inner)),
+            root,
+            inner: Arc::new(RwLock::new(fs_inner)),
         }
     }
 }
@@ -217,10 +224,10 @@ impl NfsReadFileSystem for Fs {
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
         let path = {
             let mut lock = self.inner.write().unwrap();
-            let path = lock.cache.handle_to_path(id.as_u64().into())?;
-            lock.root.join(&path)
+            lock.cache.handle_to_path(id.as_u64().into())?
         };
 
+        let path = self.root.join(&path);
         let metadata = tokio::fs::symlink_metadata(&path)
             .await
             .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
@@ -237,10 +244,10 @@ impl NfsReadFileSystem for Fs {
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let path = {
             let mut lock = self.inner.write().unwrap();
-            let path = lock.cache.handle_to_path(id.as_u64().into())?;
-            lock.root.join(&path)
+            lock.cache.handle_to_path(id.as_u64().into())?
         };
 
+        let path = self.root.join(&path);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
         let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
         let mut start = offset;
@@ -260,21 +267,31 @@ impl NfsReadFileSystem for Fs {
         Ok((buf, eof))
     }
 
+    async fn readdir(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+    ) -> Result<impl ReadDirIterator, nfsstat3> {
+        Mirror3ReadDirIterator::new(self.root.clone(), Arc::clone(&self.inner), *dirid, cookie)
+            .await
+    }
+
     async fn readdirplus(
         &self,
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
-        Mirror3Iterator::new(Arc::clone(&self.inner), dirid, cookie).await
+        Mirror3ReadDirPlusIterator::new(self.root.clone(), Arc::clone(&self.inner), *dirid, cookie)
+            .await
     }
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
         let path = {
             let mut lock = self.inner.write().unwrap();
-            let path = lock.cache.handle_to_path(id.as_u64().into())?;
-            lock.root.join(&path)
+            lock.cache.handle_to_path(id.as_u64().into())?
         };
 
+        let path = self.root.join(path);
         if path.is_symlink() {
             path.read_link()
                 .map_or(Err(nfsstat3::NFS3ERR_IO), |target| {
@@ -282,133 +299,6 @@ impl NfsReadFileSystem for Fs {
                 })
         } else {
             Err(nfsstat3::NFS3ERR_BADTYPE)
-        }
-    }
-}
-
-pub struct Mirror3Iterator {
-    inner: std::sync::Arc<std::sync::RwLock<FsInner>>,
-    entries: Vec<(FileHandleU64, std::ffi::OsString)>,
-    index: usize,
-}
-
-impl Mirror3Iterator {
-    async fn new(
-        inner: std::sync::Arc<std::sync::RwLock<FsInner>>,
-        dirid: &FileHandleU64,
-        cookie: u64,
-    ) -> Result<Self, nfsstat3> {
-        let dir_path = {
-            let mut lock = inner.write().unwrap();
-            let path = lock.cache.handle_to_path(*dirid)?;
-            lock.root.join(&path)
-        };
-
-        // Check if it's a directory
-        let metadata = tokio::fs::symlink_metadata(&dir_path)
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
-        if !metadata.is_dir() {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        }
-
-        // Read directory entries
-        let mut read_dir = tokio::fs::read_dir(&dir_path)
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-
-        let mut entries = Vec::new();
-        while let Some(entry) = read_dir
-            .next_entry()
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?
-        {
-            let name = entry.file_name();
-            // Create handle for this entry
-            let handle = {
-                let mut lock = inner.write().unwrap();
-                // Use file name directly to create a new ID
-                let parent_symbols = lock.cache.symbols_path(*dirid)?.clone();
-                lock.cache.lookup(&parent_symbols, &name, false)?
-            };
-            entries.push((handle, name));
-        }
-
-        // Sort by file ID for consistent ordering
-        entries.sort_by_key(|(handle, _)| handle.as_u64());
-
-        // Skip entries based on cookie
-        let start_index = if cookie == 0 {
-            0
-        } else {
-            entries
-                .iter()
-                .position(|(handle, _)| handle.as_u64() > cookie)
-                .unwrap_or(entries.len())
-        };
-
-        Ok(Self {
-            inner,
-            entries: entries.into_iter().skip(start_index).collect(),
-            index: 0,
-        })
-    }
-}
-
-impl ReadDirIterator for Mirror3Iterator {
-    async fn next(&mut self) -> NextResult<DirEntry> {
-        if self.index >= self.entries.len() {
-            return NextResult::Eof;
-        }
-
-        let (handle, name) = &self.entries[self.index];
-        self.index += 1;
-
-        let dir_entry = DirEntry {
-            fileid: handle.as_u64(),
-            name: filename3::from_os_string(name.clone()),
-            cookie: handle.as_u64(),
-        };
-
-        NextResult::Ok(dir_entry)
-    }
-}
-
-impl ReadDirPlusIterator<FileHandleU64> for Mirror3Iterator {
-    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        loop {
-            if self.index >= self.entries.len() {
-                return NextResult::Eof;
-            }
-
-            let (handle, name) = &self.entries[self.index];
-            self.index += 1;
-
-            // Get file attributes
-            let path = {
-                let mut lock = self.inner.write().unwrap();
-                match lock.cache.handle_to_path(*handle) {
-                    Ok(p) => lock.root.join(&p),
-                    Err(_) => {
-                        // Skip if handle is invalid, continue to next entry
-                        continue;
-                    }
-                }
-            };
-
-            let fattr = (tokio::fs::symlink_metadata(&path).await).map_or(None, |metadata| {
-                Some(metadata_to_fattr3(handle.as_u64(), &metadata))
-            });
-
-            let dir_entry_plus = DirEntryPlus {
-                fileid: handle.as_u64(),
-                name: filename3::from_os_string(name.clone()),
-                cookie: handle.as_u64(),
-                name_attributes: fattr,
-                name_handle: Some(*handle),
-            };
-
-            return NextResult::Ok(dir_entry_plus);
         }
     }
 }
