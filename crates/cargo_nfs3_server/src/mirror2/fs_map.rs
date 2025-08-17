@@ -14,18 +14,11 @@ use super::string_ext::IntoOsString;
 #[derive(Debug, Clone)]
 pub(super) struct FSEntry {
     pub(super) path: Vec<Symbol>,
-    /// Last modification time for directory content tracking
-    pub(super) last_dir_mtime: Option<std::time::SystemTime>,
-    pub(super) children: Option<Vec<fileid3>>,
 }
 
 impl FSEntry {
-    fn new(path: Vec<Symbol>) -> Self {
-        Self {
-            path,
-            last_dir_mtime: None,
-            children: None,
-        }
+    const fn new(path: Vec<Symbol>) -> Self {
+        Self { path }
     }
 }
 
@@ -41,9 +34,6 @@ pub(super) struct FSMap {
 pub(super) enum RefreshResult {
     /// The fileid was deleted
     Delete,
-    /// The fileid needs to be reloaded. mtime has been updated, caches
-    /// need to be evicted.
-    Reload,
     /// Nothing has changed
     Noop,
 }
@@ -77,20 +67,14 @@ impl FSMap {
             .into()
     }
 
-    fn collect_all_children(&self, id: fileid3, ret: &mut Vec<fileid3>) {
+    fn collect_all_children(id: fileid3, ret: &mut Vec<fileid3>) {
         ret.push(id);
-        if let Some(entry) = self.id_to_path.get(&id) {
-            if let Some(ref ch) = entry.children {
-                for i in ch {
-                    self.collect_all_children(*i, ret);
-                }
-            }
-        }
+        // No longer traverse cached children since we don't cache them
     }
 
     pub(super) fn delete_entry(&mut self, id: fileid3) {
         let mut children = Vec::new();
-        self.collect_all_children(id, &mut children);
+        Self::collect_all_children(id, &mut children);
         for i in &children {
             if let Some(ent) = self.id_to_path.remove(i) {
                 self.path_to_id.remove(&ent.path);
@@ -100,10 +84,6 @@ impl FSMap {
 
     pub(super) fn find_entry(&self, id: fileid3) -> Result<&FSEntry, nfsstat3> {
         self.id_to_path.get(&id).ok_or(nfsstat3::NFS3ERR_NOENT)
-    }
-
-    pub(super) fn find_entry_mut(&mut self, id: fileid3) -> Result<&mut FSEntry, nfsstat3> {
-        self.id_to_path.get_mut(&id).ok_or(nfsstat3::NFS3ERR_NOENT)
     }
 
     pub(super) fn find_child(&self, id: fileid3, filename: &[u8]) -> Result<fileid3, nfsstat3> {
@@ -121,7 +101,7 @@ impl FSMap {
         Ok(*self.path_to_id.get(&name).ok_or(nfsstat3::NFS3ERR_NOENT)?)
     }
 
-    pub(super) async fn refresh_entry(&mut self, id: fileid3) -> Result<RefreshResult, nfsstat3> {
+    pub(super) fn refresh_entry(&mut self, id: fileid3) -> Result<RefreshResult, nfsstat3> {
         let entry = self
             .id_to_path
             .get(&id)
@@ -135,55 +115,15 @@ impl FSMap {
             return Ok(RefreshResult::Delete);
         }
 
-        // For directories, check if the modification time has changed
-        if let Ok(metadata) = tokio::fs::symlink_metadata(&path).await {
-            if metadata.is_dir() {
-                if let Ok(modified) = metadata.modified() {
-                    let entry_mut = self.id_to_path.get_mut(&id).unwrap();
-                    if let Some(last_mtime) = entry_mut.last_dir_mtime {
-                        if modified != last_mtime {
-                            entry_mut.last_dir_mtime = Some(modified);
-                            entry_mut.children = None; // Invalidate children cache
-                            debug!(
-                                "Directory modified, invalidating children cache: {:?}",
-                                path
-                            );
-                            return Ok(RefreshResult::Reload);
-                        }
-                    } else {
-                        entry_mut.last_dir_mtime = Some(modified);
-                    }
-                }
-            }
-        } else {
-            return Err(nfsstat3::NFS3ERR_IO);
-        }
-
         Ok(RefreshResult::Noop)
     }
 
-    pub(super) async fn refresh_dir_list(&mut self, id: fileid3) -> Result<(), nfsstat3> {
+    pub(super) async fn read_dir_entries(&mut self, id: fileid3) -> Result<Vec<fileid3>, nfsstat3> {
         let entry = self
             .id_to_path
             .get(&id)
             .ok_or(nfsstat3::NFS3ERR_NOENT)?
             .clone();
-
-        // if there are children and the directory hasn't been modified, no need to refresh
-        if entry.children.is_some() {
-            let path = self.sym_to_path(&entry.path);
-            if let Ok(metadata) = tokio::fs::symlink_metadata(&path).await {
-                if metadata.is_dir() {
-                    if let Ok(modified) = metadata.modified() {
-                        if let Some(last_mtime) = entry.last_dir_mtime {
-                            if modified == last_mtime {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // Check if this is actually a directory by loading metadata from filesystem
         let path = self.sym_to_path(&entry.path);
@@ -192,12 +132,12 @@ impl FSMap {
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         if !metadata.is_dir() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let mut cur_path = entry.path.clone();
-        let mut new_children: Vec<u64> = Vec::new();
-        debug!("Relisting entry {:?}: {:?}. Ent: {:?}", id, path, entry);
+        let mut children: Vec<u64> = Vec::new();
+        debug!("Reading directory entries for {:?}: {:?}", id, path);
 
         if let Ok(mut listing) = tokio::fs::read_dir(&path).await {
             while let Some(entry) = listing
@@ -208,23 +148,13 @@ impl FSMap {
                 let sym = self.intern.intern(entry.file_name()).unwrap();
                 cur_path.push(sym);
                 let next_id = self.create_entry(&cur_path);
-                new_children.push(next_id);
+                children.push(next_id);
                 cur_path.pop();
             }
-            new_children.sort_unstable();
-
-            // Update the directory modification time and children
-            let entry_mut = self
-                .id_to_path
-                .get_mut(&id)
-                .ok_or(nfsstat3::NFS3ERR_NOENT)?;
-            entry_mut.children = Some(new_children);
-            if let Ok(modified) = metadata.modified() {
-                entry_mut.last_dir_mtime = Some(modified);
-            }
+            children.sort_unstable();
         }
 
-        Ok(())
+        Ok(children)
     }
 
     pub(super) fn create_entry(&mut self, fullpath: &Vec<Symbol>) -> fileid3 {

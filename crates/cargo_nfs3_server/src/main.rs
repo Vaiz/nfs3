@@ -13,8 +13,10 @@ mod mirror;
 mod mirror2;
 
 /// CLI tool for the `nfs3_server`
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug)]
-#[command(name = "nfs3_server", version, about = "A simple NFSv3 server", long_about = None)]
+#[command(name = "cargo-nfs3-server")]
+#[command(about = "A simple NFSv3 server implementation")]
 struct Args {
     /// Path to the directory to serve for `MirrorFs`
     #[arg(long)]
@@ -40,7 +42,7 @@ struct Args {
     #[arg(long)]
     memfs: bool,
 
-    /// Use MirrorFs2 (caches only file names for handle resolution)
+    /// Use `MirrorFs2` (caches only file names for handle resolution)
     #[arg(long)]
     mirrorfs2: bool,
 

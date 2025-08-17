@@ -109,28 +109,12 @@ impl MirrorFs2 {
         }
 
         let mut name = ent.path.clone();
-        let _ = fsmap.refresh_entry(dirid).await;
+        let _ = fsmap.refresh_entry(dirid);
         let sym = fsmap.intern.intern(objectname_osstr).unwrap();
         name.push(sym);
         let meta = path.symlink_metadata().map_err(|_| nfsstat3::NFS3ERR_IO)?;
         let fileid = fsmap.create_entry(&name);
 
-        // update the children list
-        if let Some(ref mut children) = fsmap
-            .id_to_path
-            .get_mut(&dirid)
-            .ok_or(nfsstat3::NFS3ERR_NOENT)?
-            .children
-        {
-            match children.binary_search(&fileid) {
-                Ok(_) => {
-                    return Err(nfsstat3::NFS3ERR_EXIST);
-                }
-                Err(pos) => {
-                    children.insert(pos, fileid);
-                }
-            }
-        }
         Ok((fileid, metadata_to_fattr3(fileid, &meta)))
     }
 }
@@ -167,10 +151,10 @@ impl NfsReadFileSystem for MirrorFs2 {
         // that means something changed under me probably.
         // refresh.
 
-        if matches!(fsmap.refresh_entry(dirid).await?, RefreshResult::Delete) {
+        if matches!(fsmap.refresh_entry(dirid)?, RefreshResult::Delete) {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
-        let _ = fsmap.refresh_dir_list(dirid).await;
+        // Try to find the child after refreshing
         fsmap
             .find_child(dirid, filename.as_ref())
             .map(FileHandleU64::new)
@@ -179,7 +163,7 @@ impl NfsReadFileSystem for MirrorFs2 {
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
         let id = id.as_u64();
         let mut fsmap = self.fsmap.write().await;
-        if matches!(fsmap.refresh_entry(id).await?, RefreshResult::Delete) {
+        if matches!(fsmap.refresh_entry(id)?, RefreshResult::Delete) {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
         drop(fsmap);
@@ -356,19 +340,9 @@ impl NfsFileSystem for MirrorFs2 {
                 // and the path -> fileid mappings for the deleted file
                 fsmap.id_to_path.remove(&fileid);
                 fsmap.path_to_id.remove(&sympath);
-                // we need to update the children listing for the directories
-                if let Ok(dirent_mut) = fsmap.find_entry_mut(dirid) {
-                    if let Some(ref mut fromch) = dirent_mut.children {
-                        if let Ok(pos) = fromch.binary_search(&fileid) {
-                            fromch.remove(pos);
-                        } else {
-                            // already removed
-                        }
-                    }
-                }
             }
 
-            let _ = fsmap.refresh_entry(dirid).await;
+            let _ = fsmap.refresh_entry(dirid);
         } else {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
@@ -425,36 +399,10 @@ impl NfsFileSystem for MirrorFs2 {
                 .clone_from(&to_sympath);
             fsmap.path_to_id.remove(&from_sympath);
             fsmap.path_to_id.insert(to_sympath, fileid);
-            if to_dirid != from_dirid {
-                // moving across directories.
-                // we need to update the children listing for the directories
-                if let Ok(from_dirent_mut) = fsmap.find_entry_mut(from_dirid) {
-                    if let Some(ref mut fromch) = from_dirent_mut.children {
-                        if let Ok(pos) = fromch.binary_search(&fileid) {
-                            fromch.remove(pos);
-                        } else {
-                            // already removed
-                        }
-                    }
-                }
-                if let Ok(to_dirent_mut) = fsmap.find_entry_mut(to_dirid) {
-                    if let Some(ref mut toch) = to_dirent_mut.children {
-                        match toch.binary_search(&fileid) {
-                            Ok(_) => {
-                                return Err(nfsstat3::NFS3ERR_EXIST);
-                            }
-                            Err(pos) => {
-                                // insert the fileid in the new directory
-                                toch.insert(pos, fileid);
-                            }
-                        }
-                    }
-                }
-            }
         }
-        let _ = fsmap.refresh_entry(from_dirid).await;
+        let _ = fsmap.refresh_entry(from_dirid);
         if to_dirid != from_dirid {
-            let _ = fsmap.refresh_entry(to_dirid).await;
+            let _ = fsmap.refresh_entry(to_dirid);
         }
 
         Ok(())
