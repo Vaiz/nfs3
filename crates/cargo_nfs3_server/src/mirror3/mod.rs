@@ -124,11 +124,6 @@ impl Cache {
         cache
     }
 
-    #[allow(clippy::unused_self)]
-    const fn root(&self) -> FileHandleU64 {
-        Self::ROOT_ID
-    }
-
     fn symbols_path(&self, id: FileHandleU64) -> Result<&SymbolsPath, nfsstat3> {
         self.id_to_path.get(&id).ok_or(nfsstat3::NFS3ERR_BADHANDLE)
     }
@@ -207,7 +202,7 @@ impl NfsReadFileSystem for Fs {
     type Handle = FileHandleU64;
 
     fn root_dir(&self) -> Self::Handle {
-        self.inner.read().unwrap().cache.root()
+        Cache::ROOT_ID
     }
 
     async fn lookup(
