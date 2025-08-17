@@ -47,6 +47,10 @@ struct Args {
     #[arg(long)]
     mirrorfs2: bool,
 
+    /// Use `MirrorFs3` (experimental filesystem with symbol table)
+    #[arg(long)]
+    mirrorfs3: bool,
+
     /// Log level (default is "info")
     #[arg(long, default_value = "info")]
     log_level: String,
@@ -84,7 +88,17 @@ async fn main() {
 
         assert!(Path::new(path).exists(), "path [{path}] does not exist",);
 
-        if args.mirrorfs2 {
+        if args.mirrorfs3 {
+            let mirror_fs3 = mirror3::Fs::new(path);
+            // MirrorFs3 is read-only for now, so we always wrap it
+            start_server(
+                bind_addr,
+                export_path,
+                ReadOnlyAdapter::new(mirror_fs3),
+                guards,
+            )
+            .await;
+        } else if args.mirrorfs2 {
             let mirror_fs2 = mirror2::MirrorFs2::new(path);
             if args.readonly {
                 start_server(
