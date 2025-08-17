@@ -113,7 +113,7 @@ impl Cache {
             symbols: SymbolsTable::new(),
             path_to_id: HashMap::new(),
             id_to_path: HashMap::new(),
-            next_id: AtomicU64::new(2), // Start from 2 since 1 is root
+            next_id: AtomicU64::new(Self::ROOT_ID.as_u64() + 1),
         };
 
         // Insert root entry
