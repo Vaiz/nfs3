@@ -52,7 +52,7 @@ impl MirrorFs {
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&ent.name);
+        let mut path = fsmap.sym_to_path(&ent.path);
         let objectname_osstr = objectname.as_os_str().to_os_string();
         path.push(&objectname_osstr);
 
@@ -100,7 +100,7 @@ impl MirrorFs {
             }
         }
 
-        let mut name = ent.name.clone();
+        let mut name = ent.path.clone();
         let _ = fsmap.refresh_entry(dirid).await;
         let sym = fsmap.intern.intern(objectname_osstr).unwrap();
         name.push(sym);
@@ -149,7 +149,7 @@ impl NfsReadFileSystem for MirrorFs {
         // Optimize for negative lookups.
         // See if the file actually exists on the filesystem
         let dirent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&dirent.name);
+        let mut path = fsmap.sym_to_path(&dirent.path);
         let objectname_osstr = filename.to_os_string();
         path.push(&objectname_osstr);
         if !exists_no_traverse(&path) {
@@ -175,7 +175,7 @@ impl NfsReadFileSystem for MirrorFs {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
+        let path = fsmap.sym_to_path(&ent.path);
         debug!("Stat {:?}: {:?}", path, ent);
         Ok(ent.fsmeta.clone())
     }
@@ -190,7 +190,7 @@ impl NfsReadFileSystem for MirrorFs {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let entry = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&entry.name);
+        let path = fsmap.sym_to_path(&entry.path);
         drop(fsmap);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
         let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
@@ -237,7 +237,7 @@ impl NfsReadFileSystem for MirrorFs {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
+        let path = fsmap.sym_to_path(&ent.path);
         drop(fsmap);
         if path.is_symlink() {
             path.read_link()
@@ -255,7 +255,7 @@ impl NfsFileSystem for MirrorFs {
         let id = id.as_u64();
         let mut fsmap = self.fsmap.write().await;
         let entry = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&entry.name);
+        let path = fsmap.sym_to_path(&entry.path);
         path_setattr(&path, &setattr).await?;
 
         // I have to lookup a second time to update
@@ -270,7 +270,7 @@ impl NfsFileSystem for MirrorFs {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
+        let path = fsmap.sym_to_path(&ent.path);
         drop(fsmap);
         debug!("write to init {:?}", path);
         let mut f = OpenOptions::new()
@@ -330,7 +330,7 @@ impl NfsFileSystem for MirrorFs {
         let dirid = dirid.as_u64();
         let mut fsmap = self.fsmap.write().await;
         let ent = fsmap.find_entry(dirid)?;
-        let mut path = fsmap.sym_to_path(&ent.name);
+        let mut path = fsmap.sym_to_path(&ent.path);
         path.push(filename.as_os_str());
         if let Ok(meta) = path.symlink_metadata() {
             if meta.is_dir() {
@@ -343,7 +343,7 @@ impl NfsFileSystem for MirrorFs {
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
             }
 
-            let mut sympath = ent.name.clone();
+            let mut sympath = ent.path.clone();
             let filesym = fsmap.intern.intern(filename.to_os_string()).unwrap();
             sympath.push(filesym);
             if let Some(fileid) = fsmap.path_to_id.get(&sympath).copied() {
@@ -383,11 +383,11 @@ impl NfsFileSystem for MirrorFs {
         let mut fsmap = self.fsmap.write().await;
 
         let from_dirent = fsmap.find_entry(from_dirid)?;
-        let mut from_path = fsmap.sym_to_path(&from_dirent.name);
+        let mut from_path = fsmap.sym_to_path(&from_dirent.path);
         from_path.push(from_filename.as_os_str());
 
         let to_dirent = fsmap.find_entry(to_dirid)?;
-        let mut to_path = fsmap.sym_to_path(&to_dirent.name);
+        let mut to_path = fsmap.sym_to_path(&to_dirent.path);
         // to folder must exist
         if !exists_no_traverse(&to_path) {
             return Err(nfsstat3::NFS3ERR_NOENT);
@@ -403,8 +403,8 @@ impl NfsFileSystem for MirrorFs {
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-        let mut from_sympath = from_dirent.name.clone();
-        let mut to_sympath = to_dirent.name.clone();
+        let mut from_sympath = from_dirent.path.clone();
+        let mut to_sympath = to_dirent.path.clone();
         let oldsym = fsmap.intern.intern(from_filename.to_os_string()).unwrap();
         let newsym = fsmap.intern.intern(to_filename.to_os_string()).unwrap();
         from_sympath.push(oldsym);
@@ -416,7 +416,7 @@ impl NfsFileSystem for MirrorFs {
                 .id_to_path
                 .get_mut(&fileid)
                 .unwrap()
-                .name
+                .path
                 .clone_from(&to_sympath);
             fsmap.path_to_id.remove(&from_sympath);
             fsmap.path_to_id.insert(to_sympath, fileid);

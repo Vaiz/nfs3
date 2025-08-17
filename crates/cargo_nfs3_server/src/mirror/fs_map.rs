@@ -14,7 +14,7 @@ use super::string_ext::IntoOsString;
 
 #[derive(Debug, Clone)]
 pub(super) struct FSEntry {
-    pub(super) name: Vec<Symbol>,
+    pub(super) path: Vec<Symbol>,
     pub(super) fsmeta: fattr3,
     /// metadata when building the children list
     pub(super) children_meta: fattr3,
@@ -25,7 +25,7 @@ impl FSEntry {
     fn new(path: Vec<Symbol>, id: fileid3, fsmeta: &std::fs::Metadata) -> Self {
         let meta = metadata_to_fattr3(id, fsmeta);
         Self {
-            name: path,
+            path,
             fsmeta: meta.clone(),
             children_meta: meta,
             children: None,
@@ -98,7 +98,7 @@ impl FSMap {
         self.collect_all_children(id, &mut children);
         for i in &children {
             if let Some(ent) = self.id_to_path.remove(i) {
-                self.path_to_id.remove(&ent.name);
+                self.path_to_id.remove(&ent.path);
             }
         }
     }
@@ -116,7 +116,7 @@ impl FSMap {
             .id_to_path
             .get(&id)
             .ok_or(nfsstat3::NFS3ERR_NOENT)?
-            .name
+            .path
             .clone();
         name.push(
             self.intern
@@ -132,7 +132,7 @@ impl FSMap {
             .get(&id)
             .ok_or(nfsstat3::NFS3ERR_NOENT)?
             .clone();
-        let path = self.sym_to_path(&entry.name);
+        let path = self.sym_to_path(&entry.path);
         //
         if !exists_no_traverse(&path) {
             self.delete_entry(id);
@@ -184,8 +184,8 @@ impl FSMap {
         if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
             return Ok(());
         }
-        let mut cur_path = entry.name.clone();
-        let path = self.sym_to_path(&entry.name);
+        let mut cur_path = entry.path.clone();
+        let path = self.sym_to_path(&entry.path);
         let mut new_children: Vec<u64> = Vec::new();
         debug!("Relisting entry {:?}: {:?}. Ent: {:?}", id, path, entry);
         if let Ok(mut listing) = tokio::fs::read_dir(&path).await {

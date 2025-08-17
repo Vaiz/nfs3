@@ -79,7 +79,7 @@ impl MirrorFsIterator {
                 }
             };
 
-            let name = fsmap.sym_to_fname(&fs_entry.name);
+            let name = fsmap.sym_to_fname(&fs_entry.path);
             debug!("\t --- {fileid} {name:?}");
             let name = filename3::from_os_string(name);
             return NextResult::Ok(f(fileid, fs_entry, name));
