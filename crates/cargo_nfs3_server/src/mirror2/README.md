@@ -7,16 +7,16 @@
 ## Key Differences from MirrorFs
 
 ### Memory Usage
-- **MirrorFs**: Caches complete file metadata (fattr3) for all discovered files
-- **MirrorFs2**: Only caches file paths and modification times for directories
+- **MirrorFs**: Caches complete file metadata (fattr3) and directory children for all discovered files
+- **MirrorFs2**: Only caches file paths for handle resolution, no metadata or children caching
 
 ### Metadata Loading
 - **MirrorFs**: Returns cached metadata, refreshes when changes detected
 - **MirrorFs2**: Always loads metadata from filesystem when requested (getattr, readdirplus)
 
-### Directory Tracking
-- **MirrorFs**: Caches directory metadata and compares for changes
-- **MirrorFs2**: Uses modification time comparison to detect directory changes
+### Directory Listing
+- **MirrorFs**: Caches directory children and compares metadata for changes
+- **MirrorFs2**: Reads directory contents from filesystem every time
 
 ## Architecture
 
@@ -36,6 +36,7 @@
 
 3. **MirrorFs2Iterator** (`iterator.rs`)
    - Directory listing iterator
+   - Reads directory contents on-demand
    - Loads metadata on-demand for readdirplus
    - Skips metadata loading for readdir
 
@@ -48,8 +49,6 @@
 ```rust
 struct FSEntry {
     path: Vec<Symbol>,                    // Interned path components
-    last_dir_mtime: Option<SystemTime>,   // Directory modification tracking
-    children: Option<Vec<fileid3>>,       // Cached child file IDs
 }
 
 struct FSMap {
@@ -75,16 +74,16 @@ cargo run --bin cargo-nfs3-server -- --path /tmp --mirrorfs2
 
 ## Benefits
 
-1. **Reduced Memory Usage**: No metadata caching reduces memory footprint significantly
-2. **Always Current Data**: Metadata is always fresh from the filesystem
-3. **Simplified Cache Management**: No need to track metadata staleness
-4. **Better for Large Directories**: Memory usage doesn't scale with file count
+1. **Minimized Memory Usage**: No metadata or children caching, extremely low memory footprint
+2. **Always Current Data**: All data is fresh from the filesystem
+3. **Simplified Code**: No cache management complexity
+4. **Excellent for Large Directories**: Memory usage doesn't scale with file count or directory depth
 
 ## Trade-offs
 
-1. **Higher I/O**: More filesystem calls for metadata operations
-2. **Potential Latency**: Metadata requests require filesystem access
-3. **Less Optimization**: No metadata pre-caching for frequently accessed files
+1. **Higher I/O**: More filesystem calls for both metadata and directory operations
+2. **Potential Latency**: All requests require filesystem access
+3. **No Caching Benefits**: No performance optimization for frequently accessed files or directories
 
 ## Use Cases
 
@@ -96,8 +95,9 @@ MirrorFs2 is ideal for:
 
 ## Implementation Notes
 
-- File handles are still cached for path resolution
-- Directory listings are cached until modification detected
+- File handles are cached only for path resolution (minimal memory usage)
+- Directory contents are read from filesystem on every directory operation
+- No caching of any kind except for path-to-ID mapping
 - Uses efficient string interning for path components
 - Cross-platform string handling for filenames
 - Async I/O throughout for good performance

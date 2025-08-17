@@ -25,12 +25,11 @@ impl MirrorFs2Iterator {
     ) -> Result<Self, nfsstat3> {
         let fsmap_clone = Arc::clone(&fsmap);
         let mut fsmap = fsmap.write().await;
-        fsmap.refresh_entry(dirid).await?;
-        fsmap.refresh_dir_list(dirid).await?;
-
-        let entry = fsmap.find_entry(dirid)?;
+        fsmap.refresh_entry(dirid)?;
+        let children = fsmap.read_dir_entries(dirid).await?;
 
         // Load metadata from filesystem to check if it's a directory
+        let entry = fsmap.find_entry(dirid)?;
         let path = fsmap.sym_to_path(&entry.path);
         let metadata = tokio::fs::symlink_metadata(&path)
             .await
@@ -41,8 +40,6 @@ impl MirrorFs2Iterator {
         }
 
         debug!("readdir({:?}, {:?})", entry, start_after);
-        // we must have children here
-        let children = entry.children.as_ref().ok_or(nfsstat3::NFS3ERR_IO)?;
 
         let pos = match children.binary_search(&start_after) {
             Ok(pos) => pos + 1,
@@ -55,7 +52,6 @@ impl MirrorFs2Iterator {
         let remain_children = children.iter().skip(pos).copied().collect::<Vec<_>>();
         debug!("children len: {:?}", children.len());
         debug!("remaining_len : {:?}", remain_children.len());
-
         Ok(Self {
             fsmap: fsmap_clone,
             entries: remain_children,
@@ -100,12 +96,11 @@ impl MirrorFs2Iterator {
 
             // Load metadata from filesystem if needed for readdirplus
             let metadata = if load_metadata {
-                match tokio::fs::symlink_metadata(&path).await {
-                    Ok(meta) => Some(metadata_to_fattr3(fileid, &meta)),
-                    Err(_) => {
-                        debug!("Failed to load metadata for {fileid} at {path:?}");
-                        continue;
-                    }
+                if let Ok(meta) = tokio::fs::symlink_metadata(&path).await {
+                    Some(metadata_to_fattr3(fileid, &meta))
+                } else {
+                    debug!("Failed to load metadata for {fileid} at {path:?}");
+                    continue;
                 }
             } else {
                 None
