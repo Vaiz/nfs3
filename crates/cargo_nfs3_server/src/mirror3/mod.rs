@@ -205,8 +205,11 @@ impl Fs {
     }
 
     fn path(&self, id: &FileHandleU64) -> Result<PathBuf, nfsstat3> {
-        let mut lock = self.inner.write().unwrap();
-        lock.cache.handle_to_path(id.as_u64().into())
+        let relative_path = {
+            let mut lock = self.inner.write().unwrap();
+            lock.cache.handle_to_path(id.as_u64().into())
+        }?;
+        Ok(self.root.join(relative_path))
     }
 }
 
@@ -228,8 +231,6 @@ impl NfsReadFileSystem for Fs {
 
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
         let path = self.path(id)?;
-
-        let path = self.root.join(&path);
         let metadata = tokio::fs::symlink_metadata(&path)
             .await
             .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
@@ -245,8 +246,6 @@ impl NfsReadFileSystem for Fs {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let path = self.path(id)?;
-
-        let path = self.root.join(&path);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
         let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
         let mut start = offset;
@@ -286,8 +285,6 @@ impl NfsReadFileSystem for Fs {
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
         let path = self.path(id)?;
-
-        let path = self.root.join(path);
         match tokio::fs::read_link(&path).await {
             Ok(target) => Ok(nfspath3::from_os_str(target.as_os_str())),
             Err(e) => {
