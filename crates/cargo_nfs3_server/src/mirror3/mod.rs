@@ -21,7 +21,7 @@ use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
 };
-use tokio::fs::File;
+use tokio::fs::{File, ReadDir};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
 use crate::mirror::string_ext::{FromOsString, IntoOsString};
@@ -99,6 +99,18 @@ impl SymbolsTable {
         }
         path_buf
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IteratorCacheKey {
+    directory: FileHandleU64,
+    cookie: u64,
+}
+
+#[derive(Debug)]
+enum CachedIterator {
+    ReadDir(Mirror3ReadDirIterator),
+    ReadDirPlus(Mirror3ReadDirPlusIterator),
 }
 
 #[derive(Debug)]
@@ -187,6 +199,7 @@ impl Cache {
 #[derive(Debug)]
 pub struct FsInner {
     cache: Cache,
+    iterator_cache: HashMap<IteratorCacheKey, CachedIterator>,
 }
 
 #[derive(Debug, Clone)]
@@ -200,7 +213,10 @@ impl Fs {
         let root = root.as_ref().to_path_buf();
         let cache = Cache::new(root.clone());
 
-        let fs_inner = FsInner { cache };
+        let fs_inner = FsInner { 
+            cache,
+            iterator_cache: HashMap::new(),
+        };
         Self {
             root,
             inner: Arc::new(RwLock::new(fs_inner)),
@@ -234,6 +250,74 @@ impl Fs {
         f.read_exact(&mut buf).await?;
 
         Ok((buf, start + count >= len))
+    }
+
+    async fn get_or_create_readdir_iterator(
+        &self,
+        dirid: FileHandleU64,
+        cookie: u64,
+    ) -> Result<Mirror3ReadDirIterator, nfsstat3> {
+        // If cookie is 0, create a new iterator
+        if cookie == 0 {
+            return Mirror3ReadDirIterator::new(
+                self.root.clone(),
+                Arc::clone(&self.inner),
+                dirid,
+                cookie,
+            ).await;
+        }
+
+        // For non-zero cookies, check if we have a valid cached iterator
+        let key = IteratorCacheKey {
+            directory: dirid,
+            cookie,
+        };
+
+        let mut inner = self.inner.write().unwrap();
+        
+        // Check if we have a cached iterator at this exact position
+        if let Some(cached) = inner.iterator_cache.remove(&key) {
+            // We found a cached iterator at the exact cookie position
+            return Ok(Mirror3ReadDirIterator::from_cached(cached));
+        }
+
+        // No exact match found - this means the cookie is invalid
+        // In a real implementation, we could try to find a nearby iterator
+        // and seek to the correct position, but for now we'll return an error
+        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
+    }
+
+    async fn get_or_create_readdirplus_iterator(
+        &self,
+        dirid: FileHandleU64,
+        cookie: u64,
+    ) -> Result<Mirror3ReadDirPlusIterator, nfsstat3> {
+        // For cookie 0, always create a new iterator
+        if cookie == 0 {
+            return Mirror3ReadDirPlusIterator::new(
+                self.root.clone(),
+                Arc::clone(&self.inner),
+                dirid,
+                cookie,
+            ).await;
+        }
+
+        // For non-zero cookies, check if we have a valid cached iterator
+        let key = IteratorCacheKey {
+            directory: dirid,
+            cookie,
+        };
+
+        let mut inner = self.inner.write().unwrap();
+        
+        // Check if we have a cached iterator at this exact position
+        if let Some(cached) = inner.iterator_cache.remove(&key) {
+            // We found a cached iterator at the exact cookie position
+            return Ok(Mirror3ReadDirPlusIterator::from_cached(cached));
+        }
+
+        // No exact match found - this means the cookie is invalid
+        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
     }
 }
 
@@ -359,7 +443,7 @@ mod tests {
                     entries.push(entry);
                 }
                 NextResult::Eof => break,
-                NextResult::Err(e) => panic!("Unexpected error: {:?}", e),
+                NextResult::Err(e) => panic!("Unexpected error: {e:?}"),
             }
         }
 
@@ -375,21 +459,17 @@ mod tests {
                 NextResult::Ok(_) | NextResult::Eof => {
                     // Either result is acceptable - we successfully resumed
                 }
-                NextResult::Err(e) => panic!("Should not fail with valid cookie: {:?}", e),
+                NextResult::Err(e) => panic!("Should not fail with valid cookie: {e:?}"),
             }
         }
 
         // Test that invalid cookie is rejected
-        let invalid_cookie = 999999;
+        let invalid_cookie = 999_999;
         match fs.readdir(&root_handle, invalid_cookie).await {
-            Err(nfsstat3::NFS3ERR_BAD_COOKIE) => {
-                // This is expected for invalid cookie
+            Err(nfsstat3::NFS3ERR_BAD_COOKIE) | Ok(_) => {
+                // This is expected for invalid cookie or sometimes Ok if handled gracefully
             }
-            Ok(_) => {
-                // If we get an iterator, it should be empty or handle the invalid cookie gracefully
-                // This is acceptable as long as it doesn't crash
-            }
-            Err(other) => panic!("Unexpected error for invalid cookie: {:?}", other),
+            Err(other) => panic!("Unexpected error for invalid cookie: {other:?}"),
         }
     }
 
@@ -420,7 +500,7 @@ mod tests {
             match iter.next().await {
                 NextResult::Ok(entry) => entries.push(entry.name.clone()),
                 NextResult::Eof => break,
-                NextResult::Err(e) => panic!("Unexpected error during streaming: {:?}", e),
+                NextResult::Err(e) => panic!("Unexpected error during streaming: {e:?}"),
             }
         }
 
@@ -435,7 +515,7 @@ mod tests {
             match iter2.next().await {
                 NextResult::Ok(entry) => entries2.push(entry.name.clone()),
                 NextResult::Eof => break,
-                NextResult::Err(e) => panic!("Unexpected error during streaming: {:?}", e),
+                NextResult::Err(e) => panic!("Unexpected error during streaming: {e:?}"),
             }
         }
 
