@@ -6,9 +6,9 @@ use nfs3_server::nfs3_types::nfs3::{fileid3, filename3, nfsstat3};
 use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, ReadDirIterator, ReadDirPlusIterator,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
-use super::{FsInner, SymbolsPath};
+use super::{FsInner, IteratorState, SymbolsPath};
 use crate::mirror::string_ext::FromOsString;
 
 pub struct Mirror3ReadDirIterator {
@@ -64,7 +64,7 @@ async fn create_entries(
         root_path.join(&relative_path)
     };
 
-    // Check if it's a directory
+    // Check if it's a directory and get its modification time
     let metadata = tokio::fs::symlink_metadata(&dir_path)
         .await
         .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
@@ -72,6 +72,94 @@ async fn create_entries(
         return Err(nfsstat3::NFS3ERR_NOTDIR);
     }
 
+    let dir_mtime = metadata
+        .modified()
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+    // Check if we have a cached iterator for this directory
+    let iterator_cache = {
+        let lock = inner.read().unwrap();
+        lock.iterator_cache.clone()
+    };
+    let cached_state = iterator_cache.get(&dirid).await;
+
+    let iterator_state = if let Some(state) = cached_state {
+        if state.is_valid(dir_mtime) {
+            // Validate the cookie against cached entries
+            if !state.validate_cookie(cookie) {
+                warn!(
+                    "Invalid cookie {} for directory {:?}, cookie not found in cached entries",
+                    cookie, dirid
+                );
+                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+            }
+            debug!(
+                "Using cached iterator state for directory {:?} with cookie {}",
+                dirid, cookie
+            );
+            state
+        } else {
+            debug!(
+                "Cached iterator state for directory {:?} is stale, refreshing",
+                dirid
+            );
+            // Directory was modified, need to refresh
+            let new_state = create_fresh_iterator_state(
+                root_path,
+                Arc::clone(&inner),
+                dirid,
+                dir_path,
+                dir_mtime,
+            )
+            .await?;
+
+            // Validate cookie against fresh entries
+            if !new_state.validate_cookie(cookie) {
+                warn!(
+                    "Invalid cookie {} for directory {:?} after refresh",
+                    cookie, dirid
+                );
+                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+            }
+
+            // Cache the new state
+            iterator_cache.insert(dirid, new_state.clone()).await;
+            new_state
+        }
+    } else {
+        debug!(
+            "No cached iterator state for directory {:?}, creating fresh",
+            dirid
+        );
+        // No cached state, create fresh
+        let new_state =
+            create_fresh_iterator_state(root_path, Arc::clone(&inner), dirid, dir_path, dir_mtime)
+                .await?;
+
+        // Validate cookie against fresh entries
+        if !new_state.validate_cookie(cookie) {
+            warn!(
+                "Invalid cookie {} for directory {:?} in fresh iterator",
+                cookie, dirid
+            );
+            return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+        }
+
+        // Cache the new state
+        iterator_cache.insert(dirid, new_state.clone()).await;
+        new_state
+    };
+
+    Ok(iterator_state.get_entries_after_cookie(cookie))
+}
+
+async fn create_fresh_iterator_state(
+    root_path: PathBuf,
+    inner: Arc<RwLock<FsInner>>,
+    dirid: FileHandleU64,
+    dir_path: PathBuf,
+    dir_mtime: std::time::SystemTime,
+) -> Result<IteratorState, nfsstat3> {
     debug!("Reading directory: {:?}", dir_path);
 
     // Read directory entries
@@ -99,23 +187,9 @@ async fn create_entries(
     // Sort by file ID for consistent ordering
     entries.sort_by_key(|(handle, _)| handle.as_u64());
 
-    // Skip entries based on cookie
-    let start_index = if cookie == 0 {
-        0
-    } else {
-        entries
-            .iter()
-            .position(|(handle, _)| handle.as_u64() > cookie)
-            .unwrap_or(entries.len())
-    };
+    debug!("Found {} entries for directory {:?}", entries.len(), dirid);
 
-    debug!(
-        "Found {} entries, starting from index {}",
-        entries.len(),
-        start_index
-    );
-
-    Ok(entries.into_iter().skip(start_index).collect())
+    Ok(IteratorState::new(entries, dir_mtime))
 }
 
 impl ReadDirIterator for Mirror3ReadDirIterator {
