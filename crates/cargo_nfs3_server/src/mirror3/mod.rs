@@ -203,6 +203,11 @@ impl Fs {
             inner: Arc::new(RwLock::new(fs_inner)),
         }
     }
+
+    fn path(&self, id: &FileHandleU64) -> Result<PathBuf, nfsstat3> {
+        let mut lock = self.inner.write().unwrap();
+        lock.cache.handle_to_path(id.as_u64().into())
+    }
 }
 
 impl NfsReadFileSystem for Fs {
@@ -222,10 +227,7 @@ impl NfsReadFileSystem for Fs {
     }
 
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
-        let path = {
-            let mut lock = self.inner.write().unwrap();
-            lock.cache.handle_to_path(id.as_u64().into())?
-        };
+        let path = self.path(id)?;
 
         let path = self.root.join(&path);
         let metadata = tokio::fs::symlink_metadata(&path)
@@ -242,10 +244,7 @@ impl NfsReadFileSystem for Fs {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let path = {
-            let mut lock = self.inner.write().unwrap();
-            lock.cache.handle_to_path(id.as_u64().into())?
-        };
+        let path = self.path(id)?;
 
         let path = self.root.join(&path);
         let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
@@ -286,19 +285,19 @@ impl NfsReadFileSystem for Fs {
     }
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
-        let path = {
-            let mut lock = self.inner.write().unwrap();
-            lock.cache.handle_to_path(id.as_u64().into())?
-        };
+        let path = self.path(id)?;
 
         let path = self.root.join(path);
-        if path.is_symlink() {
-            path.read_link()
-                .map_or(Err(nfsstat3::NFS3ERR_IO), |target| {
-                    Ok(nfspath3::from_os_str(target.as_os_str()))
-                })
-        } else {
-            Err(nfsstat3::NFS3ERR_BADTYPE)
+        match tokio::fs::read_link(&path).await {
+            Ok(target) => Ok(nfspath3::from_os_str(target.as_os_str())),
+            Err(e) => {
+                tracing::warn!(id = id.as_u64(), path = %path.display(), error = %e, "failed to read symlink target");
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(nfsstat3::NFS3ERR_NOENT)
+                } else {
+                    Err(nfsstat3::NFS3ERR_BADTYPE)
+                }
+            }
         }
     }
 }
