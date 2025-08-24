@@ -11,12 +11,10 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use clap::Error;
 use intaglio::{Symbol, path};
 use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
-use moka::future::Cache as MokaCache;
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{
@@ -41,65 +39,6 @@ impl Deref for OsStrRef<'_> {
 impl From<OsStrRef<'_>> for Cow<'static, OsStr> {
     fn from(val: OsStrRef<'_>) -> Self {
         Cow::Owned(val.0.to_os_string())
-    }
-}
-
-// Iterator cache entry to store iterator state along with directory entries
-// This provides cookie validation and caching for NFS readdir operations
-#[derive(Debug, Clone)]
-pub struct IteratorState {
-    /// Sorted list of directory entries
-    pub entries: Vec<(FileHandleU64, std::ffi::OsString)>,
-    /// When this iterator state was created
-    pub creation_time: std::time::SystemTime,
-    /// Directory modification time when this state was created
-    pub dir_mtime: std::time::SystemTime,
-}
-
-impl IteratorState {
-    pub fn new(
-        entries: Vec<(FileHandleU64, std::ffi::OsString)>,
-        dir_mtime: std::time::SystemTime,
-    ) -> Self {
-        Self {
-            entries,
-            creation_time: std::time::SystemTime::now(),
-            dir_mtime,
-        }
-    }
-
-    pub fn is_valid(&self, current_dir_mtime: std::time::SystemTime) -> bool {
-        // Check if directory has been modified since we cached the iterator
-        self.dir_mtime >= current_dir_mtime
-    }
-
-    pub fn validate_cookie(&self, cookie: u64) -> bool {
-        if cookie == 0 {
-            return true; // Starting from beginning is always valid
-        }
-
-        // Check if cookie corresponds to a valid entry
-        self.entries
-            .iter()
-            .any(|(handle, _)| handle.as_u64() == cookie)
-    }
-
-    pub fn get_entries_after_cookie(
-        &self,
-        cookie: u64,
-    ) -> Vec<(FileHandleU64, std::ffi::OsString)> {
-        if cookie == 0 {
-            return self.entries.clone();
-        }
-
-        // Find the position after the cookie and return remaining entries
-        let start_index = self
-            .entries
-            .iter()
-            .position(|(handle, _)| handle.as_u64() > cookie)
-            .unwrap_or(self.entries.len());
-
-        self.entries.iter().skip(start_index).cloned().collect()
     }
 }
 
@@ -248,9 +187,6 @@ impl Cache {
 #[derive(Debug)]
 pub struct FsInner {
     cache: Cache,
-    /// Moka cache for storing directory iterator states
-    /// Key: directory handle, Value: cached iterator state with validation
-    iterator_cache: MokaCache<FileHandleU64, IteratorState>,
 }
 
 #[derive(Debug, Clone)]
@@ -264,16 +200,7 @@ impl Fs {
         let root = root.as_ref().to_path_buf();
         let cache = Cache::new(root.clone());
 
-        // Create moka cache for iterators with TTL and size limits
-        let iterator_cache = MokaCache::builder()
-            .time_to_live(Duration::from_secs(30)) // 30 seconds TTL
-            .max_capacity(1000) // Maximum 1000 cached iterators
-            .build();
-
-        let fs_inner = FsInner {
-            cache,
-            iterator_cache,
-        };
+        let fs_inner = FsInner { cache };
         Self {
             root,
             inner: Arc::new(RwLock::new(fs_inner)),
@@ -467,47 +394,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_iterator_caching() {
+    async fn test_streaming_iteration() {
         let temp_dir = tempdir().unwrap();
         let root_path = temp_dir.path().to_path_buf();
 
         // Create test files
-        fs::write(root_path.join("cached_file1.txt"), "content")
+        fs::write(root_path.join("stream_file1.txt"), "content")
             .await
             .unwrap();
-        fs::write(root_path.join("cached_file2.txt"), "content")
+        fs::write(root_path.join("stream_file2.txt"), "content")
+            .await
+            .unwrap();
+        fs::write(root_path.join("stream_file3.txt"), "content")
             .await
             .unwrap();
 
         let fs = Fs::new(&root_path);
         let root_handle = fs.root_dir();
 
-        // First readdir call - should populate cache
-        let mut iter1 = fs.readdir(&root_handle, 0).await.unwrap();
-        let mut first_entries = Vec::new();
+        // Test that we can iterate through all entries with streaming
+        let mut iter = fs.readdir(&root_handle, 0).await.unwrap();
+        let mut entries = Vec::new();
+
         loop {
-            match iter1.next().await {
-                NextResult::Ok(entry) => first_entries.push(entry.name.clone()),
+            match iter.next().await {
+                NextResult::Ok(entry) => entries.push(entry.name.clone()),
                 NextResult::Eof => break,
-                NextResult::Err(e) => panic!("Unexpected error: {:?}", e),
+                NextResult::Err(e) => panic!("Unexpected error during streaming: {:?}", e),
             }
         }
 
-        // Second readdir call with same parameters - should use cache
+        // Should have all our test files
+        assert!(!entries.is_empty(), "Should have streamed some entries");
+
+        // Verify consistency across multiple iterator creations
         let mut iter2 = fs.readdir(&root_handle, 0).await.unwrap();
-        let mut second_entries = Vec::new();
+        let mut entries2 = Vec::new();
+
         loop {
             match iter2.next().await {
-                NextResult::Ok(entry) => second_entries.push(entry.name.clone()),
+                NextResult::Ok(entry) => entries2.push(entry.name.clone()),
                 NextResult::Eof => break,
-                NextResult::Err(e) => panic!("Unexpected error: {:?}", e),
+                NextResult::Err(e) => panic!("Unexpected error during streaming: {:?}", e),
             }
         }
 
-        // Results should be consistent
-        assert_eq!(
-            first_entries, second_entries,
-            "Cached results should be consistent"
-        );
+        // Results should be consistent between different iterator instances
+        assert_eq!(entries, entries2, "Results should be consistent");
     }
 }
