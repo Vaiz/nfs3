@@ -261,7 +261,6 @@ impl NfsReadFileSystem for Fs {
         Ok(metadata_to_fattr3(id.as_u64(), &metadata))
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     async fn read(
         &self,
         id: &Self::Handle,
