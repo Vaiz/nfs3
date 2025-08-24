@@ -9,9 +9,12 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, atomic::AtomicU64};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, RwLock};
 
+use clap::Error;
 use intaglio::{Symbol, path};
+use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{
@@ -22,7 +25,6 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
 use crate::mirror::string_ext::{FromOsString, IntoOsString};
-use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
 
 pub struct OsStrRef<'a>(Cow<'a, OsStr>);
 
@@ -211,6 +213,27 @@ impl Fs {
         }?;
         Ok(self.root.join(relative_path))
     }
+
+    async fn read(
+        &self,
+        path: PathBuf,
+        start: u64,
+        count: u32,
+    ) -> std::io::Result<(Vec<u8>, bool)> {
+        let mut f = File::open(&path).await?;
+        let len = f.metadata().await?.len();
+        if start >= len || count == 0 {
+            return Ok((Vec::new(), count as u64 >= len));
+        }
+
+        let count = (count as u64).min(len - start);
+        f.seek(SeekFrom::Start(start)).await?;
+
+        let mut buf = vec![0; count as usize];
+        f.read_exact(&mut buf).await?;
+
+        Ok((buf, start + count >= len))
+    }
 }
 
 impl NfsReadFileSystem for Fs {
@@ -233,7 +256,7 @@ impl NfsReadFileSystem for Fs {
         let path = self.path(id)?;
         let metadata = tokio::fs::symlink_metadata(&path)
             .await
-            .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
+            .map_err(map_io_error)?;
 
         Ok(metadata_to_fattr3(id.as_u64(), &metadata))
     }
@@ -246,23 +269,7 @@ impl NfsReadFileSystem for Fs {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let path = self.path(id)?;
-        let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
-        let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
-        let mut start = offset;
-        let mut end = offset + u64::from(count);
-        let eof = end >= len;
-        if start >= len {
-            start = len;
-        }
-        if end > len {
-            end = len;
-        }
-        f.seek(SeekFrom::Start(start))
-            .await
-            .or(Err(nfsstat3::NFS3ERR_IO))?;
-        let mut buf = vec![0; (end - start) as usize];
-        f.read_exact(&mut buf).await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok((buf, eof))
+        self.read(path, offset, count).await.map_err(map_io_error)
     }
 
     async fn readdir(
@@ -296,5 +303,19 @@ impl NfsReadFileSystem for Fs {
                 }
             }
         }
+    }
+}
+
+fn map_io_error(err: std::io::Error) -> nfsstat3 {
+    use std::io::ErrorKind;
+    match err.kind() {
+        ErrorKind::NotFound => nfsstat3::NFS3ERR_NOENT,
+        ErrorKind::PermissionDenied => nfsstat3::NFS3ERR_ACCES,
+        ErrorKind::AlreadyExists => nfsstat3::NFS3ERR_EXIST,
+        ErrorKind::IsADirectory => nfsstat3::NFS3ERR_ISDIR,
+        ErrorKind::NotADirectory => nfsstat3::NFS3ERR_NOTDIR,
+        ErrorKind::ReadOnlyFilesystem => nfsstat3::NFS3ERR_ROFS,
+        ErrorKind::Unsupported => nfsstat3::NFS3ERR_NOTSUPP,
+        _ => nfsstat3::NFS3ERR_IO,
     }
 }
