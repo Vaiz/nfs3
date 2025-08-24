@@ -14,32 +14,24 @@ use tracing::{debug, warn};
 use super::{FsInner, SymbolsPath};
 use crate::mirror::string_ext::FromOsString;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum IteratorState {
-    /// Iterator is newly created and hasn't been verified yet
-    Unverified,
-    /// Iterator has been verified and is ready to read entries
-    Active,
-    /// Iterator has reached the end of the directory
-    Exhausted,
-}
-
+#[derive(Debug)]
 pub struct Mirror3ReadDirIterator {
     root_path: PathBuf,
     inner: Arc<RwLock<FsInner>>,
     dirid: FileHandleU64,
     read_dir: ReadDir,
     cookie: u64,
-    state: IteratorState,
+    exhausted: bool,
 }
 
+#[derive(Debug)]
 pub struct Mirror3ReadDirPlusIterator {
     root_path: PathBuf,
     inner: Arc<RwLock<FsInner>>,
     dirid: FileHandleU64,
     read_dir: ReadDir,
     cookie: u64,
-    state: IteratorState,
+    exhausted: bool,
 }
 
 impl Mirror3ReadDirIterator {
@@ -79,32 +71,36 @@ impl Mirror3ReadDirIterator {
             dirid,
             read_dir,
             cookie,
-            state: IteratorState::Unverified,
+            exhausted: false,
         })
     }
 
-    fn verify_cookie_position(&mut self) -> Result<(), nfsstat3> {
-        if self.cookie == 0 {
-            // Starting from beginning is always valid
-            self.state = IteratorState::Active;
-            return Ok(());
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn new_without_verification(
+        root_path: PathBuf,
+        inner: Arc<RwLock<FsInner>>,
+        dirid: FileHandleU64,
+        read_dir: ReadDir,
+        cookie: u64,
+    ) -> Self {
+        Self {
+            root_path,
+            inner,
+            dirid,
+            read_dir,
+            cookie,
+            exhausted: false,
         }
+    }
 
-        if self.state != IteratorState::Unverified {
-            // Already verified
-            return Ok(());
+    pub fn from_cached(cached: super::CachedIterator) -> Self {
+        match cached {
+            super::CachedIterator::ReadDir(iter) => iter,
+            super::CachedIterator::ReadDirPlus(_) => {
+                // This should not happen in practice, but handle gracefully
+                panic!("Type mismatch: expected ReadDir iterator, got ReadDirPlus");
+            }
         }
-
-        debug!(
-            "Verifying iterator is at cookie {} in directory {:?}",
-            self.cookie, self.dirid
-        );
-
-        // For cookie verification, we need to check that we can find the next entry
-        // after the given cookie. We don't need to validate the exact position,
-        // just that we can continue from where the cookie indicates.
-        self.state = IteratorState::Active;
-        Ok(())
     }
 }
 
@@ -145,45 +141,42 @@ impl Mirror3ReadDirPlusIterator {
             dirid,
             read_dir,
             cookie,
-            state: IteratorState::Unverified,
+            exhausted: false,
         })
     }
 
-    fn verify_cookie_position(&mut self) -> Result<(), nfsstat3> {
-        if self.cookie == 0 {
-            // Starting from beginning is always valid
-            self.state = IteratorState::Active;
-            return Ok(());
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn new_without_verification(
+        root_path: PathBuf,
+        inner: Arc<RwLock<FsInner>>,
+        dirid: FileHandleU64,
+        read_dir: ReadDir,
+        cookie: u64,
+    ) -> Self {
+        Self {
+            root_path,
+            inner,
+            dirid,
+            read_dir,
+            cookie,
+            exhausted: false,
         }
+    }
 
-        if self.state != IteratorState::Unverified {
-            // Already verified
-            return Ok(());
+    pub fn from_cached(cached: super::CachedIterator) -> Self {
+        match cached {
+            super::CachedIterator::ReadDirPlus(iter) => iter,
+            super::CachedIterator::ReadDir(_) => {
+                // This should not happen in practice, but handle gracefully
+                panic!("Type mismatch: expected ReadDirPlus iterator, got ReadDir");
+            }
         }
-
-        debug!(
-            "Verifying iterator is at cookie {} in directory {:?}",
-            self.cookie, self.dirid
-        );
-
-        // For cookie verification, we need to check that we can find the next entry
-        // after the given cookie. We don't need to validate the exact position,
-        // just that we can continue from where the cookie indicates.
-        self.state = IteratorState::Active;
-        Ok(())
     }
 }
 
 impl ReadDirIterator for Mirror3ReadDirIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        // If we haven't verified the cookie position yet, do it now
-        if self.state == IteratorState::Unverified {
-            if let Err(e) = self.verify_cookie_position() {
-                return NextResult::Err(e);
-            }
-        }
-
-        if self.state == IteratorState::Exhausted {
+        if self.exhausted {
             return NextResult::Eof;
         }
 
@@ -207,16 +200,17 @@ impl ReadDirIterator for Mirror3ReadDirIterator {
                     }
                 };
 
+                self.cookie += 1;
                 let dir_entry = DirEntry {
                     fileid: handle.as_u64(),
                     name: filename3::from_os_string(name),
-                    cookie: handle.as_u64(),
+                    cookie: self.cookie,
                 };
 
                 NextResult::Ok(dir_entry)
             }
             Ok(None) => {
-                self.state = IteratorState::Exhausted;
+                self.exhausted = true;
                 NextResult::Eof
             }
             Err(_) => NextResult::Err(nfsstat3::NFS3ERR_IO),
@@ -226,14 +220,7 @@ impl ReadDirIterator for Mirror3ReadDirIterator {
 
 impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        // If we haven't verified the cookie position yet, do it now
-        if self.state == IteratorState::Unverified {
-            if let Err(e) = self.verify_cookie_position() {
-                return NextResult::Err(e);
-            }
-        }
-
-        if self.state == IteratorState::Exhausted {
+        if self.exhausted {
             return NextResult::Eof;
         }
 
@@ -280,10 +267,11 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
                             |metadata| Some(metadata_to_fattr3(handle.as_u64(), &metadata)),
                         );
 
+                    self.cookie += 1;
                     let dir_entry_plus = DirEntryPlus {
                         fileid: handle.as_u64(),
                         name: filename3::from_os_string(name),
-                        cookie: handle.as_u64(),
+                        cookie: self.cookie,
                         name_attributes: fattr,
                         name_handle: Some(handle),
                     };
@@ -291,7 +279,7 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
                     return NextResult::Ok(dir_entry_plus);
                 }
                 Ok(None) => {
-                    self.state = IteratorState::Exhausted;
+                    self.exhausted = true;
                     return NextResult::Eof;
                 }
                 Err(_) => return NextResult::Err(nfsstat3::NFS3ERR_IO),
