@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fileid3, filename3, nfsstat3};
@@ -22,6 +23,10 @@ pub struct Mirror3ReadDirIterator {
     read_dir: ReadDir,
     cookie: u64,
     exhausted: bool,
+    /// Flag to prevent caching when iterator was explicitly consumed
+    should_cache: bool,
+    /// Direct reference to the iterator cache for Drop implementation
+    iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
 
 #[derive(Debug)]
@@ -32,6 +37,10 @@ pub struct Mirror3ReadDirPlusIterator {
     read_dir: ReadDir,
     cookie: u64,
     exhausted: bool,
+    /// Flag to prevent caching when iterator was explicitly consumed
+    should_cache: bool,
+    /// Direct reference to the iterator cache for Drop implementation
+    iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
 
 impl Mirror3ReadDirIterator {
@@ -41,10 +50,11 @@ impl Mirror3ReadDirIterator {
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<Self, nfsstat3> {
-        let dir_path = {
+        let (dir_path, iterator_cache) = {
             let lock = inner.read().unwrap();
             let relative_path = lock.cache.handle_to_path(dirid)?;
-            root_path.join(&relative_path)
+            let iterator_cache = Arc::clone(&lock.iterator_cache);
+            (root_path.join(&relative_path), iterator_cache)
         };
 
         // Check if it's a directory
@@ -72,6 +82,8 @@ impl Mirror3ReadDirIterator {
             read_dir,
             cookie,
             exhausted: false,
+            should_cache: true,
+            iterator_cache,
         })
     }
 
@@ -83,6 +95,11 @@ impl Mirror3ReadDirIterator {
         read_dir: ReadDir,
         cookie: u64,
     ) -> Self {
+        let iterator_cache = {
+            let lock = inner.read().unwrap();
+            Arc::clone(&lock.iterator_cache)
+        };
+        
         Self {
             root_path,
             inner,
@@ -90,16 +107,28 @@ impl Mirror3ReadDirIterator {
             read_dir,
             cookie,
             exhausted: false,
+            should_cache: true,
+            iterator_cache,
         }
     }
 
-    pub fn from_cached(cached: super::CachedIterator) -> Self {
-        match cached {
-            super::CachedIterator::ReadDir(iter) => iter,
-            super::CachedIterator::ReadDirPlus(_) => {
-                // This should not happen in practice, but handle gracefully
-                panic!("Type mismatch: expected ReadDir iterator, got ReadDirPlus");
-            }
+    /// Mark this iterator as fully consumed (don't cache it)
+    pub fn mark_consumed(&mut self) {
+        self.should_cache = false;
+    }
+}
+
+impl Drop for Mirror3ReadDirIterator {
+    fn drop(&mut self) {
+        // Only cache if we're not exhausted and caching is enabled
+        if !self.exhausted && self.should_cache {
+            // Cache the current position for potential future use
+            self.iterator_cache.cache_state(
+                self.dirid,
+                self.cookie,
+                super::simple_iterator_cache::IteratorType::ReadDir,
+                Instant::now(),
+            );
         }
     }
 }
@@ -111,10 +140,11 @@ impl Mirror3ReadDirPlusIterator {
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<Self, nfsstat3> {
-        let dir_path = {
+        let (dir_path, iterator_cache) = {
             let lock = inner.read().unwrap();
             let relative_path = lock.cache.handle_to_path(dirid)?;
-            root_path.join(&relative_path)
+            let iterator_cache = Arc::clone(&lock.iterator_cache);
+            (root_path.join(&relative_path), iterator_cache)
         };
 
         // Check if it's a directory
@@ -142,6 +172,8 @@ impl Mirror3ReadDirPlusIterator {
             read_dir,
             cookie,
             exhausted: false,
+            should_cache: true,
+            iterator_cache,
         })
     }
 
@@ -153,6 +185,11 @@ impl Mirror3ReadDirPlusIterator {
         read_dir: ReadDir,
         cookie: u64,
     ) -> Self {
+        let iterator_cache = {
+            let lock = inner.read().unwrap();
+            Arc::clone(&lock.iterator_cache)
+        };
+        
         Self {
             root_path,
             inner,
@@ -160,16 +197,23 @@ impl Mirror3ReadDirPlusIterator {
             read_dir,
             cookie,
             exhausted: false,
+            should_cache: true,
+            iterator_cache,
         }
     }
+}
 
-    pub fn from_cached(cached: super::CachedIterator) -> Self {
-        match cached {
-            super::CachedIterator::ReadDirPlus(iter) => iter,
-            super::CachedIterator::ReadDir(_) => {
-                // This should not happen in practice, but handle gracefully
-                panic!("Type mismatch: expected ReadDirPlus iterator, got ReadDir");
-            }
+impl Drop for Mirror3ReadDirPlusIterator {
+    fn drop(&mut self) {
+        // Only cache if we're not exhausted and caching is enabled
+        if !self.exhausted && self.should_cache {
+            // Cache the current position for potential future use
+            self.iterator_cache.cache_state(
+                self.dirid,
+                self.cookie,
+                super::simple_iterator_cache::IteratorType::ReadDirPlus,
+                Instant::now(),
+            );
         }
     }
 }

@@ -3,6 +3,8 @@
 // FIXME: map IO errors to nfsstat3
 
 mod iterator;
+mod simple_iterator_cache;
+mod cache_demo;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -11,10 +13,12 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use clap::Error;
 use intaglio::{Symbol, path};
 use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
+use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner, IteratorType};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{
@@ -108,12 +112,6 @@ struct IteratorCacheKey {
 }
 
 #[derive(Debug)]
-enum CachedIterator {
-    ReadDir(Mirror3ReadDirIterator),
-    ReadDirPlus(Mirror3ReadDirPlusIterator),
-}
-
-#[derive(Debug)]
 pub struct Cache {
     root: PathBuf,
     symbols: SymbolsTable,
@@ -199,13 +197,14 @@ impl Cache {
 #[derive(Debug)]
 pub struct FsInner {
     cache: Cache,
-    iterator_cache: HashMap<IteratorCacheKey, CachedIterator>,
+    iterator_cache: Arc<IteratorCache>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Fs {
     root: PathBuf,
     inner: Arc<RwLock<FsInner>>,
+    _cleaner_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Fs {
@@ -213,13 +212,42 @@ impl Fs {
         let root = root.as_ref().to_path_buf();
         let cache = Cache::new(root.clone());
 
+        // Create iterator cache with reasonable defaults:
+        // - 60 seconds retention period  
+        // - Maximum 20 cached iterators per directory
+        let iterator_cache = Arc::new(IteratorCache::new(
+            Duration::from_secs(60),
+            20,
+        ));
+
         let fs_inner = FsInner { 
             cache,
-            iterator_cache: HashMap::new(),
+            iterator_cache: Arc::clone(&iterator_cache),
         };
+
+        // Start the cleaner task to periodically clean up stale cache entries
+        let cleaner = IteratorCacheCleaner::new(
+            Arc::clone(&iterator_cache),
+            Duration::from_secs(30), // Clean every 30 seconds
+        );
+        let cleaner_handle = cleaner.start();
+
         Self {
             root,
             inner: Arc::new(RwLock::new(fs_inner)),
+            _cleaner_handle: Some(cleaner_handle),
+        }
+    }
+
+    /// Get cache statistics for debugging/monitoring
+    pub fn cache_stats(&self) -> CacheStats {
+        let inner = self.inner.read().unwrap();
+        let (total_cached, max_per_dir) = inner.iterator_cache.stats();
+        
+        CacheStats {
+            total_cached_positions: total_cached,
+            cached_directories: 0, // We simplified this for now
+            max_per_directory: max_per_dir,
         }
     }
 
@@ -267,24 +295,38 @@ impl Fs {
             ).await;
         }
 
-        // For non-zero cookies, check if we have a valid cached iterator
-        let key = IteratorCacheKey {
-            directory: dirid,
-            cookie,
+        // For non-zero cookies, check if we have a valid cached iterator position
+        let has_cached = {
+            let inner = self.inner.read().unwrap();
+            inner.iterator_cache.has_cached(dirid, cookie)
         };
-
-        let mut inner = self.inner.write().unwrap();
         
-        // Check if we have a cached iterator at this exact position
-        if let Some(cached) = inner.iterator_cache.remove(&key) {
-            // We found a cached iterator at the exact cookie position
-            return Ok(Mirror3ReadDirIterator::from_cached(cached));
+        if has_cached {
+            // Remove it from cache since we're going to use it
+            {
+                let inner = self.inner.read().unwrap();
+                inner.iterator_cache.remove_state(dirid, cookie);
+            }
+            
+            // Create a new iterator at this position 
+            return Mirror3ReadDirIterator::new(
+                self.root.clone(),
+                Arc::clone(&self.inner),
+                dirid,
+                cookie,
+            ).await;
         }
 
-        // No exact match found - this means the cookie is invalid
-        // In a real implementation, we could try to find a nearby iterator
-        // and seek to the correct position, but for now we'll return an error
-        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
+        // If not cached, we still try to create an iterator at this position
+        // This handles the case where cookies are valid but not cached
+        // Note: This is a simplified approach - a real implementation might 
+        // validate the cookie or seek to the position
+        Mirror3ReadDirIterator::new(
+            self.root.clone(),
+            Arc::clone(&self.inner),
+            dirid,
+            cookie,
+        ).await
     }
 
     async fn get_or_create_readdirplus_iterator(
@@ -302,23 +344,45 @@ impl Fs {
             ).await;
         }
 
-        // For non-zero cookies, check if we have a valid cached iterator
-        let key = IteratorCacheKey {
-            directory: dirid,
-            cookie,
+        // For non-zero cookies, check if we have a valid cached iterator position
+        let has_cached = {
+            let inner = self.inner.read().unwrap();
+            inner.iterator_cache.has_cached(dirid, cookie)
         };
-
-        let mut inner = self.inner.write().unwrap();
         
-        // Check if we have a cached iterator at this exact position
-        if let Some(cached) = inner.iterator_cache.remove(&key) {
-            // We found a cached iterator at the exact cookie position
-            return Ok(Mirror3ReadDirPlusIterator::from_cached(cached));
+        if has_cached {
+            // Remove it from cache since we're going to use it
+            {
+                let inner = self.inner.read().unwrap();
+                inner.iterator_cache.remove_state(dirid, cookie);
+            }
+            
+            // Create a new iterator at this position
+            return Mirror3ReadDirPlusIterator::new(
+                self.root.clone(),
+                Arc::clone(&self.inner),
+                dirid,
+                cookie,
+            ).await;
         }
 
-        // No exact match found - this means the cookie is invalid
-        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
+        // If not cached, we still try to create an iterator at this position
+        // This handles the case where cookies are valid but not cached
+        Mirror3ReadDirPlusIterator::new(
+            self.root.clone(),
+            Arc::clone(&self.inner),
+            dirid,
+            cookie,
+        ).await
     }
+}
+
+/// Statistics about the iterator cache
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub total_cached_positions: usize,
+    pub cached_directories: usize,
+    pub max_per_directory: usize,
 }
 
 impl NfsReadFileSystem for Fs {
@@ -361,8 +425,7 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        Mirror3ReadDirIterator::new(self.root.clone(), Arc::clone(&self.inner), *dirid, cookie)
-            .await
+        self.get_or_create_readdir_iterator(*dirid, cookie).await
     }
 
     async fn readdirplus(
@@ -370,8 +433,7 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
-        Mirror3ReadDirPlusIterator::new(self.root.clone(), Arc::clone(&self.inner), *dirid, cookie)
-            .await
+        self.get_or_create_readdirplus_iterator(*dirid, cookie).await
     }
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
