@@ -16,7 +16,7 @@ use super::{FsInner, SymbolsPath};
 use crate::mirror::string_ext::FromOsString;
 
 #[derive(Debug)]
-pub struct Mirror3ReadDirIterator {
+pub struct Mirror3DirIterator {
     root_path: PathBuf,
     inner: Arc<RwLock<FsInner>>,
     dirid: FileHandleU64,
@@ -26,18 +26,7 @@ pub struct Mirror3ReadDirIterator {
     iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
 
-#[derive(Debug)]
-pub struct Mirror3ReadDirPlusIterator {
-    root_path: PathBuf,
-    inner: Arc<RwLock<FsInner>>,
-    dirid: FileHandleU64,
-    read_dir: Option<ReadDir>,
-    cookie: u64,
-    /// Direct reference to the iterator cache for Drop implementation
-    iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
-}
-
-impl Mirror3ReadDirIterator {
+impl Mirror3DirIterator {
     pub async fn new(
         root_path: PathBuf,
         inner: Arc<RwLock<FsInner>>,
@@ -65,7 +54,7 @@ impl Mirror3ReadDirIterator {
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         debug!(
-            "Created readdir iterator for directory: {:?} with cookie: {}",
+            "Created directory iterator for: {:?} with cookie: {}",
             dir_path, cookie
         );
 
@@ -103,7 +92,7 @@ impl Mirror3ReadDirIterator {
     }
 }
 
-impl Drop for Mirror3ReadDirIterator {
+impl Drop for Mirror3DirIterator {
     fn drop(&mut self) {
         // Only cache if we're not exhausted (read_dir is Some)
         if self.read_dir.is_some() {
@@ -111,100 +100,15 @@ impl Drop for Mirror3ReadDirIterator {
             self.iterator_cache.cache_state(
                 self.dirid,
                 self.cookie,
-                super::simple_iterator_cache::IteratorType::ReadDir,
                 Instant::now(),
             );
         }
     }
 }
 
-impl Mirror3ReadDirPlusIterator {
-    pub async fn new(
-        root_path: PathBuf,
-        inner: Arc<RwLock<FsInner>>,
-        dirid: FileHandleU64,
-        cookie: u64,
-    ) -> Result<Self, nfsstat3> {
-        let (dir_path, iterator_cache) = {
-            let lock = inner.read().unwrap();
-            let relative_path = lock.cache.handle_to_path(dirid)?;
-            let iterator_cache = Arc::clone(&lock.iterator_cache);
-            (root_path.join(&relative_path), iterator_cache)
-        };
-
-        // Check if it's a directory
-        let metadata = tokio::fs::symlink_metadata(&dir_path)
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
-        if !metadata.is_dir() {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        }
-
-        // Open directory for reading
-        let read_dir = tokio::fs::read_dir(&dir_path)
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-
-        debug!(
-            "Created readdirplus iterator for directory: {:?} with cookie: {}",
-            dir_path, cookie
-        );
-
-        Ok(Self {
-            root_path,
-            inner,
-            dirid,
-            read_dir: Some(read_dir),
-            cookie,
-            iterator_cache,
-        })
-    }
-
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn new_without_verification(
-        root_path: PathBuf,
-        inner: Arc<RwLock<FsInner>>,
-        dirid: FileHandleU64,
-        read_dir: ReadDir,
-        cookie: u64,
-    ) -> Self {
-        let iterator_cache = {
-            let lock = inner.read().unwrap();
-            Arc::clone(&lock.iterator_cache)
-        };
-        
-        Self {
-            root_path,
-            inner,
-            dirid,
-            read_dir: Some(read_dir),
-            cookie,
-            iterator_cache,
-        }
-    }
-}
-
-impl Drop for Mirror3ReadDirPlusIterator {
-    fn drop(&mut self) {
-        // Only cache if we're not exhausted (read_dir is Some)
-        if self.read_dir.is_some() {
-            // Cache the current position for potential future use
-            self.iterator_cache.cache_state(
-                self.dirid,
-                self.cookie,
-                super::simple_iterator_cache::IteratorType::ReadDirPlus,
-                Instant::now(),
-            );
-        }
-    }
-}
-
-impl ReadDirIterator for Mirror3ReadDirIterator {
+impl ReadDirIterator for Mirror3DirIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        let read_dir = match self.read_dir.as_mut() {
-            Some(read_dir) => read_dir,
-            None => return NextResult::Eof,
-        };
+        let Some(read_dir) = self.read_dir.as_mut() else { return NextResult::Eof };
 
         // Get next entry from tokio ReadDir
         match read_dir.next_entry().await {
@@ -244,12 +148,9 @@ impl ReadDirIterator for Mirror3ReadDirIterator {
     }
 }
 
-impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
+impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        let read_dir = match self.read_dir.as_mut() {
-            Some(read_dir) => read_dir,
-            None => return NextResult::Eof,
-        };
+        let Some(read_dir) = self.read_dir.as_mut() else { return NextResult::Eof };
 
         // Get next entry from tokio ReadDir
         loop {

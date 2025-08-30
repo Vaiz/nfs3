@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use clap::Error;
 use intaglio::{Symbol, path};
-use iterator::{Mirror3ReadDirIterator, Mirror3ReadDirPlusIterator};
-use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner, IteratorType};
+use iterator::Mirror3DirIterator;
+use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{
@@ -271,10 +271,10 @@ impl Fs {
         &self,
         dirid: FileHandleU64,
         cookie: u64,
-    ) -> Result<Mirror3ReadDirIterator, nfsstat3> {
+    ) -> Result<Mirror3DirIterator, nfsstat3> {
         // If cookie is 0, create a new iterator
         if cookie == 0 {
-            return Mirror3ReadDirIterator::new(
+            return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
@@ -296,7 +296,7 @@ impl Fs {
             }
             
             // Create a new iterator at this position 
-            return Mirror3ReadDirIterator::new(
+            return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
@@ -308,7 +308,7 @@ impl Fs {
         // This handles the case where cookies are valid but not cached
         // Note: This is a simplified approach - a real implementation might 
         // validate the cookie or seek to the position
-        Mirror3ReadDirIterator::new(
+        Mirror3DirIterator::new(
             self.root.clone(),
             Arc::clone(&self.inner),
             dirid,
@@ -320,10 +320,10 @@ impl Fs {
         &self,
         dirid: FileHandleU64,
         cookie: u64,
-    ) -> Result<Mirror3ReadDirPlusIterator, nfsstat3> {
+    ) -> Result<Mirror3DirIterator, nfsstat3> {
         // For cookie 0, always create a new iterator
         if cookie == 0 {
-            return Mirror3ReadDirPlusIterator::new(
+            return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
@@ -345,7 +345,7 @@ impl Fs {
             }
             
             // Create a new iterator at this position
-            return Mirror3ReadDirPlusIterator::new(
+            return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
@@ -355,7 +355,7 @@ impl Fs {
 
         // If not cached, we still try to create an iterator at this position
         // This handles the case where cookies are valid but not cached
-        Mirror3ReadDirPlusIterator::new(
+        Mirror3DirIterator::new(
             self.root.clone(),
             Arc::clone(&self.inner),
             dirid,

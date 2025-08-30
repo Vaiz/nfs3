@@ -1,6 +1,9 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+
+use tokio::sync::Notify;
+use tokio::time::interval;
 
 use nfs3_server::vfs::FileHandleU64;
 
@@ -11,19 +14,11 @@ pub struct IteratorKey {
     pub cookie: u64,
 }
 
-/// Type of iterator
-#[derive(Debug, Clone, PartialEq)]
-pub enum IteratorType {
-    ReadDir,
-    ReadDirPlus,
-}
-
 /// Cache entry for iterator state
 #[derive(Debug, Clone)]
 pub struct CachedIteratorInfo {
     pub dir_id: FileHandleU64,
     pub cookie: u64,
-    pub iterator_type: IteratorType,
     pub cached_at: Instant,
 }
 
@@ -52,13 +47,11 @@ impl IteratorCache {
         let cache = self.cache.read().expect("lock is poisoned");
         let key = IteratorKey { dir_id, cookie };
         
-        if let Some(info) = cache.get(&key) {
+        cache.get(&key).is_some_and(|info| {
             // Check if it's still valid (not stale)
             let now = Instant::now();
             now - info.cached_at <= self.retention_period
-        } else {
-            false
-        }
+        })
     }
 
     /// Cache an iterator state
@@ -66,7 +59,6 @@ impl IteratorCache {
         &self,
         dir_id: FileHandleU64,
         cookie: u64,
-        iterator_type: IteratorType,
         now: Instant,
     ) {
         let mut cache = self.cache.write().expect("lock is poisoned");
@@ -75,7 +67,6 @@ impl IteratorCache {
         let info = CachedIteratorInfo {
             dir_id,
             cookie,
-            iterator_type,
             cached_at: now,
         };
         
@@ -152,7 +143,7 @@ impl IteratorCacheCleaner {
                         let now = Instant::now();
                         self.cache.cleanup(now);
                     }
-                    _ = self.stop.notified() => {
+                    () = self.stop.notified() => {
                         break;
                     }
                 }
@@ -181,7 +172,7 @@ mod tests {
         
         // Cache an iterator state
         let now = Instant::now();
-        cache.cache_state(dir_id, cookie, IteratorType::ReadDir, now);
+        cache.cache_state(dir_id, cookie, now);
         
         // Now it should be cached
         assert!(cache.has_cached(dir_id, cookie));
@@ -189,7 +180,6 @@ mod tests {
         // Remove it
         let removed = cache.remove_state(dir_id, cookie);
         assert!(removed.is_some());
-        assert_eq!(removed.unwrap().iterator_type, IteratorType::ReadDir);
         
         // Should no longer be cached
         assert!(!cache.has_cached(dir_id, cookie));
@@ -203,7 +193,7 @@ mod tests {
         let now = Instant::now();
         
         // Cache an entry
-        cache.cache_state(dir_id, cookie, IteratorType::ReadDir, now);
+        cache.cache_state(dir_id, cookie, now);
         assert!(cache.has_cached(dir_id, cookie));
         
         // Sleep and cleanup
