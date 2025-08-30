@@ -1,9 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
-
-use tokio::sync::Notify;
-use tokio::time::interval;
 
 use nfs3_server::vfs::FileHandleU64;
 
@@ -16,6 +13,7 @@ pub struct IteratorKey {
 
 /// Cache entry for iterator state
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields used by API but not internally
 pub struct CachedIteratorInfo {
     pub dir_id: FileHandleU64,
     pub cookie: u64,
@@ -88,7 +86,7 @@ impl IteratorCache {
         &self,
         cache: &mut HashMap<IteratorKey, CachedIteratorInfo>,
         dir_id: FileHandleU64,
-        now: Instant,
+        _now: Instant,
     ) {
         let mut dir_entries: Vec<_> = cache
             .iter()
@@ -145,6 +143,7 @@ impl IteratorCacheCleaner {
     }
 
     /// Stop the cleaner
+    #[allow(dead_code)] // Public API method that might be used in the future
     pub fn stop(&self) {
         self.stop.notify_one();
     }

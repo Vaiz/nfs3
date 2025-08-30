@@ -5,14 +5,14 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use nfs3_server::fs_util::metadata_to_fattr3;
-use nfs3_server::nfs3_types::nfs3::{fileid3, filename3, nfsstat3};
+use nfs3_server::nfs3_types::nfs3::nfsstat3;
 use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, ReadDirIterator, ReadDirPlusIterator,
 };
 use tokio::fs::ReadDir;
-use tracing::{debug, warn};
+use tracing::debug;
 
-use super::{FsInner, SymbolsPath};
+use super::FsInner;
 use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
@@ -66,29 +66,6 @@ impl Mirror3DirIterator {
             cookie,
             iterator_cache,
         })
-    }
-
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn new_without_verification(
-        root_path: PathBuf,
-        inner: Arc<RwLock<FsInner>>,
-        dirid: FileHandleU64,
-        read_dir: ReadDir,
-        cookie: u64,
-    ) -> Self {
-        let iterator_cache = {
-            let lock = inner.read().unwrap();
-            Arc::clone(&lock.iterator_cache)
-        };
-
-        Self {
-            root_path,
-            inner,
-            dirid,
-            read_dir: Some(read_dir),
-            cookie,
-            iterator_cache,
-        }
     }
 }
 

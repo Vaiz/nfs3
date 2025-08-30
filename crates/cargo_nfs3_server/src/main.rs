@@ -42,10 +42,6 @@ struct Args {
     #[arg(long)]
     memfs: bool,
 
-    /// Use `MirrorFs3` (experimental filesystem with symbol table)
-    #[arg(long)]
-    mirrorfs3: bool,
-
     /// Log level (default is "info")
     #[arg(long, default_value = "info")]
     log_level: String,
@@ -81,30 +77,16 @@ async fn main() {
             .as_deref()
             .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
 
-        assert!(Path::new(path).exists(), "path [{path}] does not exist",);
+        assert!(Path::new(path).exists(), "path [{path}] does not exist");
 
-        if args.mirrorfs3 {
-            let mirror_fs3 = mirror::Fs::new(path);
-            // MirrorFs3 is read-only for now, so we always wrap it
-            start_server(
-                bind_addr,
-                export_path,
-                ReadOnlyAdapter::new(mirror_fs3),
-                guards,
-            )
-            .await;
-        } else {
-            // Default to using the Fs implementation (mirror3)
-            let mirror_fs = mirror::Fs::new(path);
-            // The Fs implementation is read-only, so we always wrap it
-            start_server(
-                bind_addr,
-                export_path,
-                ReadOnlyAdapter::new(mirror_fs),
-                guards,
-            )
-            .await;
-        }
+        let mirror_fs = mirror::Fs::new(path);
+        start_server(
+            bind_addr,
+            export_path,
+            ReadOnlyAdapter::new(mirror_fs),
+            guards,
+        )
+        .await;
     }
 }
 

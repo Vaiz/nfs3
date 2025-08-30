@@ -12,14 +12,10 @@ use nfs3_server::nfs3_types::xdr_codec::Opaque;
 
 pub trait IntoOsString {
     fn as_os_str(&self) -> &OsStr;
-    fn to_os_string(&self) -> OsString {
-        self.as_os_str().to_os_string()
-    }
 }
 
 pub trait FromOsString: Sized {
     fn from_os_str(osstr: &OsStr) -> Self;
-    #[must_use]
     fn from_os_string(osstr: OsString) -> Self {
         Self::from_os_str(osstr.as_os_str())
     }

@@ -1,30 +1,24 @@
-#![allow(unused)] // FIXME
-#![allow(clippy::unwrap_used)] // FIXME
-// FIXME: map IO errors to nfsstat3
+#![allow(clippy::unwrap_used)] // TODO: Replace unwraps with proper error handling
 
 mod iterator;
 mod simple_iterator_cache;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use clap::Error;
-use intaglio::{Symbol, path};
+use intaglio::Symbol;
 use iterator::Mirror3DirIterator;
 use nfs3_server::fs_util::metadata_to_fattr3;
-use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
-use nfs3_server::vfs::{
-    DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator,
-};
+use nfs3_server::nfs3_types::nfs3::{fattr3, filename3, nfspath3, nfsstat3};
+use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator};
 use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner};
-use tokio::fs::{File, ReadDir};
+use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
 use crate::string_ext::{FromOsString, IntoOsString};
@@ -55,21 +49,11 @@ impl SymbolsPath {
         Self(Vec::new())
     }
 
-    pub fn push(&mut self, symbol: Symbol) {
-        self.0.push(symbol);
-    }
-
     pub fn join(&self, symbol: Symbol) -> Self {
         let mut new_path = self.clone();
         new_path.0.push(symbol);
         new_path
     }
-}
-
-pub struct Entry {
-    // path: Path
-    // name: Symbol
-    // type_: ftype3,
 }
 
 #[derive(Debug, Default)]
@@ -89,10 +73,6 @@ impl SymbolsTable {
         self.table.intern(name).expect("symbols table full")
     }
 
-    fn get(&self, symbol: Symbol) -> Option<&OsStr> {
-        self.table.get(symbol)
-    }
-
     // SymbolsPath expected to be always valid
     fn resolve_path(&self, path: &SymbolsPath) -> PathBuf {
         let mut path_buf = PathBuf::new();
@@ -102,12 +82,6 @@ impl SymbolsTable {
         }
         path_buf
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct IteratorCacheKey {
-    directory: FileHandleU64,
-    cookie: u64,
 }
 
 #[derive(Debug)]
@@ -170,7 +144,7 @@ impl Cache {
         use std::sync::atomic::Ordering;
 
         let symbol = self.symbols.insert_or_resolve(name.into());
-        let mut entry = self.path_to_id.entry(parent.join(symbol));
+        let entry = self.path_to_id.entry(parent.join(symbol));
         match entry {
             Entry::Occupied(occupied_entry) => Ok(*occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
@@ -237,7 +211,7 @@ impl Fs {
 
     fn path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
         let relative_path = {
-            let mut lock = self.inner.write().unwrap();
+            let lock = self.inner.write().unwrap();
             lock.cache.handle_to_path(id.as_u64().into())
         }?;
         Ok(self.root.join(relative_path))
@@ -264,7 +238,7 @@ impl Fs {
         Ok((buf, start + count >= len))
     }
 
-    async fn get_or_create_readdir_iterator(
+    async fn get_or_create_iterator(
         &self,
         dirid: FileHandleU64,
         cookie: u64,
@@ -309,50 +283,6 @@ impl Fs {
         // validate the cookie or seek to the position
         Mirror3DirIterator::new(self.root.clone(), Arc::clone(&self.inner), dirid, cookie).await
     }
-
-    async fn get_or_create_readdirplus_iterator(
-        &self,
-        dirid: FileHandleU64,
-        cookie: u64,
-    ) -> Result<Mirror3DirIterator, nfsstat3> {
-        // For cookie 0, always create a new iterator
-        if cookie == 0 {
-            return Mirror3DirIterator::new(
-                self.root.clone(),
-                Arc::clone(&self.inner),
-                dirid,
-                cookie,
-            )
-            .await;
-        }
-
-        // For non-zero cookies, check if we have a valid cached iterator position
-        let has_cached = {
-            let inner = self.inner.read().unwrap();
-            inner.iterator_cache.has_cached(dirid, cookie)
-        };
-
-        if has_cached {
-            // Remove it from cache since we're going to use it
-            {
-                let inner = self.inner.read().unwrap();
-                inner.iterator_cache.remove_state(dirid, cookie);
-            }
-
-            // Create a new iterator at this position
-            return Mirror3DirIterator::new(
-                self.root.clone(),
-                Arc::clone(&self.inner),
-                dirid,
-                cookie,
-            )
-            .await;
-        }
-
-        // If not cached, we still try to create an iterator at this position
-        // This handles the case where cookies are valid but not cached
-        Mirror3DirIterator::new(self.root.clone(), Arc::clone(&self.inner), dirid, cookie).await
-    }
 }
 
 impl NfsReadFileSystem for Fs {
@@ -395,7 +325,7 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        self.get_or_create_readdir_iterator(*dirid, cookie).await
+        self.get_or_create_iterator(*dirid, cookie).await
     }
 
     async fn readdirplus(
@@ -403,8 +333,7 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
-        self.get_or_create_readdirplus_iterator(*dirid, cookie)
-            .await
+        self.get_or_create_iterator(*dirid, cookie).await
     }
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
@@ -441,8 +370,7 @@ fn map_io_error(err: std::io::Error) -> nfsstat3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nfs3_server::vfs::{ReadDirIterator, ReadDirPlusIterator};
-    use std::collections::HashSet;
+    use nfs3_server::vfs::{NextResult, ReadDirIterator};
     use tempfile::tempdir;
     use tokio::fs;
 
