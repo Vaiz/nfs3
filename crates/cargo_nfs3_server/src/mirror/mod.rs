@@ -17,17 +17,17 @@ use std::time::{Duration, Instant};
 use clap::Error;
 use intaglio::{Symbol, path};
 use iterator::Mirror3DirIterator;
-use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsReadFileSystem, ReadDirIterator,
     ReadDirPlusIterator,
 };
+use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use tokio::fs::{File, ReadDir};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
-use crate::mirror::string_ext::{FromOsString, IntoOsString};
+use crate::string_ext::{FromOsString, IntoOsString};
 
 pub struct OsStrRef<'a>(Cow<'a, OsStr>);
 
@@ -212,14 +212,11 @@ impl Fs {
         let cache = Cache::new(root.clone());
 
         // Create iterator cache with reasonable defaults:
-        // - 60 seconds retention period  
+        // - 60 seconds retention period
         // - Maximum 20 cached iterators per directory
-        let iterator_cache = Arc::new(IteratorCache::new(
-            Duration::from_secs(60),
-            20,
-        ));
+        let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
 
-        let fs_inner = FsInner { 
+        let fs_inner = FsInner {
             cache,
             iterator_cache: Arc::clone(&iterator_cache),
         };
@@ -279,7 +276,8 @@ impl Fs {
                 Arc::clone(&self.inner),
                 dirid,
                 cookie,
-            ).await;
+            )
+            .await;
         }
 
         // For non-zero cookies, check if we have a valid cached iterator position
@@ -287,33 +285,29 @@ impl Fs {
             let inner = self.inner.read().unwrap();
             inner.iterator_cache.has_cached(dirid, cookie)
         };
-        
+
         if has_cached {
             // Remove it from cache since we're going to use it
             {
                 let inner = self.inner.read().unwrap();
                 inner.iterator_cache.remove_state(dirid, cookie);
             }
-            
-            // Create a new iterator at this position 
+
+            // Create a new iterator at this position
             return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
                 cookie,
-            ).await;
+            )
+            .await;
         }
 
         // If not cached, we still try to create an iterator at this position
         // This handles the case where cookies are valid but not cached
-        // Note: This is a simplified approach - a real implementation might 
+        // Note: This is a simplified approach - a real implementation might
         // validate the cookie or seek to the position
-        Mirror3DirIterator::new(
-            self.root.clone(),
-            Arc::clone(&self.inner),
-            dirid,
-            cookie,
-        ).await
+        Mirror3DirIterator::new(self.root.clone(), Arc::clone(&self.inner), dirid, cookie).await
     }
 
     async fn get_or_create_readdirplus_iterator(
@@ -328,7 +322,8 @@ impl Fs {
                 Arc::clone(&self.inner),
                 dirid,
                 cookie,
-            ).await;
+            )
+            .await;
         }
 
         // For non-zero cookies, check if we have a valid cached iterator position
@@ -336,31 +331,27 @@ impl Fs {
             let inner = self.inner.read().unwrap();
             inner.iterator_cache.has_cached(dirid, cookie)
         };
-        
+
         if has_cached {
             // Remove it from cache since we're going to use it
             {
                 let inner = self.inner.read().unwrap();
                 inner.iterator_cache.remove_state(dirid, cookie);
             }
-            
+
             // Create a new iterator at this position
             return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
                 dirid,
                 cookie,
-            ).await;
+            )
+            .await;
         }
 
         // If not cached, we still try to create an iterator at this position
         // This handles the case where cookies are valid but not cached
-        Mirror3DirIterator::new(
-            self.root.clone(),
-            Arc::clone(&self.inner),
-            dirid,
-            cookie,
-        ).await
+        Mirror3DirIterator::new(self.root.clone(), Arc::clone(&self.inner), dirid, cookie).await
     }
 }
 
@@ -412,13 +403,14 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         cookie: u64,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
-        self.get_or_create_readdirplus_iterator(*dirid, cookie).await
+        self.get_or_create_readdirplus_iterator(*dirid, cookie)
+            .await
     }
 
     async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
         let path = self.path(*id)?;
         match tokio::fs::read_link(&path).await {
-            Ok(target) => Ok(nfspath3::from_os_str(target.as_os_str())),
+            Ok(target) => Ok(FromOsString::from_os_str(target.as_os_str())),
             Err(e) => {
                 tracing::warn!(id = id.as_u64(), path = %path.display(), error = %e, "failed to read symlink target");
                 if e.kind() == std::io::ErrorKind::NotFound {

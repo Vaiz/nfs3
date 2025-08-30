@@ -10,8 +10,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 mod logging;
 mod memfs;
 mod mirror;
-mod mirror2;
-mod mirror3;
+mod string_ext;
 
 /// CLI tool for the `nfs3_server`
 #[allow(clippy::struct_excessive_bools)]
@@ -42,10 +41,6 @@ struct Args {
     /// Use an in-memory filesystem
     #[arg(long)]
     memfs: bool,
-
-    /// Use `MirrorFs2` (caches only file names for handle resolution)
-    #[arg(long)]
-    mirrorfs2: bool,
 
     /// Use `MirrorFs3` (experimental filesystem with symbol table)
     #[arg(long)]
@@ -89,7 +84,7 @@ async fn main() {
         assert!(Path::new(path).exists(), "path [{path}] does not exist",);
 
         if args.mirrorfs3 {
-            let mirror_fs3 = mirror3::Fs::new(path);
+            let mirror_fs3 = mirror::Fs::new(path);
             // MirrorFs3 is read-only for now, so we always wrap it
             start_server(
                 bind_addr,
@@ -98,32 +93,17 @@ async fn main() {
                 guards,
             )
             .await;
-        } else if args.mirrorfs2 {
-            let mirror_fs2 = mirror2::MirrorFs2::new(path);
-            if args.readonly {
-                start_server(
-                    bind_addr,
-                    export_path,
-                    ReadOnlyAdapter::new(mirror_fs2),
-                    guards,
-                )
-                .await;
-            } else {
-                start_server(bind_addr, export_path, mirror_fs2, guards).await;
-            }
         } else {
-            let mirror_fs = mirror::MirrorFs::new(path);
-            if args.readonly {
-                start_server(
-                    bind_addr,
-                    export_path,
-                    ReadOnlyAdapter::new(mirror_fs),
-                    guards,
-                )
-                .await;
-            } else {
-                start_server(bind_addr, export_path, mirror_fs, guards).await;
-            }
+            // Default to using the Fs implementation (mirror3)
+            let mirror_fs = mirror::Fs::new(path);
+            // The Fs implementation is read-only, so we always wrap it
+            start_server(
+                bind_addr,
+                export_path,
+                ReadOnlyAdapter::new(mirror_fs),
+                guards,
+            )
+            .await;
         }
     }
 }

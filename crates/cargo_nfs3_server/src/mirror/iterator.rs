@@ -13,7 +13,7 @@ use tokio::fs::ReadDir;
 use tracing::{debug, warn};
 
 use super::{FsInner, SymbolsPath};
-use crate::mirror::string_ext::FromOsString;
+use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
 pub struct Mirror3DirIterator {
@@ -80,7 +80,7 @@ impl Mirror3DirIterator {
             let lock = inner.read().unwrap();
             Arc::clone(&lock.iterator_cache)
         };
-        
+
         Self {
             root_path,
             inner,
@@ -97,18 +97,17 @@ impl Drop for Mirror3DirIterator {
         // Only cache if we're not exhausted (read_dir is Some)
         if self.read_dir.is_some() {
             // Cache the current position for potential future use
-            self.iterator_cache.cache_state(
-                self.dirid,
-                self.cookie,
-                Instant::now(),
-            );
+            self.iterator_cache
+                .cache_state(self.dirid, self.cookie, Instant::now());
         }
     }
 }
 
 impl ReadDirIterator for Mirror3DirIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        let Some(read_dir) = self.read_dir.as_mut() else { return NextResult::Eof };
+        let Some(read_dir) = self.read_dir.as_mut() else {
+            return NextResult::Eof;
+        };
 
         // Get next entry from tokio ReadDir
         match read_dir.next_entry().await {
@@ -133,7 +132,7 @@ impl ReadDirIterator for Mirror3DirIterator {
                 self.cookie += 1;
                 let dir_entry = DirEntry {
                     fileid: handle.as_u64(),
-                    name: filename3::from_os_string(name),
+                    name: FromOsString::from_os_string(name),
                     cookie: self.cookie,
                 };
 
@@ -150,7 +149,9 @@ impl ReadDirIterator for Mirror3DirIterator {
 
 impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        let Some(read_dir) = self.read_dir.as_mut() else { return NextResult::Eof };
+        let Some(read_dir) = self.read_dir.as_mut() else {
+            return NextResult::Eof;
+        };
 
         // Get next entry from tokio ReadDir
         loop {
@@ -185,20 +186,18 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
                         }
                     };
 
-                    let fattr = tokio::fs::symlink_metadata(&path)
-                        .await
-                        .map_or_else(
-                            |_| {
-                                debug!("Failed to get metadata for: {:?}", path);
-                                None
-                            },
-                            |metadata| Some(metadata_to_fattr3(handle.as_u64(), &metadata)),
-                        );
+                    let fattr = tokio::fs::symlink_metadata(&path).await.map_or_else(
+                        |_| {
+                            debug!("Failed to get metadata for: {:?}", path);
+                            None
+                        },
+                        |metadata| Some(metadata_to_fattr3(handle.as_u64(), &metadata)),
+                    );
 
                     self.cookie += 1;
                     let dir_entry_plus = DirEntryPlus {
                         fileid: handle.as_u64(),
-                        name: filename3::from_os_string(name),
+                        name: FromOsString::from_os_string(name),
                         cookie: self.cookie,
                         name_attributes: fattr,
                         name_handle: Some(handle),

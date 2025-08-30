@@ -46,7 +46,7 @@ impl IteratorCache {
     pub fn has_cached(&self, dir_id: FileHandleU64, cookie: u64) -> bool {
         let cache = self.cache.read().expect("lock is poisoned");
         let key = IteratorKey { dir_id, cookie };
-        
+
         cache.get(&key).is_some_and(|info| {
             // Check if it's still valid (not stale)
             let now = Instant::now();
@@ -55,21 +55,16 @@ impl IteratorCache {
     }
 
     /// Cache an iterator state
-    pub fn cache_state(
-        &self,
-        dir_id: FileHandleU64,
-        cookie: u64,
-        now: Instant,
-    ) {
+    pub fn cache_state(&self, dir_id: FileHandleU64, cookie: u64, now: Instant) {
         let mut cache = self.cache.write().expect("lock is poisoned");
         let key = IteratorKey { dir_id, cookie };
-        
+
         let info = CachedIteratorInfo {
             dir_id,
             cookie,
             cached_at: now,
         };
-        
+
         cache.insert(key, info);
         self.trim_cache_for_dir(&mut cache, dir_id, now);
     }
@@ -84,10 +79,8 @@ impl IteratorCache {
     /// Clean up stale iterator states - should be called periodically
     pub fn cleanup(&self, now: Instant) {
         let mut cache = self.cache.write().expect("lock is poisoned");
-        
-        cache.retain(|_, info| {
-            now - info.cached_at <= self.retention_period
-        });
+
+        cache.retain(|_, info| now - info.cached_at <= self.retention_period);
     }
 
     /// Trim cache entries for a specific directory to respect limits
@@ -106,7 +99,7 @@ impl IteratorCache {
         if dir_entries.len() > self.max_cached_per_dir as usize {
             // Sort by cache time (oldest first)
             dir_entries.sort_by_key(|(_, cached_at)| *cached_at);
-            
+
             // Remove oldest entries
             let to_remove = dir_entries.len() - self.max_cached_per_dir as usize;
             for (key, _) in dir_entries.into_iter().take(to_remove) {
@@ -136,7 +129,7 @@ impl IteratorCacheCleaner {
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(self.interval);
-            
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -160,46 +153,46 @@ impl IteratorCacheCleaner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_iterator_cache_basic_operations() {
         let cache = IteratorCache::new(Duration::from_secs(60), 10);
         let dir_id = FileHandleU64::new(1);
         let cookie = 42;
-        
+
         // Initially, no iterator should be cached
         assert!(!cache.has_cached(dir_id, cookie));
-        
+
         // Cache an iterator state
         let now = Instant::now();
         cache.cache_state(dir_id, cookie, now);
-        
+
         // Now it should be cached
         assert!(cache.has_cached(dir_id, cookie));
-        
+
         // Remove it
         let removed = cache.remove_state(dir_id, cookie);
         assert!(removed.is_some());
-        
+
         // Should no longer be cached
         assert!(!cache.has_cached(dir_id, cookie));
     }
-    
+
     #[test]
     fn test_cleanup_removes_stale_entries() {
         let cache = IteratorCache::new(Duration::from_millis(100), 10);
         let dir_id = FileHandleU64::new(1);
         let cookie = 42;
         let now = Instant::now();
-        
+
         // Cache an entry
         cache.cache_state(dir_id, cookie, now);
         assert!(cache.has_cached(dir_id, cookie));
-        
+
         // Sleep and cleanup
         std::thread::sleep(Duration::from_millis(200));
         cache.cleanup(Instant::now());
-        
+
         // Should be cleaned up
         assert!(!cache.has_cached(dir_id, cookie));
     }
