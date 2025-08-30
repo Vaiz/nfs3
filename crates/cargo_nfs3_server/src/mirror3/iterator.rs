@@ -23,8 +23,6 @@ pub struct Mirror3ReadDirIterator {
     read_dir: ReadDir,
     cookie: u64,
     exhausted: bool,
-    /// Flag to prevent caching when iterator was explicitly consumed
-    should_cache: bool,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
@@ -37,8 +35,6 @@ pub struct Mirror3ReadDirPlusIterator {
     read_dir: ReadDir,
     cookie: u64,
     exhausted: bool,
-    /// Flag to prevent caching when iterator was explicitly consumed
-    should_cache: bool,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
@@ -82,7 +78,6 @@ impl Mirror3ReadDirIterator {
             read_dir,
             cookie,
             exhausted: false,
-            should_cache: true,
             iterator_cache,
         })
     }
@@ -107,21 +102,15 @@ impl Mirror3ReadDirIterator {
             read_dir,
             cookie,
             exhausted: false,
-            should_cache: true,
             iterator_cache,
         }
-    }
-
-    /// Mark this iterator as fully consumed (don't cache it)
-    pub fn mark_consumed(&mut self) {
-        self.should_cache = false;
     }
 }
 
 impl Drop for Mirror3ReadDirIterator {
     fn drop(&mut self) {
-        // Only cache if we're not exhausted and caching is enabled
-        if !self.exhausted && self.should_cache {
+        // Only cache if we're not exhausted
+        if !self.exhausted {
             // Cache the current position for potential future use
             self.iterator_cache.cache_state(
                 self.dirid,
@@ -172,7 +161,6 @@ impl Mirror3ReadDirPlusIterator {
             read_dir,
             cookie,
             exhausted: false,
-            should_cache: true,
             iterator_cache,
         })
     }
@@ -197,7 +185,6 @@ impl Mirror3ReadDirPlusIterator {
             read_dir,
             cookie,
             exhausted: false,
-            should_cache: true,
             iterator_cache,
         }
     }
@@ -205,8 +192,8 @@ impl Mirror3ReadDirPlusIterator {
 
 impl Drop for Mirror3ReadDirPlusIterator {
     fn drop(&mut self) {
-        // Only cache if we're not exhausted and caching is enabled
-        if !self.exhausted && self.should_cache {
+        // Only cache if we're not exhausted
+        if !self.exhausted {
             // Cache the current position for potential future use
             self.iterator_cache.cache_state(
                 self.dirid,
