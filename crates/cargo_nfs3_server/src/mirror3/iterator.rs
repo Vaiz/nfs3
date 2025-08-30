@@ -20,9 +20,8 @@ pub struct Mirror3ReadDirIterator {
     root_path: PathBuf,
     inner: Arc<RwLock<FsInner>>,
     dirid: FileHandleU64,
-    read_dir: ReadDir,
+    read_dir: Option<ReadDir>,
     cookie: u64,
-    exhausted: bool,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
@@ -32,9 +31,8 @@ pub struct Mirror3ReadDirPlusIterator {
     root_path: PathBuf,
     inner: Arc<RwLock<FsInner>>,
     dirid: FileHandleU64,
-    read_dir: ReadDir,
+    read_dir: Option<ReadDir>,
     cookie: u64,
-    exhausted: bool,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
 }
@@ -75,9 +73,8 @@ impl Mirror3ReadDirIterator {
             root_path,
             inner,
             dirid,
-            read_dir,
+            read_dir: Some(read_dir),
             cookie,
-            exhausted: false,
             iterator_cache,
         })
     }
@@ -99,9 +96,8 @@ impl Mirror3ReadDirIterator {
             root_path,
             inner,
             dirid,
-            read_dir,
+            read_dir: Some(read_dir),
             cookie,
-            exhausted: false,
             iterator_cache,
         }
     }
@@ -109,8 +105,8 @@ impl Mirror3ReadDirIterator {
 
 impl Drop for Mirror3ReadDirIterator {
     fn drop(&mut self) {
-        // Only cache if we're not exhausted
-        if !self.exhausted {
+        // Only cache if we're not exhausted (read_dir is Some)
+        if self.read_dir.is_some() {
             // Cache the current position for potential future use
             self.iterator_cache.cache_state(
                 self.dirid,
@@ -158,9 +154,8 @@ impl Mirror3ReadDirPlusIterator {
             root_path,
             inner,
             dirid,
-            read_dir,
+            read_dir: Some(read_dir),
             cookie,
-            exhausted: false,
             iterator_cache,
         })
     }
@@ -182,9 +177,8 @@ impl Mirror3ReadDirPlusIterator {
             root_path,
             inner,
             dirid,
-            read_dir,
+            read_dir: Some(read_dir),
             cookie,
-            exhausted: false,
             iterator_cache,
         }
     }
@@ -192,8 +186,8 @@ impl Mirror3ReadDirPlusIterator {
 
 impl Drop for Mirror3ReadDirPlusIterator {
     fn drop(&mut self) {
-        // Only cache if we're not exhausted
-        if !self.exhausted {
+        // Only cache if we're not exhausted (read_dir is Some)
+        if self.read_dir.is_some() {
             // Cache the current position for potential future use
             self.iterator_cache.cache_state(
                 self.dirid,
@@ -207,12 +201,13 @@ impl Drop for Mirror3ReadDirPlusIterator {
 
 impl ReadDirIterator for Mirror3ReadDirIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        if self.exhausted {
-            return NextResult::Eof;
-        }
+        let read_dir = match self.read_dir.as_mut() {
+            Some(read_dir) => read_dir,
+            None => return NextResult::Eof,
+        };
 
         // Get next entry from tokio ReadDir
-        match self.read_dir.next_entry().await {
+        match read_dir.next_entry().await {
             Ok(Some(entry)) => {
                 let name = entry.file_name();
 
@@ -241,7 +236,7 @@ impl ReadDirIterator for Mirror3ReadDirIterator {
                 NextResult::Ok(dir_entry)
             }
             Ok(None) => {
-                self.exhausted = true;
+                self.read_dir = None;
                 NextResult::Eof
             }
             Err(_) => NextResult::Err(nfsstat3::NFS3ERR_IO),
@@ -251,13 +246,14 @@ impl ReadDirIterator for Mirror3ReadDirIterator {
 
 impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        if self.exhausted {
-            return NextResult::Eof;
-        }
+        let read_dir = match self.read_dir.as_mut() {
+            Some(read_dir) => read_dir,
+            None => return NextResult::Eof,
+        };
 
         // Get next entry from tokio ReadDir
         loop {
-            match self.read_dir.next_entry().await {
+            match read_dir.next_entry().await {
                 Ok(Some(entry)) => {
                     let name = entry.file_name();
 
@@ -310,7 +306,7 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3ReadDirPlusIterator {
                     return NextResult::Ok(dir_entry_plus);
                 }
                 Ok(None) => {
-                    self.exhausted = true;
+                    self.read_dir = None;
                     return NextResult::Eof;
                 }
                 Err(_) => return NextResult::Err(nfsstat3::NFS3ERR_IO),
