@@ -99,20 +99,6 @@ impl IteratorCache {
         });
     }
 
-    /// Get cache statistics
-    pub fn stats(&self) -> (usize, usize) {
-        let cache = self.cache.read().expect("lock is poisoned");
-        let total_cached = cache.len();
-        
-        let mut dir_counts: std::collections::HashMap<FileHandleU64, usize> = std::collections::HashMap::new();
-        for (key, _) in cache.iter() {
-            *dir_counts.entry(key.dir_id).or_insert(0) += 1;
-        }
-        
-        let max_per_dir = dir_counts.values().copied().max().unwrap_or(0);
-        (total_cached, max_per_dir)
-    }
-
     /// Trim cache entries for a specific directory to respect limits
     fn trim_cache_for_dir(
         &self,

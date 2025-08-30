@@ -4,7 +4,6 @@
 
 mod iterator;
 mod simple_iterator_cache;
-mod cache_demo;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -239,18 +238,6 @@ impl Fs {
         }
     }
 
-    /// Get cache statistics for debugging/monitoring
-    pub fn cache_stats(&self) -> CacheStats {
-        let inner = self.inner.read().unwrap();
-        let (total_cached, max_per_dir) = inner.iterator_cache.stats();
-        
-        CacheStats {
-            total_cached_positions: total_cached,
-            cached_directories: 0, // We simplified this for now
-            max_per_directory: max_per_dir,
-        }
-    }
-
     fn path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
         let relative_path = {
             let mut lock = self.inner.write().unwrap();
@@ -375,14 +362,6 @@ impl Fs {
             cookie,
         ).await
     }
-}
-
-/// Statistics about the iterator cache
-#[derive(Debug, Clone)]
-pub struct CacheStats {
-    pub total_cached_positions: usize,
-    pub cached_directories: usize,
-    pub max_per_directory: usize,
 }
 
 impl NfsReadFileSystem for Fs {
