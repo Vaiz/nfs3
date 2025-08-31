@@ -48,22 +48,42 @@ impl Mirror3DirIterator {
             return Err(nfsstat3::NFS3ERR_NOTDIR);
         }
 
-        // Open directory for reading
-        let read_dir = tokio::fs::read_dir(&dir_path)
-            .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-
-        debug!(
-            "Created directory iterator for: {:?} with cookie: {}",
-            dir_path, cookie
-        );
+        // Follow the three simple rules for iterator caching:
+        let (read_dir, current_cookie) = if cookie == 0 {
+            // Rule 1: Cookie is 0 - create a new iterator
+            debug!(
+                "Creating new ReadDir for directory: {:?} (cookie = 0)",
+                dir_path
+            );
+            let read_dir = tokio::fs::read_dir(&dir_path)
+                .await
+                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            (Some(read_dir), 0)
+        } else {
+            // Cookie is not zero - check cache
+            if let Some(cached_info) = iterator_cache.pop_state(dirid, cookie) {
+                // Rule 2: Cookie is not zero and iterator with same cookie exists in cache - continue to iterate
+                debug!(
+                    "Reusing cached ReadDir for directory: {:?} at cookie: {} (cached position: {})",
+                    dir_path, cookie, cached_info.current_position
+                );
+                (cached_info.read_dir, cached_info.current_position)
+            } else {
+                // Rule 3: Cookie is not zero and iterator with same cookie doesn't exist in cache - return BAD_COOKIE
+                debug!(
+                    "No cached ReadDir found for cookie {}, returning BAD_COOKIE error",
+                    cookie
+                );
+                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
+            }
+        };
 
         Ok(Self {
             root_path,
             cache,
             dirid,
-            read_dir: Some(read_dir),
-            cookie,
+            read_dir,
+            cookie: current_cookie,
             iterator_cache,
         })
     }
@@ -71,11 +91,22 @@ impl Mirror3DirIterator {
 
 impl Drop for Mirror3DirIterator {
     fn drop(&mut self) {
-        // Only cache if we're not exhausted (read_dir is Some)
-        if self.read_dir.is_some() {
-            // Cache the current position for potential future use
-            self.iterator_cache
-                .cache_state(self.dirid, self.cookie, Instant::now());
+        // Cache the ReadDir object if we're not exhausted and have one
+        if let Some(read_dir) = self.read_dir.take() {
+            // Cache the current ReadDir object with the current cookie position
+            // The cookie represents the position where the next read would start from
+            self.iterator_cache.cache_state(
+                self.dirid,
+                self.cookie,
+                Some(read_dir),
+                self.cookie,
+                Instant::now(),
+            );
+            debug!(
+                "Cached iterator state for dir_id: {} at cookie: {}",
+                self.dirid.as_u64(),
+                self.cookie
+            );
         }
     }
 }

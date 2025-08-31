@@ -83,35 +83,15 @@ impl Fs {
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<Mirror3DirIterator, nfsstat3> {
-        // If cookie is 0, create a new iterator
-        if cookie == 0 {
-            return Mirror3DirIterator::new(
-                self.root.clone(),
-                Arc::clone(&self.cache),
-                Arc::clone(&self.iterator_cache),
-                dirid,
-                cookie,
-            )
-            .await;
-        }
-
-        // For non-zero cookies, check if we have a valid cached iterator position and remove it
-        let cached_info = self.iterator_cache.pop_state(dirid, cookie);
-
-        if cached_info.is_some() {
-            // Create a new iterator at this position
-            return Mirror3DirIterator::new(
-                self.root.clone(),
-                Arc::clone(&self.cache),
-                Arc::clone(&self.iterator_cache),
-                dirid,
-                cookie,
-            )
-            .await;
-        }
-
-        // Invalid cookie
-        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
+        // Always create an iterator - it will handle caching and validation internally
+        Mirror3DirIterator::new(
+            self.root.clone(),
+            Arc::clone(&self.cache),
+            Arc::clone(&self.iterator_cache),
+            dirid,
+            cookie,
+        )
+        .await
     }
 }
 
@@ -240,26 +220,54 @@ mod tests {
 
         assert!(!entries.is_empty(), "Should have at least some entries");
 
-        // Test that we can resume with a valid cookie
+        // Test that cookies from a fully consumed iterator are no longer valid
+        // since the iterator was dropped and no cached state remains
         if entries.len() > 1 {
-            let valid_cookie = entries[0].cookie;
-            let mut iter2 = fs.readdir(&root_handle, valid_cookie).await.unwrap();
-
-            // Should be able to get next entry
-            match iter2.next().await {
-                NextResult::Ok(_) | NextResult::Eof => {
-                    // Either result is acceptable - we successfully resumed
+            let cookie_from_consumed_iter = entries[0].cookie;
+            match fs.readdir(&root_handle, cookie_from_consumed_iter).await {
+                Err(nfsstat3::NFS3ERR_BAD_COOKIE) => {
+                    // This is expected - the iterator was fully consumed and dropped
                 }
-                NextResult::Err(e) => panic!("Should not fail with valid cookie: {e:?}"),
+                Ok(_) => panic!("Should fail with BAD_COOKIE for consumed iterator cookie"),
+                Err(other) => panic!("Unexpected error for consumed iterator cookie: {other:?}"),
             }
+        }
+
+        // Test cookie reuse with partial iteration (iterator dropped before completion)
+        let mut iter_partial = fs.readdir(&root_handle, 0).await.unwrap();
+        let first_entry = match iter_partial.next().await {
+            NextResult::Ok(entry) => entry,
+            NextResult::Eof => panic!("Expected at least one entry"),
+            NextResult::Err(e) => panic!("Unexpected error: {e:?}"),
+        };
+
+        // Use the cookie from the first entry for resumption
+        let resume_cookie = first_entry.cookie;
+
+        // Drop the iterator while it still has a cached ReadDir state
+        drop(iter_partial);
+
+        // This cookie should be valid because the iterator was dropped with cached state
+        match fs.readdir(&root_handle, resume_cookie).await {
+            Ok(mut iter2) => {
+                // Should be able to continue iteration
+                match iter2.next().await {
+                    NextResult::Ok(_) | NextResult::Eof => {
+                        // Either result is acceptable - we successfully resumed
+                    }
+                    NextResult::Err(e) => panic!("Should not fail with cached cookie: {e:?}"),
+                }
+            }
+            Err(e) => panic!("Should succeed with cached cookie, got: {e:?}"),
         }
 
         // Test that invalid cookie is rejected
         let invalid_cookie = 999_999;
         match fs.readdir(&root_handle, invalid_cookie).await {
-            Err(nfsstat3::NFS3ERR_BAD_COOKIE) | Ok(_) => {
-                // This is expected for invalid cookie or sometimes Ok if handled gracefully
+            Err(nfsstat3::NFS3ERR_BAD_COOKIE) => {
+                // This is expected for invalid cookie
             }
+            Ok(_) => panic!("Should fail with BAD_COOKIE for invalid cookie"),
             Err(other) => panic!("Unexpected error for invalid cookie: {other:?}"),
         }
     }
