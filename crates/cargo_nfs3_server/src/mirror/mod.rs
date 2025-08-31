@@ -110,18 +110,8 @@ impl Fs {
             .await;
         }
 
-        // If not cached, we still try to create an iterator at this position
-        // This handles the case where cookies are valid but not cached
-        // Note: This is a simplified approach - a real implementation might
-        // validate the cookie or seek to the position
-        Mirror3DirIterator::new(
-            self.root.clone(),
-            Arc::clone(&self.cache),
-            Arc::clone(&self.iterator_cache),
-            dirid,
-            cookie,
-        )
-        .await
+        // Invalid cookie
+        Err(nfsstat3::NFS3ERR_BAD_COOKIE)
     }
 }
 
