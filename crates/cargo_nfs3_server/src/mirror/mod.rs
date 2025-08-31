@@ -22,13 +22,13 @@ use crate::string_ext::{FromOsString, IntoOsString};
 #[derive(Debug)]
 pub struct FsInner {
     cache: SymbolsCache,
-    iterator_cache: Arc<IteratorCache>,
 }
 
 #[derive(Debug)]
 pub struct Fs {
     root: PathBuf,
     inner: Arc<RwLock<FsInner>>,
+    iterator_cache: Arc<IteratorCache>,
     _cleaner_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -42,10 +42,7 @@ impl Fs {
         // - Maximum 20 cached iterators per directory
         let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
 
-        let fs_inner = FsInner {
-            cache,
-            iterator_cache: Arc::clone(&iterator_cache),
-        };
+        let fs_inner = FsInner { cache };
 
         // Start the cleaner task to periodically clean up stale cache entries
         let cleaner = IteratorCacheCleaner::new(
@@ -57,6 +54,7 @@ impl Fs {
         Self {
             root,
             inner: Arc::new(RwLock::new(fs_inner)),
+            iterator_cache,
             _cleaner_handle: Some(cleaner_handle),
         }
     }
@@ -100,6 +98,7 @@ impl Fs {
             return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
+                Arc::clone(&self.iterator_cache),
                 dirid,
                 cookie,
             )
@@ -107,16 +106,14 @@ impl Fs {
         }
 
         // For non-zero cookies, check if we have a valid cached iterator position and remove it
-        let cached_info = {
-            let inner = self.inner.read().unwrap();
-            inner.iterator_cache.pop_state(dirid, cookie)
-        };
+        let cached_info = self.iterator_cache.pop_state(dirid, cookie);
 
         if cached_info.is_some() {
             // Create a new iterator at this position
             return Mirror3DirIterator::new(
                 self.root.clone(),
                 Arc::clone(&self.inner),
+                Arc::clone(&self.iterator_cache),
                 dirid,
                 cookie,
             )
@@ -127,7 +124,14 @@ impl Fs {
         // This handles the case where cookies are valid but not cached
         // Note: This is a simplified approach - a real implementation might
         // validate the cookie or seek to the position
-        Mirror3DirIterator::new(self.root.clone(), Arc::clone(&self.inner), dirid, cookie).await
+        Mirror3DirIterator::new(
+            self.root.clone(),
+            Arc::clone(&self.inner),
+            Arc::clone(&self.iterator_cache),
+            dirid,
+            cookie,
+        )
+        .await
     }
 }
 

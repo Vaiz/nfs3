@@ -31,14 +31,14 @@ impl Mirror3DirIterator {
     pub async fn new(
         root_path: PathBuf,
         inner: Arc<RwLock<FsInner>>,
+        iterator_cache: Arc<IteratorCache>,
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<Self, nfsstat3> {
-        let (dir_path, iterator_cache) = {
+        let dir_path = {
             let lock = inner.read().unwrap();
             let relative_path = lock.cache.handle_to_path(dirid)?;
-            let iterator_cache = Arc::clone(&lock.iterator_cache);
-            (root_path.join(&relative_path), iterator_cache)
+            root_path.join(&relative_path)
         };
 
         // Check if it's a directory
