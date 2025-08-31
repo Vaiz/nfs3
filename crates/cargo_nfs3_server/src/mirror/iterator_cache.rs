@@ -4,16 +4,10 @@ use std::time::{Duration, Instant};
 
 use nfs3_server::vfs::FileHandleU64;
 
-/// Key to identify an iterator position in the cache
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct IteratorKey {
-    pub dir_id: FileHandleU64,
-    pub cookie: u64,
-}
-
 /// Cache entry for iterator state
 #[derive(Debug, Clone)]
 pub struct CachedIteratorInfo {
+    pub cookie: u64,
     pub cached_at: Instant,
 }
 
@@ -21,8 +15,8 @@ pub struct CachedIteratorInfo {
 #[derive(Debug)]
 pub struct IteratorCache {
     retention_period: Duration,
-    // Map from (dir_id, cookie) to cached iterator info
-    cache: RwLock<HashMap<IteratorKey, CachedIteratorInfo>>,
+    // Map from dir_id to vector of cached iterators
+    cache: RwLock<HashMap<FileHandleU64, Vec<CachedIteratorInfo>>>,
     max_cached_per_dir: u16,
 }
 
@@ -37,61 +31,56 @@ impl IteratorCache {
         }
     }
 
-    /// Check if an iterator position is cached and valid, and remove it if so
-    /// Returns the cached info if it was found and valid, None otherwise
+    /// Check if an iterator position is cached and remove it if so
+    /// Returns the cached info if it was found, None otherwise
     pub fn pop_state(&self, dir_id: FileHandleU64, cookie: u64) -> Option<CachedIteratorInfo> {
         let mut cache = self.cache.write().expect("lock is poisoned");
-        let key = IteratorKey { dir_id, cookie };
 
-        // Check if entry exists and determine if it's valid
-        let is_valid = cache.get(&key).is_some_and(|info| {
-            let now = Instant::now();
-            now - info.cached_at <= self.retention_period
-        });
-
-        // Remove the entry (if it exists) and return it only if it was valid
-        cache.remove(&key).filter(|_| is_valid)
+        cache.get_mut(&dir_id).and_then(|iterators| {
+            iterators
+                .iter()
+                .position(|info| info.cookie == cookie)
+                .map(|index| iterators.swap_remove(index))
+        })
     }
 
     /// Cache an iterator state
     pub fn cache_state(&self, dir_id: FileHandleU64, cookie: u64, now: Instant) {
         let mut cache = self.cache.write().expect("lock is poisoned");
-        let key = IteratorKey { dir_id, cookie };
 
-        let info = CachedIteratorInfo { cached_at: now };
+        let info = CachedIteratorInfo {
+            cookie,
+            cached_at: now,
+        };
 
-        cache.insert(key, info);
-        self.trim_cache_for_dir(&mut cache, dir_id, now);
+        cache.entry(dir_id).or_default().push(info);
+        self.trim_cache_for_dir(&mut cache, dir_id);
     }
 
     /// Clean up stale iterator states - should be called periodically
     pub fn cleanup(&self, now: Instant) {
         let mut cache = self.cache.write().expect("lock is poisoned");
 
-        cache.retain(|_, info| now - info.cached_at <= self.retention_period);
+        cache.retain(|_, iterators| {
+            iterators.retain(|info| now - info.cached_at <= self.retention_period);
+            !iterators.is_empty() // Remove dirs that have no iterators left
+        });
     }
 
     /// Trim cache entries for a specific directory to respect limits
     fn trim_cache_for_dir(
         &self,
-        cache: &mut HashMap<IteratorKey, CachedIteratorInfo>,
+        cache: &mut HashMap<FileHandleU64, Vec<CachedIteratorInfo>>,
         dir_id: FileHandleU64,
-        _now: Instant,
     ) {
-        let mut dir_entries: Vec<_> = cache
-            .iter()
-            .filter(|(key, _)| key.dir_id == dir_id)
-            .map(|(key, info)| (key.clone(), info.cached_at))
-            .collect();
+        if let Some(iterators) = cache.get_mut(&dir_id) {
+            if iterators.len() > self.max_cached_per_dir as usize {
+                // Sort by cache time (oldest first)
+                iterators.sort_by_key(|info| info.cached_at);
 
-        if dir_entries.len() > self.max_cached_per_dir as usize {
-            // Sort by cache time (oldest first)
-            dir_entries.sort_by_key(|(_, cached_at)| *cached_at);
-
-            // Remove oldest entries
-            let to_remove = dir_entries.len() - self.max_cached_per_dir as usize;
-            for (key, _) in dir_entries.into_iter().take(to_remove) {
-                cache.remove(&key);
+                // Remove oldest entries by truncating the vector
+                let to_keep = self.max_cached_per_dir as usize;
+                iterators.drain(0..iterators.len() - to_keep);
             }
         }
     }
@@ -182,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pop_state_removes_stale_entries() {
+    fn test_pop_state_returns_entry_regardless_of_staleness() {
         let cache = IteratorCache::new(Duration::from_millis(50), 10);
         let dir_id = FileHandleU64::new(1);
         let cookie = 42;
@@ -194,10 +183,35 @@ mod tests {
         // Wait for it to become stale
         std::thread::sleep(Duration::from_millis(100));
 
-        // pop_state should return None for stale entries and remove them
-        assert!(cache.pop_state(dir_id, cookie).is_none());
+        // pop_state should return the entry even if it's stale (staleness is only for cleanup)
+        assert!(cache.pop_state(dir_id, cookie).is_some());
 
-        // Subsequent calls should also return None (entry was removed)
+        // Subsequent calls should return None (entry was removed)
+        assert!(cache.pop_state(dir_id, cookie).is_none());
+    }
+
+    #[test]
+    fn test_cleanup_removes_stale_entries_properly() {
+        let cache = IteratorCache::new(Duration::from_millis(50), 10);
+        let dir_id = FileHandleU64::new(1);
+        let cookie = 42;
+        let now = Instant::now();
+
+        // Cache an entry
+        cache.cache_state(dir_id, cookie, now);
+
+        // Verify it can be popped before cleanup
+        cache.cache_state(dir_id, cookie, now);
+        assert!(cache.pop_state(dir_id, cookie).is_some());
+
+        // Cache again and wait for it to become stale
+        cache.cache_state(dir_id, cookie, now);
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Cleanup should remove stale entries
+        cache.cleanup(Instant::now());
+
+        // After cleanup, the stale entry should be gone
         assert!(cache.pop_state(dir_id, cookie).is_none());
     }
 }
