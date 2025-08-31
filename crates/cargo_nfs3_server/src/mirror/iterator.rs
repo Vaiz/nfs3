@@ -83,8 +83,10 @@ impl MirrorFsIterator {
     /// Common logic for getting the next directory entry and creating a handle
     async fn next_entry_common(
         &mut self,
-    ) -> Option<Result<(FileHandleU64, std::ffi::OsString, u64), nfsstat3>> {
-        let read_dir = self.read_dir.as_mut()?;
+    ) -> NextResult<(FileHandleU64, std::ffi::OsString, u64)> {
+        let Some(read_dir) = self.read_dir.as_mut() else {
+            return NextResult::Eof;
+        };
 
         match read_dir.next_entry().await {
             Ok(Some(entry)) => {
@@ -93,20 +95,20 @@ impl MirrorFsIterator {
                 let handle = match self.cache.symbols_path(self.dirid) {
                     Ok(parent_symbols) => match self.cache.lookup(&parent_symbols, &name, false) {
                         Ok(handle) => handle,
-                        Err(e) => return Some(Err(e)),
+                        Err(e) => return NextResult::Err(e),
                     },
-                    Err(e) => return Some(Err(e)),
+                    Err(e) => return NextResult::Err(e),
                 };
 
                 self.cookie += 1;
 
-                Some(Ok((handle, name, self.cookie)))
+                NextResult::Ok((handle, name, self.cookie))
             }
             Ok(None) => {
                 self.read_dir = None;
-                None
+                NextResult::Eof
             }
-            Err(_) => Some(Err(nfsstat3::NFS3ERR_IO)),
+            Err(_) => NextResult::Err(nfsstat3::NFS3ERR_IO),
         }
     }
 }
@@ -128,7 +130,7 @@ impl Drop for MirrorFsIterator {
 impl ReadDirIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
         match self.next_entry_common().await {
-            Some(Ok((handle, name, cookie))) => {
+            NextResult::Ok((handle, name, cookie)) => {
                 let dir_entry = DirEntry {
                     fileid: handle.as_u64(),
                     name: FromOsString::from_os_string(name),
@@ -136,8 +138,8 @@ impl ReadDirIterator for MirrorFsIterator {
                 };
                 NextResult::Ok(dir_entry)
             }
-            Some(Err(e)) => NextResult::Err(e),
-            None => NextResult::Eof,
+            NextResult::Err(e) => NextResult::Err(e),
+            NextResult::Eof => NextResult::Eof,
         }
     }
 }
@@ -146,7 +148,7 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
         loop {
             match self.next_entry_common().await {
-                Some(Ok((handle, name, cookie))) => {
+                NextResult::Ok((handle, name, cookie)) => {
                     let path = {
                         if let Ok(relative_path) = self.cache.handle_to_path(handle) {
                             self.root_path.join(&relative_path)
@@ -174,8 +176,8 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
 
                     return NextResult::Ok(dir_entry_plus);
                 }
-                Some(Err(e)) => return NextResult::Err(e),
-                None => return NextResult::Eof,
+                NextResult::Err(e) => return NextResult::Err(e),
+                NextResult::Eof => return NextResult::Eof,
             }
         }
     }
