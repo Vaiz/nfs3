@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use intaglio::Symbol;
@@ -71,83 +72,124 @@ impl SymbolsTable {
 }
 
 #[derive(Debug)]
-pub struct SymbolsCache {
-    root: PathBuf,
+struct SymbolsCacheInner {
     symbols: SymbolsTable,
     path_to_id: HashMap<SymbolsPath, FileHandleU64>,
     id_to_path: HashMap<FileHandleU64, SymbolsPath>,
     next_id: AtomicU64,
 }
 
-impl SymbolsCache {
-    pub const ROOT_ID: FileHandleU64 = FileHandleU64::new(1);
-
-    pub fn new(root: PathBuf) -> Self {
-        let mut cache = Self {
-            root,
-            symbols: SymbolsTable::new(),
-            path_to_id: HashMap::new(),
-            id_to_path: HashMap::new(),
-            next_id: AtomicU64::new(Self::ROOT_ID.as_u64() + 1),
-        };
-
-        // Insert root entry
-        let root_path = SymbolsPath::new();
-        cache.path_to_id.insert(root_path.clone(), Self::ROOT_ID);
-        cache.id_to_path.insert(Self::ROOT_ID, root_path);
-
-        cache
-    }
-
-    pub fn symbols_path(&self, id: FileHandleU64) -> Result<&SymbolsPath, nfsstat3> {
-        self.id_to_path.get(&id).ok_or(nfsstat3::NFS3ERR_BADHANDLE)
-    }
-
-    // returns relative path
-    pub fn handle_to_path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
-        let path = self.symbols_path(id)?;
-        Ok(self.symbols.resolve_path(path))
-    }
-
-    pub fn lookup_by_id(
+impl SymbolsCacheInner {
+    fn lookup(
         &mut self,
-        parent_id: FileHandleU64,
-        name: &OsStr,
-        check_path: bool,
-    ) -> Result<FileHandleU64, nfsstat3> {
-        let parent = self.symbols_path(parent_id)?.clone();
-        self.lookup(&parent, name, check_path)
-    }
-
-    /// To avoid cache thrashing, we only insert the new entry if object exists
-    pub fn lookup(
-        &mut self,
+        root: &std::path::Path,
         parent: &SymbolsPath,
         name: &OsStr,
         check_path: bool,
     ) -> Result<FileHandleU64, nfsstat3> {
         use std::collections::hash_map::Entry;
 
-        let symbol = self.symbols.insert_or_resolve(name.into());
-        let entry = self.path_to_id.entry(parent.join(symbol));
-        match entry {
-            Entry::Occupied(occupied_entry) => Ok(*occupied_entry.get()),
-            Entry::Vacant(vacant_entry) => {
-                if check_path {
-                    let mut test_path = self.root.join(self.symbols.resolve_path(parent));
-                    if !test_path.exists() {
-                        return Err(nfsstat3::NFS3ERR_BADHANDLE);
-                    }
-                    test_path.push(name);
-                    if !test_path.exists() {
-                        return Err(nfsstat3::NFS3ERR_NOENT);
-                    }
-                }
-                let id = FileHandleU64::new(self.next_id.fetch_add(1, Ordering::Relaxed));
-                vacant_entry.insert(id);
-                self.id_to_path.insert(id, parent.join(symbol));
-                Ok(id)
+        let inner = self;
+        let symbol = inner.symbols.insert_or_resolve(name.into());
+        let item = parent.join(symbol);
+
+        let entry = inner.path_to_id.entry(item);
+        let vacant_entry = match entry {
+            Entry::Occupied(entry) => return Ok(entry.get().clone()),
+            Entry::Vacant(entry) => entry,
+        };
+
+        // Entry doesn't exist, need to create it
+        if check_path {
+            let test_path_parent = inner.symbols.resolve_path(parent);
+            let mut test_path = root.join(test_path_parent);
+            if !test_path.exists() {
+                return Err(nfsstat3::NFS3ERR_BADHANDLE);
+            }
+            test_path.push(name);
+            if !test_path.exists() {
+                return Err(nfsstat3::NFS3ERR_NOENT);
             }
         }
+
+        // Create new entry
+        let id = FileHandleU64::new(inner.next_id.fetch_add(1, Ordering::Relaxed));
+        vacant_entry.insert(id);
+        inner.id_to_path.insert(id, parent.join(symbol));
+        Ok(id)
+    }
+}
+
+#[derive(Debug)]
+pub struct SymbolsCache {
+    root: PathBuf,
+    inner: RwLock<SymbolsCacheInner>,
+}
+
+impl SymbolsCache {
+    pub const ROOT_ID: FileHandleU64 = FileHandleU64::new(1);
+
+    pub fn new(root: PathBuf) -> Self {
+        let root_path = SymbolsPath::new();
+        let mut path_to_id = HashMap::new();
+        let mut id_to_path = HashMap::new();
+
+        // Insert root entry
+        path_to_id.insert(root_path.clone(), Self::ROOT_ID);
+        id_to_path.insert(Self::ROOT_ID, root_path);
+
+        let inner = SymbolsCacheInner {
+            symbols: SymbolsTable::new(),
+            path_to_id,
+            id_to_path,
+            next_id: AtomicU64::new(Self::ROOT_ID.as_u64() + 1),
+        };
+
+        Self {
+            root,
+            inner: RwLock::new(inner),
+        }
+    }
+
+    pub fn symbols_path(&self, id: FileHandleU64) -> Result<SymbolsPath, nfsstat3> {
+        let inner = self.inner.read().unwrap();
+        inner
+            .id_to_path
+            .get(&id)
+            .cloned()
+            .ok_or(nfsstat3::NFS3ERR_BADHANDLE)
+    }
+
+    // returns relative path
+    pub fn handle_to_path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
+        let inner = self.inner.read().unwrap();
+        let path = inner
+            .id_to_path
+            .get(&id)
+            .ok_or(nfsstat3::NFS3ERR_BADHANDLE)?;
+        Ok(inner.symbols.resolve_path(path))
+    }
+
+    pub fn lookup_by_id(
+        &self,
+        parent_id: FileHandleU64,
+        name: &OsStr,
+        check_path: bool,
+    ) -> Result<FileHandleU64, nfsstat3> {
+        let parent = self.symbols_path(parent_id)?;
+        self.lookup(&parent, name, check_path)
+    }
+
+    /// To avoid cache thrashing, we only insert the new entry if object exists
+    pub fn lookup(
+        &self,
+        parent: &SymbolsPath,
+        name: &OsStr,
+        check_path: bool,
+    ) -> Result<FileHandleU64, nfsstat3> {
+        self.inner
+            .write()
+            .expect("lock is poisoned")
+            .lookup(&self.root, parent, name, check_path)
     }
 }

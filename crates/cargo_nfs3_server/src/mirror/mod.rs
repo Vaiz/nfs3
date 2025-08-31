@@ -5,7 +5,7 @@ mod iterator_cache;
 mod symbols_cache;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use iterator::Mirror3DirIterator;
@@ -20,14 +20,9 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use crate::string_ext::{FromOsString, IntoOsString};
 
 #[derive(Debug)]
-pub struct FsInner {
-    cache: SymbolsCache,
-}
-
-#[derive(Debug)]
 pub struct Fs {
     root: PathBuf,
-    inner: Arc<RwLock<FsInner>>,
+    cache: Arc<SymbolsCache>,
     iterator_cache: Arc<IteratorCache>,
     _cleaner_handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -35,14 +30,12 @@ pub struct Fs {
 impl Fs {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
-        let cache = SymbolsCache::new(root.clone());
+        let cache = Arc::new(SymbolsCache::new(root.clone()));
 
         // Create iterator cache with reasonable defaults:
         // - 60 seconds retention period
         // - Maximum 20 cached iterators per directory
         let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
-
-        let fs_inner = FsInner { cache };
 
         // Start the cleaner task to periodically clean up stale cache entries
         let cleaner = IteratorCacheCleaner::new(
@@ -53,17 +46,14 @@ impl Fs {
 
         Self {
             root,
-            inner: Arc::new(RwLock::new(fs_inner)),
+            cache,
             iterator_cache,
             _cleaner_handle: Some(cleaner_handle),
         }
     }
 
     fn path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
-        let relative_path = {
-            let lock = self.inner.write().unwrap();
-            lock.cache.handle_to_path(id.as_u64().into())
-        }?;
+        let relative_path = self.cache.handle_to_path(id)?;
         Ok(self.root.join(relative_path))
     }
 
@@ -97,7 +87,7 @@ impl Fs {
         if cookie == 0 {
             return Mirror3DirIterator::new(
                 self.root.clone(),
-                Arc::clone(&self.inner),
+                Arc::clone(&self.cache),
                 Arc::clone(&self.iterator_cache),
                 dirid,
                 cookie,
@@ -112,7 +102,7 @@ impl Fs {
             // Create a new iterator at this position
             return Mirror3DirIterator::new(
                 self.root.clone(),
-                Arc::clone(&self.inner),
+                Arc::clone(&self.cache),
                 Arc::clone(&self.iterator_cache),
                 dirid,
                 cookie,
@@ -126,7 +116,7 @@ impl Fs {
         // validate the cookie or seek to the position
         Mirror3DirIterator::new(
             self.root.clone(),
-            Arc::clone(&self.inner),
+            Arc::clone(&self.cache),
             Arc::clone(&self.iterator_cache),
             dirid,
             cookie,
@@ -147,8 +137,7 @@ impl NfsReadFileSystem for Fs {
         dirid: &Self::Handle,
         filename: &filename3<'_>,
     ) -> Result<Self::Handle, nfsstat3> {
-        let mut lock = self.inner.write().unwrap();
-        lock.cache.lookup_by_id(*dirid, filename.as_os_str(), true)
+        self.cache.lookup_by_id(*dirid, filename.as_os_str(), true)
     }
 
     async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
@@ -219,10 +208,11 @@ fn map_io_error(err: std::io::Error) -> nfsstat3 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nfs3_server::vfs::{NextResult, ReadDirIterator};
     use tempfile::tempdir;
     use tokio::fs;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_cookie_validation_in_readdir() {

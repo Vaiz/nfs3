@@ -1,7 +1,7 @@
 #![allow(clippy::unnecessary_wraps)]
 
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Instant;
 
 use nfs3_server::fs_util::metadata_to_fattr3;
@@ -12,14 +12,14 @@ use nfs3_server::vfs::{
 use tokio::fs::ReadDir;
 use tracing::debug;
 
-use super::FsInner;
+use super::SymbolsCache;
 use crate::mirror::iterator_cache::IteratorCache;
 use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
 pub struct Mirror3DirIterator {
     root_path: PathBuf,
-    inner: Arc<RwLock<FsInner>>,
+    cache: Arc<SymbolsCache>,
     dirid: FileHandleU64,
     read_dir: Option<ReadDir>,
     cookie: u64,
@@ -30,14 +30,13 @@ pub struct Mirror3DirIterator {
 impl Mirror3DirIterator {
     pub async fn new(
         root_path: PathBuf,
-        inner: Arc<RwLock<FsInner>>,
+        cache: Arc<SymbolsCache>,
         iterator_cache: Arc<IteratorCache>,
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<Self, nfsstat3> {
         let dir_path = {
-            let lock = inner.read().unwrap();
-            let relative_path = lock.cache.handle_to_path(dirid)?;
+            let relative_path = cache.handle_to_path(dirid)?;
             root_path.join(&relative_path)
         };
 
@@ -61,7 +60,7 @@ impl Mirror3DirIterator {
 
         Ok(Self {
             root_path,
-            inner,
+            cache,
             dirid,
             read_dir: Some(read_dir),
             cookie,
@@ -94,11 +93,9 @@ impl ReadDirIterator for Mirror3DirIterator {
 
                 // Create handle for this entry
                 let handle = {
-                    let mut lock = self.inner.write().unwrap();
-                    match lock.cache.symbols_path(self.dirid) {
+                    match self.cache.symbols_path(self.dirid) {
                         Ok(parent_symbols) => {
-                            let parent_symbols = parent_symbols.clone();
-                            match lock.cache.lookup(&parent_symbols, &name, false) {
+                            match self.cache.lookup(&parent_symbols, &name, false) {
                                 Ok(handle) => handle,
                                 Err(e) => return NextResult::Err(e),
                             }
@@ -139,11 +136,9 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
 
                     // Create handle for this entry
                     let handle = {
-                        let mut lock = self.inner.write().unwrap();
-                        match lock.cache.symbols_path(self.dirid) {
+                        match self.cache.symbols_path(self.dirid) {
                             Ok(parent_symbols) => {
-                                let parent_symbols = parent_symbols.clone();
-                                match lock.cache.lookup(&parent_symbols, &name, false) {
+                                match self.cache.lookup(&parent_symbols, &name, false) {
                                     Ok(handle) => handle,
                                     Err(e) => return NextResult::Err(e),
                                 }
@@ -154,8 +149,7 @@ impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
 
                     // Get file attributes
                     let path = {
-                        let lock = self.inner.read().unwrap();
-                        if let Ok(relative_path) = lock.cache.handle_to_path(handle) {
+                        if let Ok(relative_path) = self.cache.handle_to_path(handle) {
                             self.root_path.join(&relative_path)
                         } else {
                             // Skip if handle is invalid, continue to next entry
