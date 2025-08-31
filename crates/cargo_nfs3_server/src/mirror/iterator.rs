@@ -17,7 +17,7 @@ use crate::mirror::iterator_cache::IteratorCache;
 use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
-pub struct Mirror3DirIterator {
+pub struct MirrorFsIterator {
     root_path: PathBuf,
     cache: Arc<SymbolsCache>,
     dirid: FileHandleU64,
@@ -27,7 +27,7 @@ pub struct Mirror3DirIterator {
     iterator_cache: Arc<IteratorCache>,
 }
 
-impl Mirror3DirIterator {
+impl MirrorFsIterator {
     pub async fn new(
         root_path: PathBuf,
         cache: Arc<SymbolsCache>,
@@ -62,14 +62,17 @@ impl Mirror3DirIterator {
         } else {
             // Cookie is not zero - check cache
             if let Some(cached_info) = iterator_cache.pop_state(dirid, cookie) {
-                // Rule 2: Cookie is not zero and iterator with same cookie exists in cache - continue to iterate
+                // Rule 2: Cookie is not zero and iterator with same cookie exists in cache -
+                // continue to iterate
                 debug!(
-                    "Reusing cached ReadDir for directory: {:?} at cookie: {} (cached position: {})",
+                    "Reusing cached ReadDir for directory: {:?} at cookie: {} (cached position: \
+                     {})",
                     dir_path, cookie, cached_info.current_position
                 );
                 (cached_info.read_dir, cached_info.current_position)
             } else {
-                // Rule 3: Cookie is not zero and iterator with same cookie doesn't exist in cache - return BAD_COOKIE
+                // Rule 3: Cookie is not zero and iterator with same cookie doesn't exist in cache -
+                // return BAD_COOKIE
                 debug!(
                     "No cached ReadDir found for cookie {}, returning BAD_COOKIE error",
                     cookie
@@ -89,7 +92,7 @@ impl Mirror3DirIterator {
     }
 }
 
-impl Drop for Mirror3DirIterator {
+impl Drop for MirrorFsIterator {
     fn drop(&mut self) {
         // Cache the ReadDir object if we're not exhausted and have one
         if let Some(read_dir) = self.read_dir.take() {
@@ -111,7 +114,7 @@ impl Drop for Mirror3DirIterator {
     }
 }
 
-impl ReadDirIterator for Mirror3DirIterator {
+impl ReadDirIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
         let Some(read_dir) = self.read_dir.as_mut() else {
             return NextResult::Eof;
@@ -153,7 +156,7 @@ impl ReadDirIterator for Mirror3DirIterator {
     }
 }
 
-impl ReadDirPlusIterator<FileHandleU64> for Mirror3DirIterator {
+impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
         let Some(read_dir) = self.read_dir.as_mut() else {
             return NextResult::Eof;

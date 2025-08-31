@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use iterator::Mirror3DirIterator;
+use iterator::MirrorFsIterator;
 use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, filename3, nfspath3, nfsstat3};
@@ -82,9 +82,9 @@ impl Fs {
         &self,
         dirid: FileHandleU64,
         cookie: u64,
-    ) -> Result<Mirror3DirIterator, nfsstat3> {
+    ) -> Result<MirrorFsIterator, nfsstat3> {
         // Always create an iterator - it will handle caching and validation internally
-        Mirror3DirIterator::new(
+        MirrorFsIterator::new(
             self.root.clone(),
             Arc::clone(&self.cache),
             Arc::clone(&self.iterator_cache),
