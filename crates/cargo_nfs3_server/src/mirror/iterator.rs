@@ -92,6 +92,40 @@ impl MirrorFsIterator {
             iterator_cache,
         })
     }
+
+    /// Common logic for getting the next directory entry and creating a handle
+    /// Returns None for EOF, Some(Err) for errors, Some(Ok((handle, name, cookie))) for success
+    async fn next_entry_common(&mut self) -> Option<Result<(FileHandleU64, std::ffi::OsString, u64), nfsstat3>> {
+        let read_dir = self.read_dir.as_mut()?;
+
+        // Get next entry from tokio ReadDir
+        match read_dir.next_entry().await {
+            Ok(Some(entry)) => {
+                let name = entry.file_name();
+
+                // Create handle for this entry
+                let handle = match self.cache.symbols_path(self.dirid) {
+                    Ok(parent_symbols) => {
+                        match self.cache.lookup(&parent_symbols, &name, false) {
+                            Ok(handle) => handle,
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+                    Err(e) => return Some(Err(e)),
+                };
+
+                // Increment cookie to get next unique value
+                self.cookie += 1;
+
+                Some(Ok((handle, name, self.cookie)))
+            }
+            Ok(None) => {
+                self.read_dir = None;
+                None
+            }
+            Err(_) => Some(Err(nfsstat3::NFS3ERR_IO)),
+        }
+    }
 }
 
 impl Drop for MirrorFsIterator {
@@ -117,72 +151,27 @@ impl Drop for MirrorFsIterator {
 
 impl ReadDirIterator for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
-        let Some(read_dir) = self.read_dir.as_mut() else {
-            return NextResult::Eof;
-        };
-
-        // Get next entry from tokio ReadDir
-        match read_dir.next_entry().await {
-            Ok(Some(entry)) => {
-                let name = entry.file_name();
-
-                // Create handle for this entry
-                let handle = {
-                    match self.cache.symbols_path(self.dirid) {
-                        Ok(parent_symbols) => {
-                            match self.cache.lookup(&parent_symbols, &name, false) {
-                                Ok(handle) => handle,
-                                Err(e) => return NextResult::Err(e),
-                            }
-                        }
-                        Err(e) => return NextResult::Err(e),
-                    }
-                };
-
-                self.cookie += 1;
+        match self.next_entry_common().await {
+            Some(Ok((handle, name, cookie))) => {
                 let dir_entry = DirEntry {
                     fileid: handle.as_u64(),
                     name: FromOsString::from_os_string(name),
-                    cookie: self.cookie,
+                    cookie,
                 };
-
                 NextResult::Ok(dir_entry)
             }
-            Ok(None) => {
-                self.read_dir = None;
-                NextResult::Eof
-            }
-            Err(_) => NextResult::Err(nfsstat3::NFS3ERR_IO),
+            Some(Err(e)) => NextResult::Err(e),
+            None => NextResult::Eof,
         }
     }
 }
 
 impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        let Some(read_dir) = self.read_dir.as_mut() else {
-            return NextResult::Eof;
-        };
-
-        // Get next entry from tokio ReadDir
         loop {
-            match read_dir.next_entry().await {
-                Ok(Some(entry)) => {
-                    let name = entry.file_name();
-
-                    // Create handle for this entry
-                    let handle = {
-                        match self.cache.symbols_path(self.dirid) {
-                            Ok(parent_symbols) => {
-                                match self.cache.lookup(&parent_symbols, &name, false) {
-                                    Ok(handle) => handle,
-                                    Err(e) => return NextResult::Err(e),
-                                }
-                            }
-                            Err(e) => return NextResult::Err(e),
-                        }
-                    };
-
-                    // Get file attributes
+            match self.next_entry_common().await {
+                Some(Ok((handle, name, cookie))) => {
+                    // Get file attributes for the plus version
                     let path = {
                         if let Ok(relative_path) = self.cache.handle_to_path(handle) {
                             self.root_path.join(&relative_path)
@@ -201,22 +190,18 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
                         |metadata| Some(metadata_to_fattr3(handle.as_u64(), &metadata)),
                     );
 
-                    self.cookie += 1;
                     let dir_entry_plus = DirEntryPlus {
                         fileid: handle.as_u64(),
                         name: FromOsString::from_os_string(name),
-                        cookie: self.cookie,
+                        cookie,
                         name_attributes: fattr,
                         name_handle: Some(handle),
                     };
 
                     return NextResult::Ok(dir_entry_plus);
                 }
-                Ok(None) => {
-                    self.read_dir = None;
-                    return NextResult::Eof;
-                }
-                Err(_) => return NextResult::Err(nfsstat3::NFS3ERR_IO),
+                Some(Err(e)) => return NextResult::Err(e),
+                None => return NextResult::Eof,
             }
         }
     }
