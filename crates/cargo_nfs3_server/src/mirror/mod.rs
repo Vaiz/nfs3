@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)] // TODO: Replace unwraps with proper error handling
 
 mod iterator;
-mod simple_iterator_cache;
+mod iterator_cache;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use iterator::Mirror3DirIterator;
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, filename3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator};
-use simple_iterator_cache::{IteratorCache, IteratorCacheCleaner};
+use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 

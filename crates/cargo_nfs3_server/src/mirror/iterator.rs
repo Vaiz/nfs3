@@ -13,6 +13,7 @@ use tokio::fs::ReadDir;
 use tracing::debug;
 
 use super::FsInner;
+use crate::mirror::iterator_cache::IteratorCache;
 use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
@@ -23,7 +24,7 @@ pub struct Mirror3DirIterator {
     read_dir: Option<ReadDir>,
     cookie: u64,
     /// Direct reference to the iterator cache for Drop implementation
-    iterator_cache: Arc<super::simple_iterator_cache::IteratorCache>,
+    iterator_cache: Arc<IteratorCache>,
 }
 
 impl Mirror3DirIterator {
