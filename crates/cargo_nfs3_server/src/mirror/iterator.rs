@@ -1,5 +1,3 @@
-#![allow(clippy::unnecessary_wraps)]
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -48,9 +46,7 @@ impl MirrorFsIterator {
             return Err(nfsstat3::NFS3ERR_NOTDIR);
         }
 
-        // Follow the three simple rules for iterator caching:
         let (read_dir, cookie_value) = if cookie == 0 {
-            // Rule 1: Cookie is 0 - create a new iterator
             debug!(
                 "Creating new ReadDir for directory: {:?} (cookie = 0)",
                 dir_path
@@ -58,29 +54,20 @@ impl MirrorFsIterator {
             let read_dir = tokio::fs::read_dir(&dir_path)
                 .await
                 .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-            // Start with the base cookie value (unique counter in upper 32 bits)
             let base = iterator_cache.generate_base_cookie();
             (Some(read_dir), base)
+        } else if let Some(cached_info) = iterator_cache.pop_state(dirid, cookie) {
+            debug!(
+                "Reusing cached ReadDir for directory: {:?} at cookie: {}",
+                dir_path, cookie
+            );
+            (Some(cached_info.read_dir), cached_info.cookie)
         } else {
-            // Cookie is not zero - check cache
-            if let Some(cached_info) = iterator_cache.pop_state(dirid, cookie) {
-                // Rule 2: Cookie is not zero and iterator with same cookie exists in cache -
-                // continue to iterate
-                debug!(
-                    "Reusing cached ReadDir for directory: {:?} at cookie: {}",
-                    dir_path, cookie
-                );
-                // Use the cached cookie directly since it already contains position info
-                (Some(cached_info.read_dir), cached_info.cookie)
-            } else {
-                // Rule 3: Cookie is not zero and iterator with same cookie doesn't exist in cache -
-                // return BAD_COOKIE
-                debug!(
-                    "No cached ReadDir found for cookie {}, returning BAD_COOKIE error",
-                    cookie
-                );
-                return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
-            }
+            debug!(
+                "No cached ReadDir found for cookie {}, returning BAD_COOKIE error",
+                cookie
+            );
+            return Err(nfsstat3::NFS3ERR_BAD_COOKIE);
         };
 
         Ok(Self {
@@ -94,27 +81,23 @@ impl MirrorFsIterator {
     }
 
     /// Common logic for getting the next directory entry and creating a handle
-    /// Returns None for EOF, Some(Err) for errors, Some(Ok((handle, name, cookie))) for success
-    async fn next_entry_common(&mut self) -> Option<Result<(FileHandleU64, std::ffi::OsString, u64), nfsstat3>> {
+    async fn next_entry_common(
+        &mut self,
+    ) -> Option<Result<(FileHandleU64, std::ffi::OsString, u64), nfsstat3>> {
         let read_dir = self.read_dir.as_mut()?;
 
-        // Get next entry from tokio ReadDir
         match read_dir.next_entry().await {
             Ok(Some(entry)) => {
                 let name = entry.file_name();
 
-                // Create handle for this entry
                 let handle = match self.cache.symbols_path(self.dirid) {
-                    Ok(parent_symbols) => {
-                        match self.cache.lookup(&parent_symbols, &name, false) {
-                            Ok(handle) => handle,
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
+                    Ok(parent_symbols) => match self.cache.lookup(&parent_symbols, &name, false) {
+                        Ok(handle) => handle,
+                        Err(e) => return Some(Err(e)),
+                    },
                     Err(e) => return Some(Err(e)),
                 };
 
-                // Increment cookie to get next unique value
                 self.cookie += 1;
 
                 Some(Ok((handle, name, self.cookie)))
@@ -130,16 +113,9 @@ impl MirrorFsIterator {
 
 impl Drop for MirrorFsIterator {
     fn drop(&mut self) {
-        // Cache the ReadDir object if we're not exhausted and have one
         if let Some(read_dir) = self.read_dir.take() {
-            // Cache the current ReadDir object with the current cookie as the key
-            // The cookie represents the position where the next read would start from
-            self.iterator_cache.cache_state(
-                self.dirid,
-                self.cookie,
-                read_dir,
-                Instant::now(),
-            );
+            self.iterator_cache
+                .cache_state(self.dirid, self.cookie, read_dir, Instant::now());
             debug!(
                 "Cached iterator state for dir_id: {} at cookie: {:#018x}",
                 self.dirid.as_u64(),
@@ -171,12 +147,10 @@ impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
         loop {
             match self.next_entry_common().await {
                 Some(Ok((handle, name, cookie))) => {
-                    // Get file attributes for the plus version
                     let path = {
                         if let Ok(relative_path) = self.cache.handle_to_path(handle) {
                             self.root_path.join(&relative_path)
                         } else {
-                            // Skip if handle is invalid, continue to next entry
                             debug!("Invalid handle for entry: {:?}", handle);
                             continue;
                         }

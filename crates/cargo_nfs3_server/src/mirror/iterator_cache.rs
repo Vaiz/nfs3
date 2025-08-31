@@ -45,7 +45,6 @@ impl IteratorCache {
     }
 
     /// Check if an iterator position is cached and remove it if so
-    /// Returns the cached info if it was found, None otherwise
     pub fn pop_state(&self, dir_id: FileHandleU64, cookie: u64) -> Option<CachedIteratorInfo> {
         let mut cache = self.cache.write().expect("lock is poisoned");
 
@@ -58,13 +57,7 @@ impl IteratorCache {
     }
 
     /// Cache an iterator state with `ReadDir` object
-    pub fn cache_state(
-        &self,
-        dir_id: FileHandleU64,
-        cookie: u64,
-        read_dir: ReadDir,
-        now: Instant,
-    ) {
+    pub fn cache_state(&self, dir_id: FileHandleU64, cookie: u64, read_dir: ReadDir, now: Instant) {
         let mut cache = self.cache.write().expect("lock is poisoned");
 
         let info = CachedIteratorInfo {
@@ -83,7 +76,7 @@ impl IteratorCache {
 
         cache.retain(|_, iterators| {
             iterators.retain(|info| now - info.cached_at <= self.retention_period);
-            !iterators.is_empty() // Remove dirs that have no iterators left
+            !iterators.is_empty()
         });
     }
 
@@ -95,10 +88,7 @@ impl IteratorCache {
     ) {
         if let Some(iterators) = cache.get_mut(&dir_id) {
             if iterators.len() > self.max_cached_per_dir as usize {
-                // Sort by cache time (oldest first)
                 iterators.sort_by_key(|info| info.cached_at);
-
-                // Remove oldest entries by truncating the vector
                 let to_keep = self.max_cached_per_dir as usize;
                 iterators.drain(0..iterators.len() - to_keep);
             }
@@ -142,8 +132,3 @@ impl IteratorCacheCleaner {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    // TODO: Update tests to work with the new ReadDir caching interface
-    // The tests are currently disabled due to the complexity of mocking ReadDir objects
-}

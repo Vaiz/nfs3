@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used)] // TODO: Replace unwraps with proper error handling
-
 mod iterator;
 mod iterator_cache;
 mod symbols_cache;
@@ -31,17 +29,9 @@ impl Fs {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
         let cache = Arc::new(SymbolsCache::new(root.clone()));
-
-        // Create iterator cache with reasonable defaults:
-        // - 60 seconds retention period
-        // - Maximum 20 cached iterators per directory
         let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
-
-        // Start the cleaner task to periodically clean up stale cache entries
-        let cleaner = IteratorCacheCleaner::new(
-            Arc::clone(&iterator_cache),
-            Duration::from_secs(30), // Clean every 30 seconds
-        );
+        let cleaner =
+            IteratorCacheCleaner::new(Arc::clone(&iterator_cache), Duration::from_secs(30));
         let cleaner_handle = cleaner.start();
 
         Self {
@@ -83,7 +73,6 @@ impl Fs {
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<MirrorFsIterator, nfsstat3> {
-        // Always create an iterator - it will handle caching and validation internally
         MirrorFsIterator::new(
             self.root.clone(),
             Arc::clone(&self.cache),
@@ -184,29 +173,31 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_cookie_validation_in_readdir() {
-        let temp_dir = tempdir().unwrap();
+    async fn create_test_fs_with_files(files: &[&str]) -> (tempfile::TempDir, Fs, FileHandleU64) {
+        let temp_dir = tempdir().expect("failed to create temp directory");
         let root_path = temp_dir.path().to_path_buf();
 
-        // Create some test files
-        fs::write(root_path.join("file1.txt"), "content1")
-            .await
-            .unwrap();
-        fs::write(root_path.join("file2.txt"), "content2")
-            .await
-            .unwrap();
-        fs::write(root_path.join("file3.txt"), "content3")
-            .await
-            .unwrap();
+        for file in files {
+            fs::write(root_path.join(file), "content")
+                .await
+                .expect("failed to write test file");
+        }
 
         let fs = Fs::new(&root_path);
         let root_handle = fs.root_dir();
+        (temp_dir, fs, root_handle)
+    }
 
-        // First readdir call with cookie 0 (start)
-        let mut iter1 = fs.readdir(&root_handle, 0).await.unwrap();
+    #[tokio::test]
+    async fn test_cookie_validation_in_readdir() {
+        let (_temp_dir, fs, root_handle) =
+            create_test_fs_with_files(&["file1.txt", "file2.txt", "file3.txt"]).await;
 
-        // Collect all entries
+        let mut iter1 = fs
+            .readdir(&root_handle, 0)
+            .await
+            .expect("failed to create iterator");
+
         let mut entries = Vec::new();
         loop {
             match iter1.next().await {
@@ -220,79 +211,58 @@ mod tests {
 
         assert!(!entries.is_empty(), "Should have at least some entries");
 
-        // Test that cookies from a fully consumed iterator are no longer valid
-        // since the iterator was dropped and no cached state remains
         if entries.len() > 1 {
             let cookie_from_consumed_iter = entries[0].cookie;
-            match fs.readdir(&root_handle, cookie_from_consumed_iter).await {
-                Err(nfsstat3::NFS3ERR_BAD_COOKIE) => {
-                    // This is expected - the iterator was fully consumed and dropped
-                }
-                Ok(_) => panic!("Should fail with BAD_COOKIE for consumed iterator cookie"),
-                Err(other) => panic!("Unexpected error for consumed iterator cookie: {other:?}"),
-            }
+            assert!(
+                fs.readdir(&root_handle, cookie_from_consumed_iter)
+                    .await
+                    .is_err(),
+                "Should fail with BAD_COOKIE for consumed iterator cookie"
+            );
         }
 
-        // Test cookie reuse with partial iteration (iterator dropped before completion)
-        let mut iter_partial = fs.readdir(&root_handle, 0).await.unwrap();
+        let mut iter_partial = fs
+            .readdir(&root_handle, 0)
+            .await
+            .expect("failed to create iterator");
         let first_entry = match iter_partial.next().await {
             NextResult::Ok(entry) => entry,
             NextResult::Eof => panic!("Expected at least one entry"),
             NextResult::Err(e) => panic!("Unexpected error: {e:?}"),
         };
 
-        // Use the cookie from the first entry for resumption
         let resume_cookie = first_entry.cookie;
-
-        // Drop the iterator while it still has a cached ReadDir state
         drop(iter_partial);
 
-        // This cookie should be valid because the iterator was dropped with cached state
-        match fs.readdir(&root_handle, resume_cookie).await {
-            Ok(mut iter2) => {
-                // Should be able to continue iteration
-                match iter2.next().await {
-                    NextResult::Ok(_) | NextResult::Eof => {
-                        // Either result is acceptable - we successfully resumed
-                    }
-                    NextResult::Err(e) => panic!("Should not fail with cached cookie: {e:?}"),
-                }
-            }
-            Err(e) => panic!("Should succeed with cached cookie, got: {e:?}"),
+        let mut iter2 = fs
+            .readdir(&root_handle, resume_cookie)
+            .await
+            .expect("Should succeed with cached cookie");
+        match iter2.next().await {
+            NextResult::Ok(_) | NextResult::Eof => {}
+            NextResult::Err(e) => panic!("Should not fail with cached cookie: {e:?}"),
         }
 
-        // Test that invalid cookie is rejected
         let invalid_cookie = 999_999;
-        match fs.readdir(&root_handle, invalid_cookie).await {
-            Err(nfsstat3::NFS3ERR_BAD_COOKIE) => {
-                // This is expected for invalid cookie
-            }
-            Ok(_) => panic!("Should fail with BAD_COOKIE for invalid cookie"),
-            Err(other) => panic!("Unexpected error for invalid cookie: {other:?}"),
-        }
+        assert!(
+            fs.readdir(&root_handle, invalid_cookie).await.is_err(),
+            "Should fail with BAD_COOKIE for invalid cookie"
+        );
     }
 
     #[tokio::test]
     async fn test_streaming_iteration() {
-        let temp_dir = tempdir().unwrap();
-        let root_path = temp_dir.path().to_path_buf();
+        let (_temp_dir, fs, root_handle) = create_test_fs_with_files(&[
+            "stream_file1.txt",
+            "stream_file2.txt",
+            "stream_file3.txt",
+        ])
+        .await;
 
-        // Create test files
-        fs::write(root_path.join("stream_file1.txt"), "content")
+        let mut iter = fs
+            .readdir(&root_handle, 0)
             .await
-            .unwrap();
-        fs::write(root_path.join("stream_file2.txt"), "content")
-            .await
-            .unwrap();
-        fs::write(root_path.join("stream_file3.txt"), "content")
-            .await
-            .unwrap();
-
-        let fs = Fs::new(&root_path);
-        let root_handle = fs.root_dir();
-
-        // Test that we can iterate through all entries with streaming
-        let mut iter = fs.readdir(&root_handle, 0).await.unwrap();
+            .expect("failed to create iterator");
         let mut entries = Vec::new();
 
         loop {
@@ -303,11 +273,12 @@ mod tests {
             }
         }
 
-        // Should have all our test files
         assert!(!entries.is_empty(), "Should have streamed some entries");
 
-        // Verify consistency across multiple iterator creations
-        let mut iter2 = fs.readdir(&root_handle, 0).await.unwrap();
+        let mut iter2 = fs
+            .readdir(&root_handle, 0)
+            .await
+            .expect("failed to create iterator");
         let mut entries2 = Vec::new();
 
         loop {
@@ -318,60 +289,53 @@ mod tests {
             }
         }
 
-        // Results should be consistent between different iterator instances
         assert_eq!(entries, entries2, "Results should be consistent");
     }
 
     #[tokio::test]
     async fn test_cookie_uniqueness() {
-        let temp_dir = tempdir().unwrap();
-        let root_path = temp_dir.path().to_path_buf();
+        let (_temp_dir, fs, root_handle) =
+            create_test_fs_with_files(&["unique_file1.txt", "unique_file2.txt"]).await;
 
-        // Create test files
-        fs::write(root_path.join("unique_file1.txt"), "content")
-            .await
-            .unwrap();
-        fs::write(root_path.join("unique_file2.txt"), "content")
-            .await
-            .unwrap();
-
-        let fs = Fs::new(&root_path);
-        let root_handle = fs.root_dir();
-
-        // Create multiple iterators and collect their cookies
         let mut all_cookies = std::collections::HashSet::new();
 
         for i in 0..3 {
             println!("Testing iterator {i}");
-            let mut iter = fs.readdir(&root_handle, 0).await.unwrap();
-            
+            let mut iter = fs
+                .readdir(&root_handle, 0)
+                .await
+                .expect("failed to create iterator");
+
             loop {
                 match iter.next().await {
                     NextResult::Ok(entry) => {
-                        println!("  Entry: {:?} with cookie: {:#018x}", entry.name, entry.cookie);
-                        // Verify that this cookie is unique across all iterators
+                        println!(
+                            "  Entry: {:?} with cookie: {:#018x}",
+                            entry.name, entry.cookie
+                        );
                         assert!(
                             all_cookies.insert(entry.cookie),
                             "Cookie {:#018x} is not unique! Already seen in previous iterator.",
                             entry.cookie
                         );
-                        
-                        // Verify cookie structure: upper 32 bits are counter, lower 32 bits are position
+
                         let counter = (entry.cookie >> 32) as u32;
                         let position = (entry.cookie & 0xFFFF_FFFF) as u32;
-                        
-                        println!("    Counter: {}, Position: {}", counter, position);
-                        
-                        // Position should be > 0 since we increment before creating the cookie
-                        assert!(position > 0, "Position should be > 0, got {}", position);
+
+                        println!("    Counter: {counter}, Position: {position}");
+
+                        assert!(position > 0, "Position should be > 0, got {position}");
                     }
                     NextResult::Eof => break,
                     NextResult::Err(e) => panic!("Unexpected error: {e:?}"),
                 }
             }
         }
-        
+
         println!("Total unique cookies generated: {}", all_cookies.len());
-        assert!(all_cookies.len() >= 3, "Should have generated unique cookies across multiple iterations");
+        assert!(
+            all_cookies.len() >= 3,
+            "Should have generated unique cookies across multiple iterations"
+        );
     }
 }

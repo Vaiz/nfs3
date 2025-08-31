@@ -26,7 +26,7 @@ impl From<OsStrRef<'_>> for Cow<'static, OsStr> {
     }
 }
 
-// TODO: use faster cache
+// TODO: use faster hash
 // TODO: compress vec of symbols
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct SymbolsPath(Vec<Symbol>);
@@ -60,7 +60,6 @@ impl SymbolsTable {
         self.table.intern(name).expect("symbols table full")
     }
 
-    // SymbolsPath expected to be always valid
     pub fn resolve_path(&self, path: &SymbolsPath) -> PathBuf {
         let mut path_buf = PathBuf::new();
         for symbol in &path.0 {
@@ -95,7 +94,7 @@ impl SymbolsCacheInner {
 
         let entry = inner.path_to_id.entry(item);
         let vacant_entry = match entry {
-            Entry::Occupied(entry) => return Ok(entry.get().clone()),
+            Entry::Occupied(entry) => return Ok(*entry.get()),
             Entry::Vacant(entry) => entry,
         };
 
@@ -152,7 +151,7 @@ impl SymbolsCache {
     }
 
     pub fn symbols_path(&self, id: FileHandleU64) -> Result<SymbolsPath, nfsstat3> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().expect("lock is poisoned");
         inner
             .id_to_path
             .get(&id)
@@ -160,9 +159,8 @@ impl SymbolsCache {
             .ok_or(nfsstat3::NFS3ERR_BADHANDLE)
     }
 
-    // returns relative path
     pub fn handle_to_path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().expect("lock is poisoned");
         let path = inner
             .id_to_path
             .get(&id)
