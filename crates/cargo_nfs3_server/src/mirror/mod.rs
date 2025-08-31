@@ -14,10 +14,10 @@ use std::time::Duration;
 
 use intaglio::Symbol;
 use iterator::Mirror3DirIterator;
+use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, filename3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator};
-use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
@@ -254,19 +254,13 @@ impl Fs {
             .await;
         }
 
-        // For non-zero cookies, check if we have a valid cached iterator position
-        let has_cached = {
+        // For non-zero cookies, check if we have a valid cached iterator position and remove it
+        let cached_info = {
             let inner = self.inner.read().unwrap();
-            inner.iterator_cache.has_cached(dirid, cookie)
+            inner.iterator_cache.pop_state(dirid, cookie)
         };
 
-        if has_cached {
-            // Remove it from cache since we're going to use it
-            {
-                let inner = self.inner.read().unwrap();
-                inner.iterator_cache.remove_state(dirid, cookie);
-            }
-
+        if cached_info.is_some() {
             // Create a new iterator at this position
             return Mirror3DirIterator::new(
                 self.root.clone(),

@@ -37,16 +37,20 @@ impl IteratorCache {
         }
     }
 
-    /// Check if an iterator position is cached and valid
-    pub fn has_cached(&self, dir_id: FileHandleU64, cookie: u64) -> bool {
-        let cache = self.cache.read().expect("lock is poisoned");
+    /// Check if an iterator position is cached and valid, and remove it if so
+    /// Returns the cached info if it was found and valid, None otherwise
+    pub fn pop_state(&self, dir_id: FileHandleU64, cookie: u64) -> Option<CachedIteratorInfo> {
+        let mut cache = self.cache.write().expect("lock is poisoned");
         let key = IteratorKey { dir_id, cookie };
 
-        cache.get(&key).is_some_and(|info| {
-            // Check if it's still valid (not stale)
+        // Check if entry exists and determine if it's valid
+        let is_valid = cache.get(&key).is_some_and(|info| {
             let now = Instant::now();
             now - info.cached_at <= self.retention_period
-        })
+        });
+
+        // Remove the entry (if it exists) and return it only if it was valid
+        cache.remove(&key).filter(|_| is_valid)
     }
 
     /// Cache an iterator state
@@ -54,19 +58,10 @@ impl IteratorCache {
         let mut cache = self.cache.write().expect("lock is poisoned");
         let key = IteratorKey { dir_id, cookie };
 
-        let info = CachedIteratorInfo {
-            cached_at: now,
-        };
+        let info = CachedIteratorInfo { cached_at: now };
 
         cache.insert(key, info);
         self.trim_cache_for_dir(&mut cache, dir_id, now);
-    }
-
-    /// Remove iterator state from cache and return it if it existed
-    pub fn remove_state(&self, dir_id: FileHandleU64, cookie: u64) -> Option<CachedIteratorInfo> {
-        let mut cache = self.cache.write().expect("lock is poisoned");
-        let key = IteratorKey { dir_id, cookie };
-        cache.remove(&key)
     }
 
     /// Clean up stale iterator states - should be called periodically
@@ -149,21 +144,18 @@ mod tests {
         let cookie = 42;
 
         // Initially, no iterator should be cached
-        assert!(!cache.has_cached(dir_id, cookie));
+        assert!(cache.pop_state(dir_id, cookie).is_none());
 
         // Cache an iterator state
         let now = Instant::now();
         cache.cache_state(dir_id, cookie, now);
 
-        // Now it should be cached
-        assert!(cache.has_cached(dir_id, cookie));
+        // Now it should be cached and we can pop it
+        let popped = cache.pop_state(dir_id, cookie);
+        assert!(popped.is_some());
 
-        // Remove it
-        let removed = cache.remove_state(dir_id, cookie);
-        assert!(removed.is_some());
-
-        // Should no longer be cached
-        assert!(!cache.has_cached(dir_id, cookie));
+        // Should no longer be cached after popping
+        assert!(cache.pop_state(dir_id, cookie).is_none());
     }
 
     #[test]
@@ -175,13 +167,37 @@ mod tests {
 
         // Cache an entry
         cache.cache_state(dir_id, cookie, now);
-        assert!(cache.has_cached(dir_id, cookie));
 
-        // Sleep and cleanup
+        // Should be able to pop it immediately
+        cache.cache_state(dir_id, cookie, now);
+        assert!(cache.pop_state(dir_id, cookie).is_some());
+
+        // Cache again and wait for it to become stale
+        cache.cache_state(dir_id, cookie, now);
         std::thread::sleep(Duration::from_millis(200));
         cache.cleanup(Instant::now());
 
-        // Should be cleaned up
-        assert!(!cache.has_cached(dir_id, cookie));
+        // Should be cleaned up and not available for popping
+        assert!(cache.pop_state(dir_id, cookie).is_none());
+    }
+
+    #[test]
+    fn test_pop_state_removes_stale_entries() {
+        let cache = IteratorCache::new(Duration::from_millis(50), 10);
+        let dir_id = FileHandleU64::new(1);
+        let cookie = 42;
+        let now = Instant::now();
+
+        // Cache an entry
+        cache.cache_state(dir_id, cookie, now);
+
+        // Wait for it to become stale
+        std::thread::sleep(Duration::from_millis(100));
+
+        // pop_state should return None for stale entries and remove them
+        assert!(cache.pop_state(dir_id, cookie).is_none());
+
+        // Subsequent calls should also return None (entry was removed)
+        assert!(cache.pop_state(dir_id, cookie).is_none());
     }
 }
