@@ -85,7 +85,7 @@ impl SymbolsTable {
 }
 
 #[derive(Debug)]
-pub struct Cache {
+pub struct SymbolsCache {
     root: PathBuf,
     symbols: SymbolsTable,
     path_to_id: HashMap<SymbolsPath, FileHandleU64>,
@@ -93,7 +93,7 @@ pub struct Cache {
     next_id: AtomicU64,
 }
 
-impl Cache {
+impl SymbolsCache {
     const ROOT_ID: FileHandleU64 = FileHandleU64::new(1);
 
     fn new(root: PathBuf) -> Self {
@@ -169,7 +169,7 @@ impl Cache {
 
 #[derive(Debug)]
 pub struct FsInner {
-    cache: Cache,
+    cache: SymbolsCache,
     iterator_cache: Arc<IteratorCache>,
 }
 
@@ -183,7 +183,7 @@ pub struct Fs {
 impl Fs {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
-        let cache = Cache::new(root.clone());
+        let cache = SymbolsCache::new(root.clone());
 
         // Create iterator cache with reasonable defaults:
         // - 60 seconds retention period
@@ -283,7 +283,7 @@ impl NfsReadFileSystem for Fs {
     type Handle = FileHandleU64;
 
     fn root_dir(&self) -> Self::Handle {
-        Cache::ROOT_ID
+        SymbolsCache::ROOT_ID
     }
 
     async fn lookup(
