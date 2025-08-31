@@ -161,10 +161,10 @@ mod tests {
         cache.cache_state(dir_id, cookie, now);
         assert!(cache.pop_state(dir_id, cookie).is_some());
 
-        // Cache again and wait for it to become stale
+        // Cache again and simulate time passing by using a future time for cleanup
         cache.cache_state(dir_id, cookie, now);
-        std::thread::sleep(Duration::from_millis(200));
-        cache.cleanup(Instant::now());
+        let future_time = now + Duration::from_millis(200);
+        cache.cleanup(future_time);
 
         // Should be cleaned up and not available for popping
         assert!(cache.pop_state(dir_id, cookie).is_none());
@@ -180,10 +180,8 @@ mod tests {
         // Cache an entry
         cache.cache_state(dir_id, cookie, now);
 
-        // Wait for it to become stale
-        std::thread::sleep(Duration::from_millis(100));
-
-        // pop_state should return the entry even if it's stale (staleness is only for cleanup)
+        // pop_state should return the entry even if it would be considered stale
+        // (staleness is only checked during cleanup, not during pop)
         assert!(cache.pop_state(dir_id, cookie).is_some());
 
         // Subsequent calls should return None (entry was removed)
@@ -204,12 +202,12 @@ mod tests {
         cache.cache_state(dir_id, cookie, now);
         assert!(cache.pop_state(dir_id, cookie).is_some());
 
-        // Cache again and wait for it to become stale
+        // Cache again and simulate time passing
         cache.cache_state(dir_id, cookie, now);
-        std::thread::sleep(Duration::from_millis(100));
+        let future_time = now + Duration::from_millis(100);
 
         // Cleanup should remove stale entries
-        cache.cleanup(Instant::now());
+        cache.cleanup(future_time);
 
         // After cleanup, the stale entry should be gone
         assert!(cache.pop_state(dir_id, cookie).is_none());
