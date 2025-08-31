@@ -12,8 +12,7 @@ use nfs3_server::vfs::{
 use tokio::fs::ReadDir;
 use tracing::debug;
 
-use super::SymbolsCache;
-use crate::mirror::iterator_cache::IteratorCache;
+use super::{IteratorCache, SymbolsCache};
 use crate::string_ext::FromOsString;
 
 #[derive(Debug)]
@@ -22,6 +21,7 @@ pub struct MirrorFsIterator {
     cache: Arc<SymbolsCache>,
     dirid: FileHandleU64,
     read_dir: Option<ReadDir>,
+    /// Cookie starts as base (with unique counter) and gets incremented for each entry
     cookie: u64,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<IteratorCache>,
@@ -49,7 +49,7 @@ impl MirrorFsIterator {
         }
 
         // Follow the three simple rules for iterator caching:
-        let (read_dir, current_cookie) = if cookie == 0 {
+        let (read_dir, cookie_value) = if cookie == 0 {
             // Rule 1: Cookie is 0 - create a new iterator
             debug!(
                 "Creating new ReadDir for directory: {:?} (cookie = 0)",
@@ -58,18 +58,20 @@ impl MirrorFsIterator {
             let read_dir = tokio::fs::read_dir(&dir_path)
                 .await
                 .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-            (Some(read_dir), 0)
+            // Start with the base cookie value (unique counter in upper 32 bits)
+            let base = iterator_cache.generate_base_cookie();
+            (Some(read_dir), base)
         } else {
             // Cookie is not zero - check cache
             if let Some(cached_info) = iterator_cache.pop_state(dirid, cookie) {
                 // Rule 2: Cookie is not zero and iterator with same cookie exists in cache -
                 // continue to iterate
                 debug!(
-                    "Reusing cached ReadDir for directory: {:?} at cookie: {} (cached position: \
-                     {})",
-                    dir_path, cookie, cached_info.current_position
+                    "Reusing cached ReadDir for directory: {:?} at cookie: {}",
+                    dir_path, cookie
                 );
-                (cached_info.read_dir, cached_info.current_position)
+                // Use the cached cookie directly since it already contains position info
+                (Some(cached_info.read_dir), cached_info.cookie)
             } else {
                 // Rule 3: Cookie is not zero and iterator with same cookie doesn't exist in cache -
                 // return BAD_COOKIE
@@ -86,7 +88,7 @@ impl MirrorFsIterator {
             cache,
             dirid,
             read_dir,
-            cookie: current_cookie,
+            cookie: cookie_value,
             iterator_cache,
         })
     }
@@ -96,17 +98,16 @@ impl Drop for MirrorFsIterator {
     fn drop(&mut self) {
         // Cache the ReadDir object if we're not exhausted and have one
         if let Some(read_dir) = self.read_dir.take() {
-            // Cache the current ReadDir object with the current cookie position
+            // Cache the current ReadDir object with the current cookie as the key
             // The cookie represents the position where the next read would start from
             self.iterator_cache.cache_state(
                 self.dirid,
                 self.cookie,
-                Some(read_dir),
-                self.cookie,
+                read_dir,
                 Instant::now(),
             );
             debug!(
-                "Cached iterator state for dir_id: {} at cookie: {}",
+                "Cached iterator state for dir_id: {} at cookie: {:#018x}",
                 self.dirid.as_u64(),
                 self.cookie
             );

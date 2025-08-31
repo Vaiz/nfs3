@@ -321,4 +321,57 @@ mod tests {
         // Results should be consistent between different iterator instances
         assert_eq!(entries, entries2, "Results should be consistent");
     }
+
+    #[tokio::test]
+    async fn test_cookie_uniqueness() {
+        let temp_dir = tempdir().unwrap();
+        let root_path = temp_dir.path().to_path_buf();
+
+        // Create test files
+        fs::write(root_path.join("unique_file1.txt"), "content")
+            .await
+            .unwrap();
+        fs::write(root_path.join("unique_file2.txt"), "content")
+            .await
+            .unwrap();
+
+        let fs = Fs::new(&root_path);
+        let root_handle = fs.root_dir();
+
+        // Create multiple iterators and collect their cookies
+        let mut all_cookies = std::collections::HashSet::new();
+
+        for i in 0..3 {
+            println!("Testing iterator {i}");
+            let mut iter = fs.readdir(&root_handle, 0).await.unwrap();
+            
+            loop {
+                match iter.next().await {
+                    NextResult::Ok(entry) => {
+                        println!("  Entry: {:?} with cookie: {:#018x}", entry.name, entry.cookie);
+                        // Verify that this cookie is unique across all iterators
+                        assert!(
+                            all_cookies.insert(entry.cookie),
+                            "Cookie {:#018x} is not unique! Already seen in previous iterator.",
+                            entry.cookie
+                        );
+                        
+                        // Verify cookie structure: upper 32 bits are counter, lower 32 bits are position
+                        let counter = (entry.cookie >> 32) as u32;
+                        let position = (entry.cookie & 0xFFFF_FFFF) as u32;
+                        
+                        println!("    Counter: {}, Position: {}", counter, position);
+                        
+                        // Position should be > 0 since we increment before creating the cookie
+                        assert!(position > 0, "Position should be > 0, got {}", position);
+                    }
+                    NextResult::Eof => break,
+                    NextResult::Err(e) => panic!("Unexpected error: {e:?}"),
+                }
+            }
+        }
+        
+        println!("Total unique cookies generated: {}", all_cookies.len());
+        assert!(all_cookies.len() >= 3, "Should have generated unique cookies across multiple iterations");
+    }
 }

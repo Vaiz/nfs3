@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use nfs3_server::vfs::FileHandleU64;
@@ -10,8 +11,7 @@ use tokio::fs::ReadDir;
 pub struct CachedIteratorInfo {
     pub cookie: u64,
     pub cached_at: Instant,
-    pub read_dir: Option<ReadDir>,
-    pub current_position: u64,
+    pub read_dir: ReadDir,
 }
 
 /// Simple iterator cache that tracks valid iterator positions
@@ -21,6 +21,8 @@ pub struct IteratorCache {
     // Map from dir_id to vector of cached iterators
     cache: RwLock<HashMap<FileHandleU64, Vec<CachedIteratorInfo>>>,
     max_cached_per_dir: u16,
+    /// Atomic counter for generating unique cookies
+    cookie_counter: AtomicU32,
 }
 
 impl IteratorCache {
@@ -31,7 +33,15 @@ impl IteratorCache {
             retention_period,
             cache: RwLock::new(HashMap::new()),
             max_cached_per_dir,
+            cookie_counter: AtomicU32::new(0),
         }
+    }
+
+    /// Generates a unique base cookie for an iterator
+    pub fn generate_base_cookie(&self) -> u64 {
+        let counter = self.cookie_counter.fetch_add(1, Ordering::SeqCst);
+        // Base uses upper 32 bits
+        (u64::from(counter)) << 32
     }
 
     /// Check if an iterator position is cached and remove it if so
@@ -47,13 +57,12 @@ impl IteratorCache {
         })
     }
 
-    /// Cache an iterator state with optional `ReadDir` object
+    /// Cache an iterator state with `ReadDir` object
     pub fn cache_state(
         &self,
         dir_id: FileHandleU64,
         cookie: u64,
-        read_dir: Option<ReadDir>,
-        current_position: u64,
+        read_dir: ReadDir,
         now: Instant,
     ) {
         let mut cache = self.cache.write().expect("lock is poisoned");
@@ -62,7 +71,6 @@ impl IteratorCache {
             cookie,
             cached_at: now,
             read_dir,
-            current_position,
         };
 
         cache.entry(dir_id).or_default().push(info);
