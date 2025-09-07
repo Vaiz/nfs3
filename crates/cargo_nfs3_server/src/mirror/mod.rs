@@ -12,8 +12,9 @@ use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{fattr3, filename3, nfspath3, nfsstat3};
 use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator};
 use symbols_cache::SymbolsCache;
-use tokio::fs::File;
+use tokio::fs::{File, ReadDir};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
 
@@ -73,14 +74,60 @@ impl Fs {
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<MirrorFsIterator, nfsstat3> {
-        MirrorFsIterator::new(
+        let (read_dir, cookie_value) = self.initialize_read_dir(dirid, cookie).await?;
+
+        Ok(MirrorFsIterator::new(
             self.root.clone(),
             Arc::clone(&self.cache),
             Arc::clone(&self.iterator_cache),
             dirid,
-            cookie,
-        )
-        .await
+            Some(read_dir),
+            cookie_value,
+        ))
+    }
+
+    /// Initialize the `ReadDir` state based on the cookie value.
+    /// Returns (`ReadDir`, `actual_cookie`) tuple.
+    async fn initialize_read_dir(
+        &self,
+        dirid: FileHandleU64,
+        cookie: u64,
+    ) -> Result<(ReadDir, u64), nfsstat3> {
+        let dir_path = {
+            let relative_path = self.cache.handle_to_path(dirid)?;
+            self.root.join(&relative_path)
+        };
+
+        if cookie == 0 {
+            debug!(
+                "Creating new ReadDir for directory: {:?} (cookie = 0)",
+                dir_path
+            );
+            // Check if it's a directory
+            let metadata = tokio::fs::symlink_metadata(&dir_path)
+                .await
+                .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
+            if !metadata.is_dir() {
+                return Err(nfsstat3::NFS3ERR_NOTDIR);
+            }
+            let read_dir = tokio::fs::read_dir(&dir_path)
+                .await
+                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            let base = self.iterator_cache.generate_base_cookie();
+            Ok((read_dir, base))
+        } else if let Some(cached_info) = self.iterator_cache.pop_state(dirid, cookie) {
+            debug!(
+                "Reusing cached ReadDir for directory: {:?} at cookie: {}",
+                dir_path, cookie
+            );
+            Ok((cached_info.read_dir, cached_info.cookie))
+        } else {
+            debug!(
+                "No cached ReadDir found for cookie {}, returning BAD_COOKIE error",
+                cookie
+            );
+            Err(nfsstat3::NFS3ERR_BAD_COOKIE)
+        }
     }
 }
 
