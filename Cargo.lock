@@ -548,9 +548,9 @@ dependencies = [
 
 [[package]]
 name = "intaglio"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7785e397d45f5a00bd35df6c293518c240c321b734b15a02718aa21103de1ce9"
+checksum = "dabdf0d2968124ee123b21b84ef3232ad0359cd796848059bd45a0c96ab4b0f0"
 
 [[package]]
 name = "io-uring"
