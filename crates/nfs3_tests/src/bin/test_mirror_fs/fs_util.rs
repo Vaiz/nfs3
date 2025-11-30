@@ -137,9 +137,8 @@ pub fn assert_attributes_match_lenient(
     // Check file type
     if nfs_attrs.type_ != expected_type {
         bail!(
-            "File type mismatch: NFS reports {:?}, expected {:?}",
-            nfs_attrs.type_,
-            expected_type
+            "File type mismatch: NFS reports {}, expected {expected_type}",
+            nfs_attrs.type_
         );
     }
 
@@ -163,9 +162,8 @@ pub fn assert_attributes_match_lenient(
         let fs_size = metadata.len();
         if nfs_attrs.size != fs_size {
             bail!(
-                "File size mismatch: NFS reports {}, filesystem shows {}",
+                "File size mismatch: NFS reports {}, filesystem shows {fs_size}",
                 nfs_attrs.size,
-                fs_size
             );
         }
     }
@@ -179,11 +177,7 @@ pub fn assert_attributes_match_lenient(
         let fs_perms = fs_mode & 0o777;
         let nfs_perms = nfs_attrs.mode & 0o777;
         if fs_perms != nfs_perms {
-            bail!(
-                "Permission mismatch: NFS reports {:o}, filesystem shows {:o}",
-                nfs_perms,
-                fs_perms
-            );
+            bail!("Permission mismatch: NFS reports {nfs_perms:o}, filesystem shows {fs_perms:o}");
         }
     }
 
