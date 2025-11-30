@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::time::SystemTime;
+use std::{io::Write, path::Path};
 
 use anyhow::bail;
 use nfs3_types::nfs3::{fattr3, ftype3};
@@ -182,5 +182,35 @@ pub fn assert_attributes_match_lenient(
     }
 
     // Skip timestamp validation - server may cache metadata
+    Ok(())
+}
+
+/// Create a test file at `fs_path` with exactly `size` bytes by writing in blocks.
+/// Creates parent directories if needed.
+pub fn create_test_file(fs_path: &std::path::Path, size: u64) -> anyhow::Result<()> {
+    const BLOCK_SIZE: usize = 64 * 1024;
+
+    if let Some(parent) = fs_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(fs_path)?;
+
+    let mut remaining = size;
+    let mut buf = vec![0u8; BLOCK_SIZE];
+
+    while remaining > 0 {
+        buf.write_all(format!("test file content at {remaining}, full {size}").as_bytes())?;
+        let to_write = std::cmp::min(remaining, BLOCK_SIZE as u64) as usize;
+        file.write_all(&buf[..to_write])?;
+        remaining -= to_write as u64;
+    }
+
+    file.sync_all()?;
+
     Ok(())
 }

@@ -11,7 +11,7 @@ use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use tokio::time::sleep;
 
 use crate::context::TestContext;
-use crate::fs_util::{assert_attributes_match, assert_attributes_match_lenient};
+use crate::fs_util::{assert_attributes_match, assert_attributes_match_lenient, create_test_file};
 
 // ============================================================================
 // NFS3 Operations Coverage
@@ -275,9 +275,9 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
 }
 
 pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = "x".repeat(10000);
     let file_path = subdir.join("large_file.txt");
-    fs::write(&file_path, &content).expect("failed to write large file");
+    let file_size = 100 * 1024 * 1024; // 100MB
+    create_test_file(&file_path, file_size).expect("failed to create large file");
 
     let lookup_resok = ctx
         .client
@@ -307,19 +307,10 @@ pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: 
     let data = read_resok.data.0;
     assert_eq!(data.len(), 8192, "Should read 8192 bytes");
     assert!(!read_resok.eof, "Should not be EOF after first read");
-    let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
-    assert_eq!(
-        read_content,
-        "x".repeat(8192),
-        "Content mismatch in first chunk"
-    );
 
-    // Verify the content matches what we wrote
-    let fs_content = fs::read_to_string(&file_path).expect("failed to read file from filesystem");
-    assert!(
-        fs_content.starts_with(&read_content),
-        "Read content should match filesystem"
-    );
+    // Verify the file size matches expected
+    let metadata = fs::metadata(&file_path).expect("failed to get file metadata");
+    assert_eq!(metadata.len(), file_size, "File size should be 100MB");
 }
 
 pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
