@@ -10,10 +10,14 @@ use tracing_appender::non_blocking::WorkerGuard;
 mod logging;
 mod memfs;
 mod mirror;
+mod string_ext;
+mod threshold_logger;
 
 /// CLI tool for the `nfs3_server`
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug)]
-#[command(name = "nfs3_server", version, about = "A simple NFSv3 server", long_about = None)]
+#[command(name = "cargo-nfs3-server")]
+#[command(about = "A simple NFSv3 server implementation")]
 struct Args {
     /// Path to the directory to serve for `MirrorFs`
     #[arg(long)]
@@ -74,8 +78,9 @@ async fn main() {
             .as_deref()
             .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
 
-        assert!(Path::new(path).exists(), "path [{path}] does not exist",);
-        let mirror_fs = mirror::MirrorFs::new(path);
+        assert!(Path::new(path).exists(), "path [{path}] does not exist");
+
+        let mirror_fs = mirror::Fs::new(path);
         if args.readonly {
             start_server(
                 bind_addr,
