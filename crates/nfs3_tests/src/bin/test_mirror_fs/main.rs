@@ -30,7 +30,7 @@ where
     F: Fn(&'a mut context::TestContext, PathBuf, nfs_fh3) -> R,
     R: std::future::Future<Output = ()> + 'a,
 {
-    print!("🧪 {} ... ", test_name);
+    print!("🧪 {test_name} ... ");
     std::io::stdout().flush().unwrap();
 
     let subdir = ctx.create_test_subdir(test_name);
@@ -46,21 +46,21 @@ async fn main() {
         .with_target(false)
         .init();
 
-    println!("{}", SEPARATOR);
+    println!("{SEPARATOR}");
     println!("  MirrorFS Integration Test Suite");
-    println!("{}\n", SEPARATOR);
+    println!("{SEPARATOR}\n");
     println!("📖 READONLY MODE TESTS\n");
     run_readonly_tests().await;
 
     // Give OS time to release resources
-    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    println!("\n✍️  READWRITE MODE TESTS\n");
+    println!("\n  READWRITE MODE TESTS\n");
     run_readwrite_tests().await;
 
-    println!("\n{}", SEPARATOR);
+    println!("\n{SEPARATOR}");
     println!("  All tests passed! ✅");
-    println!("{}\n", SEPARATOR);
+    println!("{SEPARATOR}\n");
 }
 
 async fn run_readonly_tests() {
