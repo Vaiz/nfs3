@@ -1,4 +1,4 @@
-use nfs3_tests::TestContext;
+use nfs3_tests::{JustClientExt, TestContext};
 use nfs3_types::nfs3::*;
 use nfs3_types::xdr_codec::Opaque;
 
@@ -64,7 +64,7 @@ async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
-    let object = client.just_lookup(root.clone(), "a.txt").await.unwrap();
+    let object = client.just_lookup(&root, "a.txt").await.unwrap();
 
     let setattr = client
         .setattr(&SETATTR3args {
@@ -241,10 +241,7 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
     tracing::info!("{create:?}");
 
     // Additional check to verify the file was created
-    let lookup = client
-        .just_lookup(root.clone(), "new_file.txt")
-        .await
-        .unwrap();
+    let lookup = client.just_lookup(&root, "new_file.txt").await.unwrap();
     assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
@@ -269,10 +266,7 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
     tracing::info!("{create:?}");
 
     // Additional check to verify the file was created
-    let lookup = client
-        .just_lookup(root.clone(), "new_file.txt")
-        .await
-        .unwrap();
+    let lookup = client.just_lookup(&root, "new_file.txt").await.unwrap();
     assert_eq!(lookup, create.obj.unwrap());
 
     client.shutdown().await
@@ -344,7 +338,7 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
     tracing::info!("{mkdir:?}");
 
     // Additional check to verify the directory was created
-    let lookup = client.just_lookup(root.clone(), "new_dir").await.unwrap();
+    let lookup = client.just_lookup(&root, "new_dir").await.unwrap();
     assert_eq!(lookup, mkdir.obj.unwrap());
 
     client.shutdown().await

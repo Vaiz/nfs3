@@ -1,8 +1,12 @@
+use std::os::windows::fs::MetadataExt;
 use std::time::SystemTime;
 use std::{io::Write, path::Path};
 
 use anyhow::bail;
-use nfs3_types::nfs3::{fattr3, ftype3};
+use nfs3_types::nfs3::{Nfs3Result, fattr3, ftype3};
+
+use crate::context::TestContext;
+use nfs3_tests::JustClientExt;
 
 /// Compares two SystemTime values and returns the absolute difference in seconds.
 fn time_diff_secs(t1: SystemTime, t2: SystemTime) -> u64 {
@@ -213,4 +217,90 @@ pub fn create_test_file(fs_path: &std::path::Path, size: u64) -> anyhow::Result<
     file.sync_all()?;
 
     Ok(())
+}
+
+pub async fn assert_files_equal(
+    test_dir_path: &Path,
+    test_dir_handle: nfs3_types::nfs3::nfs_fh3,
+    filename: &str,
+    ctx: &mut TestContext,
+) {
+    use std::fs::File;
+    use std::io::Read;
+
+    const BUFFER_SIZE: usize = 1024 * 1024;
+
+    let path = test_dir_path.join(filename);
+    let mut local_file = File::open(path).expect("failed to open local file");
+    let nfs_file_handle = ctx
+        .just_lookup(&test_dir_handle, filename)
+        .await
+        .expect("failed to lookup file on NFS server");
+
+    let local_metadata = local_file
+        .metadata()
+        .expect("failed to get local file metadata");
+
+    let nfs_attr = ctx
+        .just_getattr(&nfs_file_handle)
+        .await
+        .expect("failed to get fattr3");
+
+    assert_eq!(
+        nfs_attr.size,
+        local_metadata.len(),
+        "file size mismatch between NFS and local file"
+    );
+
+    assert_eq!(
+        nfs_attr.type_,
+        ftype3::NF3REG,
+        "NFS file is not a regular file"
+    );
+    local_metadata.creation_time();
+
+    let mut offset: u64 = 0;
+    let remaining = nfs_attr.size;
+    let mut local_buffer = vec![0u8; BUFFER_SIZE];
+
+    while offset < remaining {
+        let nfs_read_result = ctx
+            .client
+            .read(&nfs3_types::nfs3::READ3args {
+                file: nfs_file_handle.clone(),
+                offset,
+                count: BUFFER_SIZE as u32,
+            })
+            .await
+            .expect("failed to read from NFS file");
+
+        let nfs_data = match nfs_read_result {
+            Nfs3Result::Ok(ok) => ok.data,
+            Nfs3Result::Err((status, _)) => {
+                panic!("NFS read failed with status {status}");
+            }
+        };
+
+        let nfs_bytes_read = nfs_data.len();
+        if nfs_bytes_read == 0 {
+            break; // EOF
+        }
+
+        let local_bytes_read = local_file
+            .read(&mut local_buffer)
+            .expect("failed to read from local file");
+
+        assert_eq!(
+            nfs_bytes_read, local_bytes_read,
+            "mismatched byte counts read"
+        );
+
+        assert_eq!(
+            &nfs_data[..],
+            &local_buffer[..local_bytes_read],
+            "data mismatch between NFS and local file"
+        );
+
+        offset += nfs_bytes_read as u64;
+    }
 }
