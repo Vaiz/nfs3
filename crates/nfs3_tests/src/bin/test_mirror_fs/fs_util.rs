@@ -1,12 +1,12 @@
-use std::os::windows::fs::MetadataExt;
+use std::io::Write;
+use std::path::Path;
 use std::time::SystemTime;
-use std::{io::Write, path::Path};
 
 use anyhow::bail;
+use nfs3_tests::JustClientExt;
 use nfs3_types::nfs3::{Nfs3Result, fattr3, ftype3};
 
 use crate::context::TestContext;
-use nfs3_tests::JustClientExt;
 
 /// Compares two SystemTime values and returns the absolute difference in seconds.
 fn time_diff_secs(t1: SystemTime, t2: SystemTime) -> u64 {
@@ -93,8 +93,8 @@ pub fn assert_attributes_match(
     let diff = time_diff_secs(nfs_mtime, fs_mtime);
     if diff > mtime_tolerance {
         bail!(
-            "Modification time mismatch (diff: {diff} seconds, tolerance: {mtime_tolerance}): NFS reports \
-                 {}.{:09} seconds, filesystem shows {:?}",
+            "Modification time mismatch (diff: {diff} seconds, tolerance: {mtime_tolerance}): NFS \
+             reports {}.{:09} seconds, filesystem shows {:?}",
             nfs_attrs.mtime.seconds,
             nfs_attrs.mtime.nseconds,
             fs_mtime
@@ -115,7 +115,7 @@ pub fn assert_attributes_match(
     if diff > atime_tolerance {
         bail!(
             "Access time mismatch (diff: {} seconds, tolerance: {}): NFS reports {}.{:09} \
-                 seconds, filesystem shows {:?}",
+             seconds, filesystem shows {:?}",
             diff,
             atime_tolerance,
             nfs_attrs.atime.seconds,
@@ -223,6 +223,7 @@ pub async fn assert_files_equal(
     test_dir_path: &Path,
     test_dir_handle: nfs3_types::nfs3::nfs_fh3,
     filename: &str,
+    expected_len: u64,
     ctx: &mut TestContext,
 ) {
     use std::fs::File;
@@ -232,19 +233,31 @@ pub async fn assert_files_equal(
 
     let path = test_dir_path.join(filename);
     let mut local_file = File::open(path).expect("failed to open local file");
+    let local_metadata = local_file
+        .metadata()
+        .expect("failed to get local file metadata");
+    assert!(local_metadata.is_file(), "local path is not a regular file");
+    assert_eq!(
+        local_metadata.len(),
+        expected_len,
+        "local file size does not match expected length"
+    );
+
     let nfs_file_handle = ctx
         .just_lookup(&test_dir_handle, filename)
         .await
         .expect("failed to lookup file on NFS server");
 
-    let local_metadata = local_file
-        .metadata()
-        .expect("failed to get local file metadata");
-
     let nfs_attr = ctx
         .just_getattr(&nfs_file_handle)
         .await
         .expect("failed to get fattr3");
+
+    assert_eq!(
+        nfs_attr.type_,
+        ftype3::NF3REG,
+        "NFS file is not a regular file"
+    );
 
     assert_eq!(
         nfs_attr.size,
@@ -253,14 +266,25 @@ pub async fn assert_files_equal(
     );
 
     assert_eq!(
-        nfs_attr.type_,
-        ftype3::NF3REG,
-        "NFS file is not a regular file"
+        SystemTime::from(nfs_attr.mtime),
+        local_metadata.modified().unwrap(),
+        "modification time mismatch between NFS and local file"
     );
-    local_metadata.creation_time();
 
-    let mut offset: u64 = 0;
+    // assert_eq!(
+    //     SystemTime::from(nfs_attr.atime),
+    //     local_metadata.accessed().unwrap(),
+    //     "access time mismatch between NFS and local file"
+    // );
+
+    assert_eq!(
+        SystemTime::from(nfs_attr.ctime),
+        local_metadata.created().unwrap(),
+        "creation time mismatch between NFS and local file"
+    );
+
     let remaining = nfs_attr.size;
+    let mut offset: u64 = 0;
     let mut local_buffer = vec![0u8; BUFFER_SIZE];
 
     while offset < remaining {
@@ -282,10 +306,6 @@ pub async fn assert_files_equal(
         };
 
         let nfs_bytes_read = nfs_data.len();
-        if nfs_bytes_read == 0 {
-            break; // EOF
-        }
-
         let local_bytes_read = local_file
             .read(&mut local_buffer)
             .expect("failed to read from local file");

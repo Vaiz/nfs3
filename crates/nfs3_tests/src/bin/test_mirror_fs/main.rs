@@ -3,7 +3,8 @@
 //! This binary starts a cargo-nfs3-server instance and executes comprehensive
 //! tests for both readonly and readwrite modes.
 
-use std::{io::Write, path::PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 
 mod context;
 mod fs_util;

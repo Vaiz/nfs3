@@ -11,7 +11,9 @@ use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use tokio::time::sleep;
 
 use crate::context::TestContext;
-use crate::fs_util::{assert_attributes_match, assert_attributes_match_lenient, create_test_file};
+use crate::fs_util::{
+    assert_attributes_match, assert_attributes_match_lenient, assert_files_equal, create_test_file,
+};
 
 // ============================================================================
 // NFS3 Operations Coverage
@@ -235,7 +237,7 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
 // ============================================================================
 
 pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = "Hello, world!";
+    let content = b"Hello, world!";
     let file_path = subdir.join("read_test.txt");
     fs::write(&file_path, content).expect("failed to write test file");
 
@@ -264,9 +266,8 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .expect("read call failed")
         .unwrap();
 
-    let data = read_resok.data.0;
-    let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
-    assert_eq!(read_content, content, "Content mismatch");
+    let read_content = read_resok.data.0;
+    assert_eq!(read_content.as_ref(), content, "Content mismatch");
     assert!(read_resok.eof, "Expected EOF for complete read");
     // Verify file attributes
     let attrs = read_resok.file_attributes.unwrap();
@@ -278,43 +279,18 @@ pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: 
     let file_path = subdir.join("large_file.txt");
     let file_size = 100 * 1024 * 1024; // 100MB
     create_test_file(&file_path, file_size).expect("failed to create large file");
-
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"large_file.txt")),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
-
-    let read_resok = ctx
-        .client
-        .read(&READ3args {
-            file: file_fh,
-            offset: 0,
-            count: 8192,
-        })
-        .await
-        .expect("read call failed")
-        .unwrap();
-
-    let data = read_resok.data.0;
-    assert_eq!(data.len(), 8192, "Should read 8192 bytes");
-    assert!(!read_resok.eof, "Should not be EOF after first read");
-
-    // Verify the file size matches expected
-    let metadata = fs::metadata(&file_path).expect("failed to get file metadata");
-    assert_eq!(metadata.len(), file_size, "File size should be 100MB");
+    assert_files_equal(
+        subdir.as_path(),
+        subdir_fh,
+        "large_file.txt",
+        file_size,
+        ctx,
+    )
+    .await;
 }
 
 pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = "0123456789abcdefghij";
+    let content = b"0123456789abcdefghij";
     let file_path = subdir.join("offset_test.txt");
     fs::write(&file_path, content).expect("failed to write test file");
 
@@ -344,53 +320,14 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .unwrap();
 
     let data = read_resok.data.0;
-    let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
-    assert_eq!(read_content, "abcde", "Content mismatch with offset");
-    // Verify the full content matches
-    let fs_content = fs::read_to_string(&file_path).expect("failed to read file from filesystem");
-    assert_eq!(
-        &fs_content[10..15],
-        "abcde",
-        "Offset read should match filesystem"
-    );
+    assert_eq!(data.as_ref(), b"abcde", "Content mismatch with offset");
 }
 
 pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     let binary_data: Vec<u8> = (0..256).map(|i| i as u8).collect();
     let file_path = subdir.join("binary_test.bin");
     fs::write(&file_path, &binary_data).expect("failed to write binary file");
-
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"binary_test.bin")),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
-
-    let read_resok = ctx
-        .client
-        .read(&READ3args {
-            file: file_fh,
-            offset: 0,
-            count: 256,
-        })
-        .await
-        .expect("read call failed")
-        .unwrap();
-
-    let data = read_resok.data.0.to_vec();
-    assert_eq!(data, binary_data, "Binary content mismatch");
-    assert!(read_resok.eof, "Expected EOF for complete read");
-    // Verify against filesystem
-    let fs_content = fs::read(&file_path).expect("failed to read file from filesystem");
-    assert_eq!(data, fs_content, "Binary content should match filesystem");
+    assert_files_equal(subdir.as_path(), subdir_fh, "binary_test.bin", 256, ctx).await;
 }
 
 // ============================================================================

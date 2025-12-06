@@ -1,7 +1,5 @@
-use nfs3_types::{
-    nfs3::{Nfs3Result, fattr3, nfs_fh3, nfsstat3},
-    xdr_codec::Opaque,
-};
+use nfs3_types::nfs3::{Nfs3Result, fattr3, nfs_fh3, nfsstat3};
+use nfs3_types::xdr_codec::Opaque;
 
 /// Core trait needed for `JustClientExt` to operate
 pub trait JustClient {
