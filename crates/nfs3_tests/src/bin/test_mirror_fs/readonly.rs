@@ -4,12 +4,10 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs as unix_fs;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::JustClientExt;
-use tokio::time::sleep;
 
 use crate::context::TestContext;
 use crate::fs_util::{
@@ -265,10 +263,6 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     );
 }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
-
 pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     const READ_TEST_FILE: &str = "read_test.txt";
     const HELLO_WORLD: &[u8] = b"Hello, world!";
@@ -280,7 +274,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: subdir_fh,
+                dir: subdir_fh.clone(),
                 name: READ_TEST_FILE.as_bytes().into(),
             },
         })
@@ -304,10 +298,15 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
     let read_content = read_resok.data.0;
     assert_eq!(read_content.as_ref(), HELLO_WORLD, "Content mismatch");
     assert!(read_resok.eof, "Expected EOF for complete read");
-    // Verify file attributes
-    let attrs = read_resok.file_attributes.unwrap();
-    assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-        .expect("read file attributes do not match filesystem");
+
+    assert_files_equal(
+        subdir.as_path(),
+        subdir_fh,
+        READ_TEST_FILE,
+        HELLO_WORLD.len() as u64,
+        ctx,
+    )
+    .await;
 }
 
 pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
@@ -379,10 +378,6 @@ pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
     .await;
 }
 
-// ============================================================================
-// Directory Operations
-// ============================================================================
-
 pub async fn readdir_multiple_files(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     for i in 1..=5 {
         let file_path = subdir.join(format!("file{}.txt", i));
@@ -394,8 +389,8 @@ pub async fn readdir_multiple_files(ctx: &mut TestContext, subdir: PathBuf, subd
         .readdir(&READDIR3args {
             dir: subdir_fh,
             cookie: 0,
-            cookieverf: cookieverf3([0u8; 8]),
-            count: 4096,
+            cookieverf: cookieverf3::default(),
+            count: 256 * 1024,
         })
         .await
         .expect("readdir call failed")
@@ -437,7 +432,7 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
         .readdir(&READDIR3args {
             dir: dir_fh,
             cookie: 0,
-            cookieverf: cookieverf3([0u8; 8]),
+            cookieverf: cookieverf3::default(),
             count: 4096,
         })
         .await
@@ -467,7 +462,7 @@ pub async fn readdir_many_files(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .readdir(&READDIR3args {
             dir: subdir_fh,
             cookie: 0,
-            cookieverf: cookieverf3([0u8; 8]),
+            cookieverf: cookieverf3::default(),
             count: 4096,
         })
         .await
@@ -492,15 +487,13 @@ pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
         fs::write(file_path, format!("content {}", i)).expect("failed to write test file");
     }
 
-    sleep(Duration::from_millis(100)).await;
-
     // Now do READDIRPLUS on the subdirectory
     let readdirplus_resok = ctx
         .client
         .readdirplus(&READDIRPLUS3args {
             dir: subdir_fh,
             cookie: 0,
-            cookieverf: cookieverf3([0u8; 8]),
+            cookieverf: cookieverf3::default(),
             dircount: 4096,
             maxcount: 8192,
         })
@@ -1099,9 +1092,6 @@ pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
     let source_path = subdir.join(RENAME_SOURCE_FILE);
     fs::write(&source_path, TEST_CONTENT).expect("failed to write test file");
 
-    // Small delay to allow server to detect the new file (longer on Windows)
-    sleep(Duration::from_millis(500)).await;
-
     let rename_result = ctx
         .client
         .rename(&RENAME3args {
@@ -1139,9 +1129,6 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
 
     let file_path = subdir.join(LINK_SOURCE_FILE);
     fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
-
-    // Small delay to allow server to detect the new file (longer on Windows)
-    sleep(Duration::from_millis(500)).await;
 
     let lookup_resok = ctx
         .client
@@ -1189,9 +1176,6 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
 
     let file_path = subdir.join(COMMIT_TEST_FILE);
     fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
-
-    // Small delay to allow server to detect the new file (longer on Windows)
-    sleep(Duration::from_millis(500)).await;
 
     let lookup_resok = ctx
         .client
