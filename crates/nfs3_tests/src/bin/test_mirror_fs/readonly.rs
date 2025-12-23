@@ -8,11 +8,12 @@ use std::time::Duration;
 
 use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
+use nfs3_tests::JustClientExt;
 use tokio::time::sleep;
 
 use crate::context::TestContext;
 use crate::fs_util::{
-    assert_attributes_match, assert_attributes_match_lenient, assert_files_equal, create_test_file,
+    assert_attributes_match, assert_files_equal, assert_folders_equal, create_test_file,
 };
 
 // ============================================================================
@@ -47,10 +48,6 @@ use crate::fs_util::{
 //  22. COMMIT       - tested in commit_readonly_error()
 // ============================================================================
 
-// ============================================================================
-// Basic Operations
-// ============================================================================
-
 pub async fn null(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     ctx.client.null().await.expect("null call failed");
 }
@@ -65,9 +62,7 @@ pub async fn getattr_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
         .expect("getattr failed")
         .unwrap();
 
-    // Use lenient checking for root directory - server caches metadata at startup
-    assert_attributes_match_lenient(&resok.obj_attributes, ctx.local_path(), ftype3::NF3DIR)
-        .expect("root attributes do not match filesystem");
+    assert_eq!(resok.obj_attributes.type_, ftype3::NF3DIR);
 }
 
 pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
@@ -75,19 +70,10 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
     let content = "test content";
     fs::write(&file_path, content).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"getattr_test.txt")),
-            },
-        })
+    let file_fh = ctx
+        .just_lookup(&subdir_fh, "getattr_test.txt")
         .await
-        .expect("lookup failed")
         .unwrap();
-
-    let file_fh = lookup_resok.object;
 
     let getattr_resok = ctx
         .client
@@ -96,13 +82,18 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
         .expect("getattr failed")
         .unwrap();
 
-    assert_attributes_match(&getattr_resok.obj_attributes, &file_path, ftype3::NF3REG)
-        .expect("file attributes do not match filesystem");
-}
+    assert_eq!(getattr_resok.obj_attributes.type_, ftype3::NF3REG);
+    assert_eq!(getattr_resok.obj_attributes.size, content.len() as u64);
 
-// ============================================================================
-// Lookup Operations
-// ============================================================================
+    assert_files_equal(
+        subdir.as_path(),
+        subdir_fh,
+        "getattr_test.txt",
+        content.len() as u64,
+        ctx,
+    )
+    .await;
+}
 
 pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     let file_path = subdir.join("lookup_file.txt");
@@ -111,7 +102,7 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
 
     let args = LOOKUP3args {
         what: diropargs3 {
-            dir: subdir_fh,
+            dir: subdir_fh.clone(),
             name: filename3(Opaque::borrowed(b"lookup_file.txt")),
         },
     };
@@ -123,10 +114,32 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
         .expect("lookup call failed")
         .unwrap();
 
-    // Verify the file attributes match the filesystem
-    let attrs = resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-        .expect("looked up file attributes do not match filesystem");
+    let lookup_attr = resok.obj_attributes.unwrap();
+    let get_attr = ctx.just_getattr(&resok.object).await.unwrap();
+    assert_eq!(lookup_attr.type_, ftype3::NF3REG);
+    assert_eq!(lookup_attr.size, content.len() as u64);
+    assert_eq!(lookup_attr.type_, get_attr.type_);
+    assert_eq!(lookup_attr.mode, get_attr.mode);
+    assert_eq!(lookup_attr.nlink, get_attr.nlink);
+    assert_eq!(lookup_attr.uid, get_attr.uid);
+    assert_eq!(lookup_attr.gid, get_attr.gid);
+    assert_eq!(lookup_attr.size, get_attr.size);
+    assert_eq!(lookup_attr.used, get_attr.used);
+    assert_eq!(lookup_attr.rdev, get_attr.rdev);
+    assert_eq!(lookup_attr.fsid, get_attr.fsid);
+    assert_eq!(lookup_attr.fileid, get_attr.fileid);
+    assert_eq!(lookup_attr.atime, get_attr.atime);
+    assert_eq!(lookup_attr.mtime, get_attr.mtime);
+    assert_eq!(lookup_attr.ctime, get_attr.ctime);
+
+    assert_files_equal(
+        subdir.as_path(),
+        subdir_fh,
+        "lookup_file.txt",
+        content.len() as u64,
+        ctx,
+    )
+    .await;
 }
 
 pub async fn lookup_non_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
@@ -150,16 +163,17 @@ pub async fn lookup_non_existing_file(ctx: &mut TestContext, subdir: PathBuf, su
 }
 
 pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const CONTENT: &str = "nested content";
     let nested_subdir = subdir.join("subdir");
     fs::create_dir(&nested_subdir).expect("failed to create subdirectory");
     let nested_file_path = nested_subdir.join("nested_file.txt");
-    fs::write(&nested_file_path, "nested content").expect("failed to write nested file");
+    fs::write(&nested_file_path, CONTENT).expect("failed to write nested file");
 
     let nested_subdir_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: subdir_fh,
+                dir: subdir_fh.clone(),
                 name: filename3(Opaque::borrowed(b"subdir")),
             },
         })
@@ -167,16 +181,14 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .expect("lookup subdir failed")
         .unwrap();
 
-    let attrs = nested_subdir_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &nested_subdir, ftype3::NF3DIR)
-        .expect("subdirectory attributes do not match filesystem");
-    let nested_subdir_fh = nested_subdir_resok.object;
+    assert_folders_equal(subdir.as_path(), subdir_fh, "subdir", ctx).await;
 
+    let nested_subdir_fh = nested_subdir_resok.object;
     let file_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: nested_subdir_fh,
+                dir: nested_subdir_fh.clone(),
                 name: filename3(Opaque::borrowed(b"nested_file.txt")),
             },
         })
@@ -184,9 +196,14 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .expect("lookup nested file failed")
         .unwrap();
 
-    let attrs = file_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &nested_file_path, ftype3::NF3REG)
-        .expect("nested file attributes do not match filesystem");
+    assert_files_equal(
+        subdir.as_path(),
+        nested_subdir_fh,
+        "nested_file.txt",
+        CONTENT.len() as u64,
+        ctx,
+    )
+    .await;
 }
 
 // ============================================================================

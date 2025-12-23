@@ -127,68 +127,6 @@ pub fn assert_attributes_match(
     Ok(())
 }
 
-/// Compares NFS attributes with actual filesystem metadata (lenient version).
-///
-/// This version skips timestamp validation, useful for root directories or
-/// other cases where the server may cache metadata and not refresh it.
-pub fn assert_attributes_match_lenient(
-    nfs_attrs: &fattr3,
-    fs_path: &Path,
-    expected_type: ftype3,
-) -> anyhow::Result<()> {
-    let metadata = std::fs::metadata(fs_path)?;
-
-    // Check file type
-    if nfs_attrs.type_ != expected_type {
-        bail!(
-            "File type mismatch: NFS reports {}, expected {expected_type}",
-            nfs_attrs.type_
-        );
-    }
-
-    // Verify type matches filesystem
-    match expected_type {
-        ftype3::NF3DIR => {
-            if !metadata.is_dir() {
-                bail!("NFS reports directory but filesystem shows file");
-            }
-        }
-        ftype3::NF3REG => {
-            if !metadata.is_file() {
-                bail!("NFS reports file but filesystem shows directory");
-            }
-        }
-        _ => {}
-    }
-
-    // Check size (only for regular files)
-    if expected_type == ftype3::NF3REG {
-        let fs_size = metadata.len();
-        if nfs_attrs.size != fs_size {
-            bail!(
-                "File size mismatch: NFS reports {}, filesystem shows {fs_size}",
-                nfs_attrs.size,
-            );
-        }
-    }
-
-    // Check permissions (mode)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let fs_mode = metadata.permissions().mode();
-        // Compare only the permission bits (lower 9 bits for rwxrwxrwx)
-        let fs_perms = fs_mode & 0o777;
-        let nfs_perms = nfs_attrs.mode & 0o777;
-        if fs_perms != nfs_perms {
-            bail!("Permission mismatch: NFS reports {nfs_perms:o}, filesystem shows {fs_perms:o}");
-        }
-    }
-
-    // Skip timestamp validation - server may cache metadata
-    Ok(())
-}
-
 /// Create a test file at `fs_path` with exactly `size` bytes by writing in blocks.
 /// Creates parent directories if needed.
 pub fn create_test_file(fs_path: &std::path::Path, size: u64) -> anyhow::Result<()> {
@@ -323,4 +261,36 @@ pub async fn assert_files_equal(
 
         offset += nfs_bytes_read as u64;
     }
+}
+
+pub async fn assert_folders_equal(
+    test_dir_path: &Path,
+    test_dir_handle: nfs3_types::nfs3::nfs_fh3,
+    foldername: &str,
+    ctx: &mut TestContext,
+) {
+    let path = test_dir_path.join(foldername);
+    let local_metadata = std::fs::metadata(&path).expect("failed to get local folder metadata");
+    assert!(local_metadata.is_dir(), "local path is not a directory");
+
+    let nfs_folder_handle = ctx
+        .just_lookup(&test_dir_handle, foldername)
+        .await
+        .expect("failed to lookup folder on NFS server");
+
+    let nfs_attr = ctx
+        .just_getattr(&nfs_folder_handle)
+        .await
+        .expect("failed to get fattr3");
+
+    assert_eq!(nfs_attr.type_, ftype3::NF3DIR);
+    assert_eq!(nfs_attr.size, 0);
+
+    let nfs_mtime = SystemTime::from(nfs_attr.mtime);
+    let local_mtime = local_metadata.modified().unwrap();
+    assert_eq!(nfs_mtime, local_mtime);
+
+    let nfs_ctime = SystemTime::from(nfs_attr.ctime);
+    let local_ctime = local_metadata.created().unwrap();
+    assert_eq!(nfs_ctime, local_ctime);
 }
