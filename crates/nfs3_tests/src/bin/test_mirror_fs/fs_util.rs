@@ -159,7 +159,7 @@ pub fn create_test_file(fs_path: &std::path::Path, size: u64) -> anyhow::Result<
 
 pub async fn assert_files_equal(
     test_dir_path: &Path,
-    test_dir_handle: nfs3_types::nfs3::nfs_fh3,
+    test_dir_handle: &nfs3_types::nfs3::nfs_fh3,
     filename: &str,
     expected_len: u64,
     ctx: &mut TestContext,
@@ -176,7 +176,7 @@ pub async fn assert_files_equal(
 
     assert_files_equal_ex(
         test_dir_path,
-        nfs_file_handle,
+        &nfs_file_handle,
         &nfs_attr,
         filename,
         expected_len,
@@ -187,7 +187,7 @@ pub async fn assert_files_equal(
 
 pub async fn assert_files_equal_ex(
     test_dir_path: &Path,
-    nfs_file_handle: nfs3_types::nfs3::nfs_fh3,
+    nfs_file_handle: &nfs3_types::nfs3::nfs_fh3,
     nfs_attr: &fattr3,
     filename: &str,
     expected_len: u64,
@@ -284,14 +284,10 @@ pub async fn assert_files_equal_ex(
 
 pub async fn assert_folders_equal(
     test_dir_path: &Path,
-    test_dir_handle: nfs3_types::nfs3::nfs_fh3,
+    test_dir_handle: &nfs3_types::nfs3::nfs_fh3,
     foldername: &str,
     ctx: &mut TestContext,
 ) {
-    let path = test_dir_path.join(foldername);
-    let local_metadata = std::fs::metadata(&path).expect("failed to get local folder metadata");
-    assert!(local_metadata.is_dir(), "local path is not a directory");
-
     let nfs_folder_handle = ctx
         .just_lookup(&test_dir_handle, foldername)
         .await
@@ -301,6 +297,27 @@ pub async fn assert_folders_equal(
         .just_getattr(&nfs_folder_handle)
         .await
         .expect("failed to get fattr3");
+
+    assert_folders_equal_ex(
+        test_dir_path,
+        &nfs_folder_handle,
+        &nfs_attr,
+        foldername,
+        ctx,
+    )
+    .await;
+}
+
+pub async fn assert_folders_equal_ex(
+    test_dir_path: &Path,
+    nfs_dir_handle: &nfs3_types::nfs3::nfs_fh3,
+    nfs_attr: &fattr3,
+    foldername: &str,
+    ctx: &mut TestContext,
+) {
+    let path = test_dir_path.join(foldername);
+    let local_metadata = std::fs::metadata(&path).expect("failed to get local folder metadata");
+    assert!(local_metadata.is_dir(), "local path is not a directory");
 
     assert_eq!(nfs_attr.type_, ftype3::NF3DIR);
     assert_eq!(nfs_attr.size, 0);
@@ -312,4 +329,31 @@ pub async fn assert_folders_equal(
     let nfs_ctime = SystemTime::from(nfs_attr.ctime);
     let local_ctime = local_metadata.created().unwrap();
     assert_eq!(nfs_ctime, local_ctime);
+
+    let nfs_entries = ctx
+        .just_readdir(&nfs_dir_handle)
+        .await
+        .expect("failed to read directory entries from NFS server");
+
+    let mut nfs_entry_names: Vec<String> = nfs_entries
+        .iter()
+        .map(|entry| {
+            String::from_utf8(entry.name.as_ref().into()).expect("invalid UTF-8 in NFS entry name")
+        })
+        .collect();
+    nfs_entry_names.sort();
+
+    let local_entries = std::fs::read_dir(&path).expect("failed to read local directory entries");
+    let mut local_entry_names: Vec<String> = local_entries
+        .map(|entry| {
+            entry
+                .expect("failed to read local directory entry")
+                .file_name()
+                .into_string()
+                .expect("invalid UTF-8 in local entry name")
+        })
+        .collect();
+    local_entry_names.sort();
+
+    assert_eq!(nfs_entry_names, local_entry_names);
 }

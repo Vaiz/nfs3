@@ -1,4 +1,4 @@
-use nfs3_types::nfs3::{Nfs3Result, fattr3, nfs_fh3, nfsstat3};
+use nfs3_types::nfs3::{Nfs3Result, cookieverf3, fattr3, nfs_fh3, nfsstat3};
 use nfs3_types::xdr_codec::Opaque;
 
 /// Core trait needed for `JustClientExt` to operate
@@ -155,6 +155,46 @@ pub trait JustClientExt: JustClient {
         }
 
         Ok(result)
+    }
+
+    async fn just_readdir(
+        &mut self,
+        dir: &nfs_fh3,
+    ) -> Result<Vec<nfs3_types::nfs3::entry3<'static>>, nfsstat3> {
+        use nfs3_types::nfs3::{Nfs3Result, READDIR3args};
+
+        let mut cookie: u64 = 0;
+        let mut cookieverf: cookieverf3 = cookieverf3::default();
+        let mut entries = Vec::new();
+
+        loop {
+            let readdir_result = self
+                .client()
+                .readdir(&READDIR3args {
+                    dir: dir.clone(),
+                    cookie,
+                    cookieverf: cookieverf.clone(),
+                    count: 64 * 1024,
+                })
+                .await
+                .expect("failed to readdir");
+
+            match readdir_result {
+                Nfs3Result::Ok(ok) => {
+                    entries.extend(ok.reply.entries.into_inner());
+                    if ok.reply.eof {
+                        break;
+                    }
+
+                    let last = entries.last().unwrap();
+                    cookie = last.cookie;
+                    cookieverf = ok.cookieverf;
+                }
+                Nfs3Result::Err((status, _)) => return Err(status),
+            }
+        }
+
+        Ok(entries)
     }
 }
 

@@ -88,7 +88,7 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
 
     assert_files_equal_ex(
         subdir.as_path(),
-        file_fh,
+        &file_fh,
         &getattr_resok.obj_attributes,
         GETATTR_TEST_FILE,
         TEST_CONTENT.len() as u64,
@@ -138,7 +138,7 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
 
     assert_files_equal(
         subdir.as_path(),
-        subdir_fh,
+        &subdir_fh,
         LOOKUP_FILE,
         HELLO_NFS.len() as u64,
         ctx,
@@ -188,7 +188,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .expect("lookup subdir failed")
         .unwrap();
 
-    assert_folders_equal(subdir.as_path(), subdir_fh, SUBDIR_NAME, ctx).await;
+    assert_folders_equal(subdir.as_path(), &subdir_fh, SUBDIR_NAME, ctx).await;
 
     let nested_subdir_fh = nested_subdir_resok.object;
     let file_resok = ctx
@@ -205,7 +205,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
 
     assert_files_equal(
         nested_subdir.as_path(),
-        nested_subdir_fh,
+        &nested_subdir_fh,
         NESTED_FILE,
         NESTED_CONTENT.len() as u64,
         ctx,
@@ -303,7 +303,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
 
     assert_files_equal(
         subdir.as_path(),
-        subdir_fh,
+        &subdir_fh,
         READ_TEST_FILE,
         HELLO_WORLD.len() as u64,
         ctx,
@@ -319,7 +319,7 @@ pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: 
     create_test_file(&file_path, LARGE_FILE_SIZE).expect("failed to create large file");
     assert_files_equal(
         subdir.as_path(),
-        subdir_fh,
+        &subdir_fh,
         LARGE_FILE,
         LARGE_FILE_SIZE,
         ctx,
@@ -372,7 +372,7 @@ pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
     fs::write(&file_path, &binary_data).expect("failed to write binary file");
     assert_files_equal(
         subdir.as_path(),
-        subdir_fh,
+        &subdir_fh,
         BINARY_TEST_FILE,
         BINARY_DATA_SIZE as u64,
         ctx,
@@ -512,7 +512,7 @@ pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
             let file_path = subdir.join(name.to_string());
             assert_files_equal_ex(
                 subdir.as_path(),
-                entry.name_handle.clone().unwrap(),
+                &entry.name_handle.clone().unwrap(),
                 &attrs,
                 &name,
                 attrs.size,
