@@ -164,6 +164,35 @@ pub async fn assert_files_equal(
     expected_len: u64,
     ctx: &mut TestContext,
 ) {
+    let nfs_file_handle = ctx
+        .just_lookup(&test_dir_handle, filename)
+        .await
+        .expect("failed to lookup file on NFS server");
+
+    let nfs_attr = ctx
+        .just_getattr(&nfs_file_handle)
+        .await
+        .expect("failed to get fattr3");
+
+    assert_files_equal_ex(
+        test_dir_path,
+        nfs_file_handle,
+        &nfs_attr,
+        filename,
+        expected_len,
+        ctx,
+    )
+    .await;
+}
+
+pub async fn assert_files_equal_ex(
+    test_dir_path: &Path,
+    nfs_file_handle: nfs3_types::nfs3::nfs_fh3,
+    nfs_attr: &fattr3,
+    filename: &str,
+    expected_len: u64,
+    ctx: &mut TestContext,
+) {
     use std::fs::File;
     use std::io::Read;
 
@@ -180,16 +209,6 @@ pub async fn assert_files_equal(
         expected_len,
         "local file size does not match expected length"
     );
-
-    let nfs_file_handle = ctx
-        .just_lookup(&test_dir_handle, filename)
-        .await
-        .expect("failed to lookup file on NFS server");
-
-    let nfs_attr = ctx
-        .just_getattr(&nfs_file_handle)
-        .await
-        .expect("failed to get fattr3");
 
     assert_eq!(
         nfs_attr.type_,

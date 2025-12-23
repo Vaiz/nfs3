@@ -11,7 +11,8 @@ use nfs3_tests::JustClientExt;
 
 use crate::context::TestContext;
 use crate::fs_util::{
-    assert_attributes_match, assert_files_equal, assert_folders_equal, create_test_file,
+    assert_attributes_match, assert_files_equal, assert_files_equal_ex, assert_folders_equal,
+    create_test_file,
 };
 
 // ============================================================================
@@ -77,7 +78,7 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
 
     let getattr_resok = ctx
         .client
-        .getattr(&GETATTR3args { object: file_fh })
+        .getattr(&file_fh.clone().into())
         .await
         .expect("getattr failed")
         .unwrap();
@@ -85,9 +86,10 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
     assert_eq!(getattr_resok.obj_attributes.type_, ftype3::NF3REG);
     assert_eq!(getattr_resok.obj_attributes.size, TEST_CONTENT.len() as u64);
 
-    assert_files_equal(
+    assert_files_equal_ex(
         subdir.as_path(),
-        subdir_fh,
+        file_fh,
+        &getattr_resok.obj_attributes,
         GETATTR_TEST_FILE,
         TEST_CONTENT.len() as u64,
         ctx,
@@ -445,8 +447,7 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
         let name = String::from_utf8_lossy(entry.name.0.as_ref());
         assert!(
             name == "." || name == "..",
-            "Empty directory should only contain . and .. entries, found: {}",
-            name
+            "Empty directory should only contain . and .. entries, found: {name}",
         );
     }
 }
@@ -507,34 +508,31 @@ pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
         let name = String::from_utf8_lossy(entry.name.0.as_ref());
         if name.starts_with("plus_file") && name.ends_with(".txt") {
             found_files += 1;
-            // Verify attributes are provided
             let attrs = entry.name_attributes.clone().unwrap();
             let file_path = subdir.join(name.to_string());
-            assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-                .expect("readdirplus attributes do not match filesystem");
+            assert_files_equal_ex(
+                subdir.as_path(),
+                entry.name_handle.clone().unwrap(),
+                &attrs,
+                &name,
+                attrs.size,
+                ctx,
+            )
+            .await;
         }
     }
     assert_eq!(found_files, 3, "Should find all 3 created files");
 }
 
-// ============================================================================
-// Filesystem Info Operations
-// ============================================================================
-
 pub async fn fsstat_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     let root_fh = ctx.root_fh();
     let fsstat_resok = ctx
         .client
-        .fsstat(&FSSTAT3args { fsroot: root_fh })
+        .fsstat(&root_fh.into())
         .await
         .expect("fsstat call failed")
         .unwrap();
 
-    // Verify attributes match
-    let attrs = fsstat_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, ctx.local_path(), ftype3::NF3DIR)
-        .expect("fsstat attributes do not match filesystem");
-    // Basic sanity checks
     assert!(
         fsstat_resok.tbytes > 0,
         "Total bytes should be greater than 0"
@@ -545,16 +543,15 @@ pub async fn fsinfo_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     let root_fh = ctx.root_fh();
     let fsinfo_resok = ctx
         .client
-        .fsinfo(&FSINFO3args { fsroot: root_fh })
+        .fsinfo(&root_fh.into())
         .await
         .expect("fsinfo call failed")
         .unwrap();
 
-    // Verify attributes match
     let attrs = fsinfo_resok.obj_attributes.unwrap();
     assert_attributes_match(&attrs, ctx.local_path(), ftype3::NF3DIR)
         .expect("fsinfo attributes do not match filesystem");
-    // Verify reasonable values
+
     assert!(fsinfo_resok.rtmax > 0, "rtmax should be greater than 0");
     assert!(fsinfo_resok.wtmax > 0, "wtmax should be greater than 0");
 }
@@ -563,7 +560,7 @@ pub async fn pathconf_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
     let root_fh = ctx.root_fh();
     let pathconf_resok = ctx
         .client
-        .pathconf(&PATHCONF3args { object: root_fh })
+        .pathconf(&root_fh.into())
         .await
         .expect("pathconf call failed")
         .unwrap();
