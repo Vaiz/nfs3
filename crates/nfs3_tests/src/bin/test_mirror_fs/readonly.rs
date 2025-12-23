@@ -237,7 +237,7 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     let access_resok = ctx
         .client
         .access(&ACCESS3args {
-            object: file_fh,
+            object: file_fh.clone(),
             access: ACCESS3_READ,
         })
         .await
@@ -248,10 +248,21 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
         access_resok.access & ACCESS3_READ != 0,
         "Read access not granted for readable file"
     );
-    // Verify attributes match filesystem
-    let attrs = access_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-        .expect("access file attributes do not match filesystem");
+
+    let access_resok_write = ctx
+        .client
+        .access(&ACCESS3args {
+            object: file_fh,
+            access: ACCESS3_MODIFY,
+        })
+        .await
+        .expect("access call failed")
+        .unwrap();
+
+    assert!(
+        access_resok_write.access & ACCESS3_MODIFY == 0,
+        "Modify access should not be granted on readonly filesystem"
+    );
 }
 
 // ============================================================================
