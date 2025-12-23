@@ -107,7 +107,7 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
     let args = LOOKUP3args {
         what: diropargs3 {
             dir: subdir_fh.clone(),
-            name: filename3(Opaque::borrowed(LOOKUP_FILE.as_bytes())),
+            name: LOOKUP_FILE.as_bytes().into(),
         },
     };
 
@@ -158,7 +158,7 @@ pub async fn lookup_non_existing_file(ctx: &mut TestContext, subdir: PathBuf, su
     let args = LOOKUP3args {
         what: diropargs3 {
             dir: subdir_fh,
-            name: filename3(Opaque::borrowed(NAME.as_bytes())),
+            name: NAME.as_bytes().into(),
         },
     };
 
@@ -181,7 +181,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(SUBDIR_NAME.as_bytes())),
+                name: SUBDIR_NAME.as_bytes().into(),
             },
         })
         .await
@@ -196,7 +196,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: nested_subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(NESTED_FILE.as_bytes())),
+                name: NESTED_FILE.as_bytes().into(),
             },
         })
         .await
@@ -225,7 +225,7 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(ACCESS_TEST_FILE.as_bytes())),
+                name: ACCESS_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -270,7 +270,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(READ_TEST_FILE.as_bytes())),
+                name: READ_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -327,7 +327,7 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(OFFSET_TEST_FILE.as_bytes())),
+                name: OFFSET_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -412,7 +412,7 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(EMPTY_DIR.as_bytes())),
+                name: EMPTY_DIR.as_bytes().into(),
             },
         })
         .await
@@ -600,7 +600,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(LEVEL1_DIR.as_bytes())),
+                name: LEVEL1_DIR.as_bytes().into(),
             },
         })
         .await
@@ -618,7 +618,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level1_fh,
-                name: filename3(Opaque::borrowed(LEVEL2_DIR.as_bytes())),
+                name: LEVEL2_DIR.as_bytes().into(),
             },
         })
         .await
@@ -636,7 +636,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level2_fh,
-                name: filename3(Opaque::borrowed(LEVEL3_DIR.as_bytes())),
+                name: LEVEL3_DIR.as_bytes().into(),
             },
         })
         .await
@@ -654,7 +654,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level3_fh,
-                name: filename3(Opaque::borrowed(DEEP_FILE.as_bytes())),
+                name: DEEP_FILE.as_bytes().into(),
             },
         })
         .await
@@ -682,7 +682,7 @@ pub async fn special_characters_filename(
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(SPECIAL_FILE.as_bytes())),
+                name: SPECIAL_FILE.as_bytes().into(),
             },
         })
         .await
@@ -707,7 +707,7 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(CONCURRENT_FILE.as_bytes())),
+                name: CONCURRENT_FILE.as_bytes().into(),
             },
         })
         .await
@@ -761,7 +761,7 @@ pub async fn readlink_symlink(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(READLINK_SYMLINK.as_bytes())),
+                name: READLINK_SYMLINK.as_bytes().into(),
             },
         })
         .await
@@ -809,7 +809,7 @@ pub async fn setattr_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(SETATTR_TEST_FILE.as_bytes())),
+                name: SETATTR_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -858,7 +858,7 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(WRITE_TEST_FILE.as_bytes())),
+                name: WRITE_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -898,7 +898,7 @@ pub async fn create_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .create(&CREATE3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(CREATE_TEST_FILE.as_bytes())),
+                name: CREATE_TEST_FILE.as_bytes().into(),
             },
             how: createhow3::UNCHECKED(sattr3::default()),
         })
@@ -924,7 +924,7 @@ pub async fn mkdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .mkdir(&MKDIR3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(MKDIR_TEST_DIR.as_bytes())),
+                name: MKDIR_TEST_DIR.as_bytes().into(),
             },
             attributes: sattr3::default(),
         })
@@ -951,7 +951,7 @@ pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
         .symlink(&SYMLINK3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(SYMLINK_TEST.as_bytes())),
+                name: SYMLINK_TEST.as_bytes().into(),
             },
             symlink: symlinkdata3 {
                 symlink_attributes: sattr3::default(),
@@ -984,7 +984,7 @@ pub async fn mknod_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .mknod(&MKNOD3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(MKNOD_TEST.as_bytes())),
+                name: MKNOD_TEST.as_bytes().into(),
             },
             what: mknoddata3::NF3CHR(devicedata3 {
                 dev_attributes: sattr3::default(),
@@ -1027,7 +1027,7 @@ pub async fn remove_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .remove(&REMOVE3args {
             object: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(REMOVE_TEST_FILE.as_bytes())),
+                name: REMOVE_TEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -1059,7 +1059,7 @@ pub async fn rmdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .rmdir(&RMDIR3args {
             object: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(RMDIR_TEST_DIR.as_bytes())),
+                name: RMDIR_TEST_DIR.as_bytes().into(),
             },
         })
         .await
@@ -1096,11 +1096,11 @@ pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .rename(&RENAME3args {
             from: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(RENAME_SOURCE_FILE.as_bytes())),
+                name: RENAME_SOURCE_FILE.as_bytes().into(),
             },
             to: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(RENAME_DEST_FILE.as_bytes())),
+                name: RENAME_DEST_FILE.as_bytes().into(),
             },
         })
         .await
@@ -1137,7 +1137,7 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(LINK_SOURCE_FILE.as_bytes())),
+                name: LINK_SOURCE_FILE.as_bytes().into(),
             },
         })
         .await
@@ -1152,7 +1152,7 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
             file: file_fh,
             link: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(LINK_DEST_FILE.as_bytes())),
+                name: LINK_DEST_FILE.as_bytes().into(),
             },
         })
         .await;
@@ -1187,7 +1187,7 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(COMMIT_TEST_FILE.as_bytes())),
+                name: COMMIT_TEST_FILE.as_bytes().into(),
             },
         })
         .await
