@@ -66,12 +66,14 @@ pub async fn getattr_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
 }
 
 pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("getattr_test.txt");
-    let content = "test content";
-    fs::write(&file_path, content).expect("failed to write test file");
+    const GETATTR_TEST_FILE: &str = "getattr_test.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let file_path = subdir.join(GETATTR_TEST_FILE);
+    fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
     let file_fh = ctx
-        .just_lookup(&subdir_fh, "getattr_test.txt")
+        .just_lookup(&subdir_fh, GETATTR_TEST_FILE)
         .await
         .unwrap();
 
@@ -83,27 +85,29 @@ pub async fn getattr_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs
         .unwrap();
 
     assert_eq!(getattr_resok.obj_attributes.type_, ftype3::NF3REG);
-    assert_eq!(getattr_resok.obj_attributes.size, content.len() as u64);
+    assert_eq!(getattr_resok.obj_attributes.size, TEST_CONTENT.len() as u64);
 
     assert_files_equal(
         subdir.as_path(),
         subdir_fh,
-        "getattr_test.txt",
-        content.len() as u64,
+        GETATTR_TEST_FILE,
+        TEST_CONTENT.len() as u64,
         ctx,
     )
     .await;
 }
 
 pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("lookup_file.txt");
-    let content = "Hello, NFS!";
-    fs::write(&file_path, content).expect("failed to write test file");
+    const LOOKUP_FILE: &str = "lookup_file.txt";
+    const HELLO_NFS: &str = "Hello, NFS!";
+
+    let file_path = subdir.join(LOOKUP_FILE);
+    fs::write(&file_path, HELLO_NFS).expect("failed to write test file");
 
     let args = LOOKUP3args {
         what: diropargs3 {
             dir: subdir_fh.clone(),
-            name: filename3(Opaque::borrowed(b"lookup_file.txt")),
+            name: filename3(Opaque::borrowed(LOOKUP_FILE.as_bytes())),
         },
     };
 
@@ -117,7 +121,7 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
     let lookup_attr = resok.obj_attributes.unwrap();
     let get_attr = ctx.just_getattr(&resok.object).await.unwrap();
     assert_eq!(lookup_attr.type_, ftype3::NF3REG);
-    assert_eq!(lookup_attr.size, content.len() as u64);
+    assert_eq!(lookup_attr.size, HELLO_NFS.len() as u64);
     assert_eq!(lookup_attr.type_, get_attr.type_);
     assert_eq!(lookup_attr.mode, get_attr.mode);
     assert_eq!(lookup_attr.nlink, get_attr.nlink);
@@ -135,8 +139,8 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
     assert_files_equal(
         subdir.as_path(),
         subdir_fh,
-        "lookup_file.txt",
-        content.len() as u64,
+        LOOKUP_FILE,
+        HELLO_NFS.len() as u64,
         ctx,
     )
     .await;
@@ -163,25 +167,28 @@ pub async fn lookup_non_existing_file(ctx: &mut TestContext, subdir: PathBuf, su
 }
 
 pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    const CONTENT: &str = "nested content";
-    let nested_subdir = subdir.join("subdir");
+    const SUBDIR_NAME: &str = "subdir";
+    const NESTED_FILE: &str = "nested_file.txt";
+    const NESTED_CONTENT: &str = "nested content";
+
+    let nested_subdir = subdir.join(SUBDIR_NAME);
     fs::create_dir(&nested_subdir).expect("failed to create subdirectory");
-    let nested_file_path = nested_subdir.join("nested_file.txt");
-    fs::write(&nested_file_path, CONTENT).expect("failed to write nested file");
+    let nested_file_path = nested_subdir.join(NESTED_FILE);
+    fs::write(&nested_file_path, NESTED_CONTENT).expect("failed to write nested file");
 
     let nested_subdir_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(b"subdir")),
+                name: filename3(Opaque::borrowed(SUBDIR_NAME.as_bytes())),
             },
         })
         .await
         .expect("lookup subdir failed")
         .unwrap();
 
-    assert_folders_equal(subdir.as_path(), subdir_fh, "subdir", ctx).await;
+    assert_folders_equal(subdir.as_path(), subdir_fh, SUBDIR_NAME, ctx).await;
 
     let nested_subdir_fh = nested_subdir_resok.object;
     let file_resok = ctx
@@ -189,7 +196,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: nested_subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(b"nested_file.txt")),
+                name: filename3(Opaque::borrowed(NESTED_FILE.as_bytes())),
             },
         })
         .await
@@ -199,28 +206,26 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
     assert_files_equal(
         nested_subdir.as_path(),
         nested_subdir_fh,
-        "nested_file.txt",
-        CONTENT.len() as u64,
+        NESTED_FILE,
+        NESTED_CONTENT.len() as u64,
         ctx,
     )
     .await;
 }
 
-// ============================================================================
-// Access Operations
-// ============================================================================
-
 pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("access_test.txt");
-    let content = "access test";
-    fs::write(&file_path, content).expect("failed to write test file");
+    const ACCESS_TEST_FILE: &str = "access_test.txt";
+    const ACCESS_TEST_CONTENT: &str = "access test";
+
+    let file_path = subdir.join(ACCESS_TEST_FILE);
+    fs::write(&file_path, ACCESS_TEST_CONTENT).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"access_test.txt")),
+                name: filename3(Opaque::borrowed(ACCESS_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -254,16 +259,18 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
 // ============================================================================
 
 pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = b"Hello, world!";
-    let file_path = subdir.join("read_test.txt");
-    fs::write(&file_path, content).expect("failed to write test file");
+    const READ_TEST_FILE: &str = "read_test.txt";
+    const HELLO_WORLD: &[u8] = b"Hello, world!";
+
+    let file_path = subdir.join(READ_TEST_FILE);
+    fs::write(&file_path, HELLO_WORLD).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"read_test.txt")),
+                name: filename3(Opaque::borrowed(READ_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -284,7 +291,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .unwrap();
 
     let read_content = read_resok.data.0;
-    assert_eq!(read_content.as_ref(), content, "Content mismatch");
+    assert_eq!(read_content.as_ref(), HELLO_WORLD, "Content mismatch");
     assert!(read_resok.eof, "Expected EOF for complete read");
     // Verify file attributes
     let attrs = read_resok.file_attributes.unwrap();
@@ -293,30 +300,34 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
 }
 
 pub async fn read_large_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("large_file.txt");
-    let file_size = 100 * 1024 * 1024; // 100MB
-    create_test_file(&file_path, file_size).expect("failed to create large file");
+    const LARGE_FILE: &str = "large_file.txt";
+    const LARGE_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100MB
+
+    let file_path = subdir.join(LARGE_FILE);
+    create_test_file(&file_path, LARGE_FILE_SIZE).expect("failed to create large file");
     assert_files_equal(
         subdir.as_path(),
         subdir_fh,
-        "large_file.txt",
-        file_size,
+        LARGE_FILE,
+        LARGE_FILE_SIZE,
         ctx,
     )
     .await;
 }
 
 pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = b"0123456789abcdefghij";
-    let file_path = subdir.join("offset_test.txt");
-    fs::write(&file_path, content).expect("failed to write test file");
+    const OFFSET_TEST_FILE: &str = "offset_test.txt";
+    const OFFSET_CONTENT: &[u8] = b"0123456789abcdefghij";
+
+    let file_path = subdir.join(OFFSET_TEST_FILE);
+    fs::write(&file_path, OFFSET_CONTENT).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"offset_test.txt")),
+                name: filename3(Opaque::borrowed(OFFSET_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -341,10 +352,20 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 }
 
 pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let binary_data: Vec<u8> = (0..256).map(|i| i as u8).collect();
-    let file_path = subdir.join("binary_test.bin");
+    const BINARY_TEST_FILE: &str = "binary_test.bin";
+    const BINARY_DATA_SIZE: usize = 256;
+
+    let binary_data: Vec<u8> = (0..BINARY_DATA_SIZE).map(|i| i as u8).collect();
+    let file_path = subdir.join(BINARY_TEST_FILE);
     fs::write(&file_path, &binary_data).expect("failed to write binary file");
-    assert_files_equal(subdir.as_path(), subdir_fh, "binary_test.bin", 256, ctx).await;
+    assert_files_equal(
+        subdir.as_path(),
+        subdir_fh,
+        BINARY_TEST_FILE,
+        BINARY_DATA_SIZE as u64,
+        ctx,
+    )
+    .await;
 }
 
 // ============================================================================
@@ -381,7 +402,9 @@ pub async fn readdir_multiple_files(ctx: &mut TestContext, subdir: PathBuf, subd
 }
 
 pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let empty_dir = subdir.join("empty_dir");
+    const EMPTY_DIR: &str = "empty_dir";
+
+    let empty_dir = subdir.join(EMPTY_DIR);
     fs::create_dir(&empty_dir).expect("failed to create empty directory");
 
     let lookup_resok = ctx
@@ -389,7 +412,7 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"empty_dir")),
+                name: filename3(Opaque::borrowed(EMPTY_DIR.as_bytes())),
             },
         })
         .await
@@ -557,13 +580,19 @@ pub async fn pathconf_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
 // ============================================================================
 
 pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const LEVEL1_DIR: &str = "level1";
+    const LEVEL2_DIR: &str = "level2";
+    const LEVEL3_DIR: &str = "level3";
+    const DEEP_FILE: &str = "deep.txt";
+    const DEEP_CONTENT: &str = "deep content";
+
     // Create nested directory structure: level1/level2/level3
-    let level1 = subdir.join("level1");
-    let level2 = level1.join("level2");
-    let level3 = level2.join("level3");
+    let level1 = subdir.join(LEVEL1_DIR);
+    let level2 = level1.join(LEVEL2_DIR);
+    let level3 = level2.join(LEVEL3_DIR);
     fs::create_dir_all(&level3).expect("failed to create nested directories");
-    let deep_file = level3.join("deep.txt");
-    fs::write(&deep_file, "deep content").expect("failed to write deep file");
+    let deep_file = level3.join(DEEP_FILE);
+    fs::write(&deep_file, DEEP_CONTENT).expect("failed to write deep file");
 
     // Navigate to level1
     let level1_resok = ctx
@@ -571,7 +600,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"level1")),
+                name: filename3(Opaque::borrowed(LEVEL1_DIR.as_bytes())),
             },
         })
         .await
@@ -589,7 +618,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level1_fh,
-                name: filename3(Opaque::borrowed(b"level2")),
+                name: filename3(Opaque::borrowed(LEVEL2_DIR.as_bytes())),
             },
         })
         .await
@@ -607,7 +636,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level2_fh,
-                name: filename3(Opaque::borrowed(b"level3")),
+                name: filename3(Opaque::borrowed(LEVEL3_DIR.as_bytes())),
             },
         })
         .await
@@ -625,7 +654,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: level3_fh,
-                name: filename3(Opaque::borrowed(b"deep.txt")),
+                name: filename3(Opaque::borrowed(DEEP_FILE.as_bytes())),
             },
         })
         .await
@@ -642,16 +671,18 @@ pub async fn special_characters_filename(
     subdir: PathBuf,
     subdir_fh: nfs_fh3,
 ) {
-    let special_name = "special-file_123.txt";
-    let file_path = subdir.join(special_name);
-    fs::write(&file_path, "special content").expect("failed to write file with special characters");
+    const SPECIAL_FILE: &str = "special-file_123.txt";
+    const SPECIAL_CONTENT: &str = "special content";
+
+    let file_path = subdir.join(SPECIAL_FILE);
+    fs::write(&file_path, SPECIAL_CONTENT).expect("failed to write file with special characters");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(special_name.as_bytes())),
+                name: filename3(Opaque::borrowed(SPECIAL_FILE.as_bytes())),
             },
         })
         .await
@@ -665,16 +696,18 @@ pub async fn special_characters_filename(
 }
 
 pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let content = "concurrent test content";
-    let file_path = subdir.join("concurrent.txt");
-    fs::write(&file_path, content).expect("failed to write test file");
+    const CONCURRENT_FILE: &str = "concurrent.txt";
+    const CONCURRENT_CONTENT: &str = "concurrent test content";
+
+    let file_path = subdir.join(CONCURRENT_FILE);
+    fs::write(&file_path, CONCURRENT_CONTENT).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"concurrent.txt")),
+                name: filename3(Opaque::borrowed(CONCURRENT_FILE.as_bytes())),
             },
         })
         .await
@@ -698,7 +731,12 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 
         let data = read_resok.data.0;
         let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
-        assert_eq!(read_content, content, "Read #{} content mismatch", i + 1);
+        assert_eq!(
+            read_content,
+            CONCURRENT_CONTENT,
+            "Read #{} content mismatch",
+            i + 1
+        );
     }
 }
 
@@ -708,19 +746,22 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 
 #[cfg(unix)]
 pub async fn readlink_symlink(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let target_file = subdir.join("readlink_target.txt");
-    let symlink_path = subdir.join("readlink_test");
-    let content = "symlink target content";
-    fs::write(&target_file, content).expect("failed to write target file");
+    const READLINK_TARGET_FILE: &str = "readlink_target.txt";
+    const READLINK_SYMLINK: &str = "readlink_test";
+    const SYMLINK_TARGET_CONTENT: &str = "symlink target content";
 
-    unix_fs::symlink("readlink_target.txt", &symlink_path).expect("failed to create symlink");
+    let target_file = subdir.join(READLINK_TARGET_FILE);
+    let symlink_path = subdir.join(READLINK_SYMLINK);
+    fs::write(&target_file, SYMLINK_TARGET_CONTENT).expect("failed to write target file");
+
+    unix_fs::symlink(READLINK_TARGET_FILE, &symlink_path).expect("failed to create symlink");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"readlink_test")),
+                name: filename3(Opaque::borrowed(READLINK_SYMLINK.as_bytes())),
             },
         })
         .await
@@ -741,7 +782,7 @@ pub async fn readlink_symlink(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
     let target = readlink_resok.data.0;
     let target_str = String::from_utf8(target.to_vec()).expect("invalid UTF-8 in symlink target");
     assert_eq!(
-        target_str, "readlink_target.txt",
+        target_str, READLINK_TARGET_FILE,
         "symlink target does not match"
     );
 }
@@ -757,15 +798,18 @@ pub async fn readlink_symlink(_ctx: &mut TestContext, _subdir: PathBuf, _subdir_
 // ============================================================================
 
 pub async fn setattr_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("setattr_test.txt");
-    fs::write(&file_path, "test content").expect("failed to write test file");
+    const SETATTR_TEST_FILE: &str = "setattr_test.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let file_path = subdir.join(SETATTR_TEST_FILE);
+    fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"setattr_test.txt")),
+                name: filename3(Opaque::borrowed(SETATTR_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -803,15 +847,18 @@ pub async fn setattr_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
 }
 
 pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("write_test.txt");
-    fs::write(&file_path, "original content").expect("failed to write test file");
+    const WRITE_TEST_FILE: &str = "write_test.txt";
+    const ORIGINAL_CONTENT: &str = "original content";
+
+    let file_path = subdir.join(WRITE_TEST_FILE);
+    fs::write(&file_path, ORIGINAL_CONTENT).expect("failed to write test file");
 
     let lookup_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"write_test.txt")),
+                name: filename3(Opaque::borrowed(WRITE_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -844,12 +891,14 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
 }
 
 pub async fn create_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const CREATE_TEST_FILE: &str = "create_test.txt";
+
     let create_result = ctx
         .client
         .create(&CREATE3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"create_test.txt")),
+                name: filename3(Opaque::borrowed(CREATE_TEST_FILE.as_bytes())),
             },
             how: createhow3::UNCHECKED(sattr3::default()),
         })
@@ -868,12 +917,14 @@ pub async fn create_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
 }
 
 pub async fn mkdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const MKDIR_TEST_DIR: &str = "mkdir_test";
+
     let mkdir_result = ctx
         .client
         .mkdir(&MKDIR3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"mkdir_test")),
+                name: filename3(Opaque::borrowed(MKDIR_TEST_DIR.as_bytes())),
             },
             attributes: sattr3::default(),
         })
@@ -892,16 +943,19 @@ pub async fn mkdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
 }
 
 pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const SYMLINK_TEST: &str = "symlink_test";
+    const SYMLINK_TARGET: &str = "target.txt";
+
     let symlink_result = ctx
         .client
         .symlink(&SYMLINK3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"symlink_test")),
+                name: filename3(Opaque::borrowed(SYMLINK_TEST.as_bytes())),
             },
             symlink: symlinkdata3 {
                 symlink_attributes: sattr3::default(),
-                symlink_data: nfspath3(Opaque::borrowed(b"target.txt")),
+                symlink_data: nfspath3(Opaque::borrowed(SYMLINK_TARGET.as_bytes())),
             },
         })
         .await
@@ -923,12 +977,14 @@ pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
 }
 
 pub async fn mknod_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+    const MKNOD_TEST: &str = "mknod_test";
+
     let mknod_result = ctx
         .client
         .mknod(&MKNOD3args {
             where_: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"mknod_test")),
+                name: filename3(Opaque::borrowed(MKNOD_TEST.as_bytes())),
             },
             what: mknoddata3::NF3CHR(devicedata3 {
                 dev_attributes: sattr3::default(),
@@ -960,15 +1016,18 @@ pub async fn mknod_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
 }
 
 pub async fn remove_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("remove_test.txt");
-    fs::write(&file_path, "test content").expect("failed to write test file");
+    const REMOVE_TEST_FILE: &str = "remove_test.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let file_path = subdir.join(REMOVE_TEST_FILE);
+    fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
     let remove_result = ctx
         .client
         .remove(&REMOVE3args {
             object: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"remove_test.txt")),
+                name: filename3(Opaque::borrowed(REMOVE_TEST_FILE.as_bytes())),
             },
         })
         .await
@@ -990,7 +1049,9 @@ pub async fn remove_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
 }
 
 pub async fn rmdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let dir_path = subdir.join("rmdir_test");
+    const RMDIR_TEST_DIR: &str = "rmdir_test";
+
+    let dir_path = subdir.join(RMDIR_TEST_DIR);
     fs::create_dir(&dir_path).expect("failed to create test directory");
 
     let rmdir_result = ctx
@@ -998,7 +1059,7 @@ pub async fn rmdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .rmdir(&RMDIR3args {
             object: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"rmdir_test")),
+                name: filename3(Opaque::borrowed(RMDIR_TEST_DIR.as_bytes())),
             },
         })
         .await
@@ -1020,8 +1081,12 @@ pub async fn rmdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
 }
 
 pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let source_path = subdir.join("rename_source.txt");
-    fs::write(&source_path, "test content").expect("failed to write test file");
+    const RENAME_SOURCE_FILE: &str = "rename_source.txt";
+    const RENAME_DEST_FILE: &str = "rename_dest.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let source_path = subdir.join(RENAME_SOURCE_FILE);
+    fs::write(&source_path, TEST_CONTENT).expect("failed to write test file");
 
     // Small delay to allow server to detect the new file (longer on Windows)
     sleep(Duration::from_millis(500)).await;
@@ -1031,11 +1096,11 @@ pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .rename(&RENAME3args {
             from: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(b"rename_source.txt")),
+                name: filename3(Opaque::borrowed(RENAME_SOURCE_FILE.as_bytes())),
             },
             to: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"rename_dest.txt")),
+                name: filename3(Opaque::borrowed(RENAME_DEST_FILE.as_bytes())),
             },
         })
         .await
@@ -1057,8 +1122,12 @@ pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
 }
 
 pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("link_source.txt");
-    fs::write(&file_path, "test content").expect("failed to write test file");
+    const LINK_SOURCE_FILE: &str = "link_source.txt";
+    const LINK_DEST_FILE: &str = "link_dest.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let file_path = subdir.join(LINK_SOURCE_FILE);
+    fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
     // Small delay to allow server to detect the new file (longer on Windows)
     sleep(Duration::from_millis(500)).await;
@@ -1068,7 +1137,7 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(b"link_source.txt")),
+                name: filename3(Opaque::borrowed(LINK_SOURCE_FILE.as_bytes())),
             },
         })
         .await
@@ -1083,7 +1152,7 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
             file: file_fh,
             link: diropargs3 {
                 dir: subdir_fh.clone(),
-                name: filename3(Opaque::borrowed(b"link_dest.txt")),
+                name: filename3(Opaque::borrowed(LINK_DEST_FILE.as_bytes())),
             },
         })
         .await;
@@ -1104,8 +1173,11 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
 }
 
 pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
-    let file_path = subdir.join("commit_test.txt");
-    fs::write(&file_path, "test content").expect("failed to write test file");
+    const COMMIT_TEST_FILE: &str = "commit_test.txt";
+    const TEST_CONTENT: &str = "test content";
+
+    let file_path = subdir.join(COMMIT_TEST_FILE);
+    fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
     // Small delay to allow server to detect the new file (longer on Windows)
     sleep(Duration::from_millis(500)).await;
@@ -1115,7 +1187,7 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: subdir_fh,
-                name: filename3(Opaque::borrowed(b"commit_test.txt")),
+                name: filename3(Opaque::borrowed(COMMIT_TEST_FILE.as_bytes())),
             },
         })
         .await
