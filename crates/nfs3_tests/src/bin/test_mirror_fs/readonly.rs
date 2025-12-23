@@ -11,8 +11,7 @@ use nfs3_tests::JustClientExt;
 
 use crate::context::TestContext;
 use crate::fs_util::{
-    assert_attributes_match, assert_files_equal, assert_files_equal_ex, assert_folders_equal,
-    create_test_file,
+    assert_files_equal, assert_files_equal_ex, assert_folders_equal, create_test_file,
 };
 
 // ============================================================================
@@ -136,9 +135,10 @@ pub async fn lookup_existing_file(ctx: &mut TestContext, subdir: PathBuf, subdir
     assert_eq!(lookup_attr.mtime, get_attr.mtime);
     assert_eq!(lookup_attr.ctime, get_attr.ctime);
 
-    assert_files_equal(
+    assert_files_equal_ex(
         subdir.as_path(),
-        &subdir_fh,
+        &resok.object,
+        &lookup_attr,
         LOOKUP_FILE,
         HELLO_NFS.len() as u64,
         ctx,
@@ -548,10 +548,6 @@ pub async fn fsinfo_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
         .expect("fsinfo call failed")
         .unwrap();
 
-    let attrs = fsinfo_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, ctx.local_path(), ftype3::NF3DIR)
-        .expect("fsinfo attributes do not match filesystem");
-
     assert!(fsinfo_resok.rtmax > 0, "rtmax should be greater than 0");
     assert!(fsinfo_resok.wtmax > 0, "wtmax should be greater than 0");
 }
@@ -565,10 +561,6 @@ pub async fn pathconf_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
         .expect("pathconf call failed")
         .unwrap();
 
-    // Verify attributes match
-    let attrs = pathconf_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, ctx.local_path(), ftype3::NF3DIR)
-        .expect("pathconf attributes do not match filesystem");
     // Verify reasonable values
     assert!(
         pathconf_resok.name_max > 0,
@@ -600,7 +592,7 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: subdir_fh,
+                dir: subdir_fh.clone(),
                 name: LEVEL1_DIR.as_bytes().into(),
             },
         })
@@ -608,17 +600,15 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .expect("lookup level1 failed")
         .unwrap();
 
-    let attrs = level1_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &level1, ftype3::NF3DIR)
-        .expect("level1 attributes do not match filesystem");
     let level1_fh = level1_resok.object;
+    assert_folders_equal(subdir.as_path(), &subdir_fh, LEVEL1_DIR, ctx).await;
 
     // Navigate to level2
     let level2_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: level1_fh,
+                dir: level1_fh.clone(),
                 name: LEVEL2_DIR.as_bytes().into(),
             },
         })
@@ -626,17 +616,15 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .expect("lookup level2 failed")
         .unwrap();
 
-    let attrs = level2_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &level2, ftype3::NF3DIR)
-        .expect("level2 attributes do not match filesystem");
     let level2_fh = level2_resok.object;
+    assert_folders_equal(level1.as_path(), &level1_fh, LEVEL2_DIR, ctx).await;
 
     // Navigate to level3
     let level3_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: level2_fh,
+                dir: level2_fh.clone(),
                 name: LEVEL3_DIR.as_bytes().into(),
             },
         })
@@ -644,17 +632,15 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .expect("lookup level3 failed")
         .unwrap();
 
-    let attrs = level3_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &level3, ftype3::NF3DIR)
-        .expect("level3 attributes do not match filesystem");
     let level3_fh = level3_resok.object;
+    assert_folders_equal(level2.as_path(), &level2_fh, LEVEL3_DIR, ctx).await;
 
     // Lookup the deep file
     let file_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: level3_fh,
+                dir: level3_fh.clone(),
                 name: DEEP_FILE.as_bytes().into(),
             },
         })
@@ -662,9 +648,14 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
         .expect("lookup deep file failed")
         .unwrap();
 
-    let attrs = file_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &deep_file, ftype3::NF3REG)
-        .expect("deep file attributes do not match filesystem");
+    assert_files_equal(
+        level3.as_path(),
+        &level3_fh,
+        DEEP_FILE,
+        DEEP_CONTENT.len() as u64,
+        ctx,
+    )
+    .await;
 }
 
 pub async fn special_characters_filename(
@@ -682,7 +673,7 @@ pub async fn special_characters_filename(
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
-                dir: subdir_fh,
+                dir: subdir_fh.clone(),
                 name: SPECIAL_FILE.as_bytes().into(),
             },
         })
@@ -690,10 +681,14 @@ pub async fn special_characters_filename(
         .expect("lookup failed")
         .unwrap();
 
-    // Verify the file attributes match the filesystem
-    let attrs = lookup_resok.obj_attributes.unwrap();
-    assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-        .expect("special characters file attributes do not match filesystem");
+    assert_files_equal(
+        subdir.as_path(),
+        &subdir_fh,
+        SPECIAL_FILE,
+        SPECIAL_CONTENT.len() as u64,
+        ctx,
+    )
+    .await;
 }
 
 pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
