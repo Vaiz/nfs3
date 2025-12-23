@@ -197,7 +197,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
         .unwrap();
 
     assert_files_equal(
-        subdir.as_path(),
+        nested_subdir.as_path(),
         nested_subdir_fh,
         "nested_file.txt",
         CONTENT.len() as u64,
