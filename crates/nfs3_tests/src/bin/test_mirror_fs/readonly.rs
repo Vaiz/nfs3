@@ -220,19 +220,7 @@ pub async fn access_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     let file_path = subdir.join(ACCESS_TEST_FILE);
     fs::write(&file_path, ACCESS_TEST_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: ACCESS_TEST_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, ACCESS_TEST_FILE).await.unwrap();
 
     let access_resok = ctx
         .client
@@ -272,19 +260,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
     let file_path = subdir.join(READ_TEST_FILE);
     fs::write(&file_path, HELLO_WORLD).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh.clone(),
-                name: READ_TEST_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, READ_TEST_FILE).await.unwrap();
 
     let read_resok = ctx
         .client
@@ -334,19 +310,7 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
     let file_path = subdir.join(OFFSET_TEST_FILE);
     fs::write(&file_path, OFFSET_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: OFFSET_TEST_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, OFFSET_TEST_FILE).await.unwrap();
 
     let read_resok = ctx
         .client
@@ -415,19 +379,7 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
     let empty_dir = subdir.join(EMPTY_DIR);
     fs::create_dir(&empty_dir).expect("failed to create empty directory");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: EMPTY_DIR.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let dir_fh = lookup_resok.object;
+    let dir_fh = ctx.just_lookup(&subdir_fh, EMPTY_DIR).await.unwrap();
 
     let readdir_resok = ctx
         .client
@@ -617,17 +569,7 @@ pub async fn special_characters_filename(
     let file_path = subdir.join(SPECIAL_FILE);
     fs::write(&file_path, SPECIAL_CONTENT).expect("failed to write file with special characters");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh.clone(),
-                name: SPECIAL_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
+    let _file_fh = ctx.just_lookup(&subdir_fh, SPECIAL_FILE).await.unwrap();
 
     assert_files_equal(
         subdir.as_path(),
@@ -646,19 +588,7 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
     let file_path = subdir.join(CONCURRENT_FILE);
     fs::write(&file_path, CONCURRENT_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: CONCURRENT_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, CONCURRENT_FILE).await.unwrap();
 
     // Perform multiple sequential reads to verify consistency
     for i in 0..5 {
@@ -700,19 +630,7 @@ pub async fn readlink_symlink(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 
     unix_fs::symlink(READLINK_TARGET_FILE, &symlink_path).expect("failed to create symlink");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: READLINK_SYMLINK.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let symlink_fh = lookup_resok.object;
+    let symlink_fh = ctx.just_lookup(&subdir_fh, READLINK_SYMLINK).await.unwrap();
 
     let readlink_resok = ctx
         .client
@@ -748,19 +666,10 @@ pub async fn setattr_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
     let file_path = subdir.join(SETATTR_TEST_FILE);
     fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: SETATTR_TEST_FILE.as_bytes().into(),
-            },
-        })
+    let file_fh = ctx
+        .just_lookup(&subdir_fh, SETATTR_TEST_FILE)
         .await
-        .expect("lookup failed")
         .unwrap();
-
-    let file_fh = lookup_resok.object;
 
     let setattr_result = ctx
         .client
@@ -797,19 +706,7 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
     let file_path = subdir.join(WRITE_TEST_FILE);
     fs::write(&file_path, ORIGINAL_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: WRITE_TEST_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, WRITE_TEST_FILE).await.unwrap();
 
     let write_result = ctx
         .client
@@ -1070,19 +967,7 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
     let file_path = subdir.join(LINK_SOURCE_FILE);
     fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh.clone(),
-                name: LINK_SOURCE_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, LINK_SOURCE_FILE).await.unwrap();
 
     let link_result = ctx
         .client
@@ -1117,19 +1002,7 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
     let file_path = subdir.join(COMMIT_TEST_FILE);
     fs::write(&file_path, TEST_CONTENT).expect("failed to write test file");
 
-    let lookup_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh,
-                name: COMMIT_TEST_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup failed")
-        .unwrap();
-
-    let file_fh = lookup_resok.object;
+    let file_fh = ctx.just_lookup(&subdir_fh, COMMIT_TEST_FILE).await.unwrap();
 
     let commit_result = ctx
         .client
