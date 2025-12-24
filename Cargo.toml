@@ -13,10 +13,10 @@ repository = "https://github.com/Vaiz/nfs3"
 license = "Unlicense"
 
 [workspace.dependencies]
-nfs3_macros = { version = "0.4", path = "crates/nfs3_macros" }
-nfs3_types = { version = "0.4", path = "crates/nfs3_types" }
-nfs3_server = { version = "0.9", path = "crates/nfs3_server" }
-nfs3_client = { version = "0.7", path = "crates/nfs3_client" }
+nfs3_macros = { version = "0.4.0", path = "crates/nfs3_macros" }
+nfs3_types = { version = "0.4.2", path = "crates/nfs3_types" }
+nfs3_server = { version = "0.9.0", path = "crates/nfs3_server" }
+nfs3_client = { version = "0.7.0", path = "crates/nfs3_client" }
 
 anyhow = "1.0.98"
 chrono = "0.4"
