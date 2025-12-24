@@ -324,7 +324,7 @@ pub async fn assert_folders_equal_ex(
     );
 
     assert_eq!(nfs_attr.type_, ftype3::NF3DIR);
-    assert_eq!(nfs_attr.size, 0);
+    // assert_eq!(nfs_attr.size, 0); - that depends on filesystem
 
     let nfs_mtime = SystemTime::from(nfs_attr.mtime);
     let local_mtime = local_metadata.modified().unwrap();
