@@ -563,22 +563,49 @@ pub async fn special_characters_filename(
     subdir: PathBuf,
     subdir_fh: nfs_fh3,
 ) {
-    const SPECIAL_FILE: &str = "special-file_123.txt";
-    const SPECIAL_CONTENT: &str = "special content";
+    let test_filenames = [
+        "special-file_123.txt",         // Basic
+        "café-résumé.txt",              // French accents
+        "niño-español.txt",             // Spanish
+        "Übergrößenträger.txt",         // German umlauts
+        "Привет-мир.txt",               // Cyrillic (Russian)
+        "你好世界.txt",                 // Chinese
+        "こんにちは世界.txt",           // Japanese Hiragana
+        "안녕하세요.txt",               // Korean
+        "مرحبا-بالعالم.txt",            // Arabic
+        "שלום-עולם.txt",                // Hebrew
+        "file with spaces.txt",         // Spaces
+        "🎉🚀📁-emoji-file.txt",        // Emojis at start
+        "test-emoji-🔥.txt",            // Emoji in middle
+        "party🎊file🎈.txt",            // Multiple emojis
+        "mixed-café-🌍-世界.txt",       // Mixed: French, emoji, Chinese
+        "special!@#$%^&().txt",         // Special ASCII characters
+        "(parentheses)-[brackets].txt", // Various brackets
+        "file.multiple.dots.txt",       // Multiple dots
+        "under_score-and-dash.txt",     // Underscores and dashes
+    ];
 
-    let file_path = subdir.join(SPECIAL_FILE);
-    fs::write(&file_path, SPECIAL_CONTENT).expect("failed to write file with special characters");
+    for (i, filename) in test_filenames.iter().enumerate() {
+        let content = format!("content for file {}: {}", i + 1, filename);
+        let file_path = subdir.join(filename);
 
-    let _file_fh = ctx.just_lookup(&subdir_fh, SPECIAL_FILE).await.unwrap();
+        fs::write(&file_path, &content)
+            .unwrap_or_else(|e| panic!("failed to write file '{}': {}", filename, e));
 
-    assert_files_equal(
-        subdir.as_path(),
-        &subdir_fh,
-        SPECIAL_FILE,
-        SPECIAL_CONTENT.len() as u64,
-        ctx,
-    )
-    .await;
+        let file_fh = ctx
+            .just_lookup(&subdir_fh, filename)
+            .await
+            .unwrap_or_else(|e| panic!("failed to lookup file '{}': {}", filename, e));
+
+        assert_files_equal(
+            subdir.as_path(),
+            &subdir_fh,
+            filename,
+            content.len() as u64,
+            ctx,
+        )
+        .await;
+    }
 }
 
 pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
