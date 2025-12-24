@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use std::fs;
 use std::path::PathBuf;
 

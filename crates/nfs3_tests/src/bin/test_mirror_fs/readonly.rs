@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs as unix_fs;
@@ -46,11 +44,11 @@ use crate::fs_util::{
 //  22. COMMIT       - tested in commit_readonly_error()
 // ============================================================================
 
-pub async fn null(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn null(ctx: &mut TestContext, _subdir: PathBuf, _subdir_fh: nfs_fh3) {
     ctx.client.null().await.expect("null call failed");
 }
 
-pub async fn getattr_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn getattr_root(ctx: &mut TestContext, _subdir: PathBuf, _subdir_fh: nfs_fh3) {
     let root_fh = ctx.root_fh();
     let args = GETATTR3args { object: root_fh };
     let resok = ctx
@@ -191,7 +189,7 @@ pub async fn lookup_in_subdirectory(ctx: &mut TestContext, subdir: PathBuf, subd
     assert_folders_equal(subdir.as_path(), &subdir_fh, SUBDIR_NAME, ctx).await;
 
     let nested_subdir_fh = nested_subdir_resok.object;
-    let file_resok = ctx
+    let _file_resok = ctx
         .client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
@@ -461,7 +459,6 @@ pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
         if name.starts_with("plus_file") && name.ends_with(".txt") {
             found_files += 1;
             let attrs = entry.name_attributes.clone().unwrap();
-            let file_path = subdir.join(name.to_string());
             assert_files_equal_ex(
                 subdir.as_path(),
                 &entry.name_handle.clone().unwrap(),
@@ -476,7 +473,7 @@ pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
     assert_eq!(found_files, 3, "Should find all 3 created files");
 }
 
-pub async fn fsstat_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn fsstat_root(ctx: &mut TestContext, _subdir: PathBuf, _subdir_fh: nfs_fh3) {
     let root_fh = ctx.root_fh();
     let fsstat_resok = ctx
         .client
@@ -491,7 +488,7 @@ pub async fn fsstat_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     );
 }
 
-pub async fn fsinfo_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn fsinfo_root(ctx: &mut TestContext, _subdir: PathBuf, _subdir_fh: nfs_fh3) {
     let root_fh = ctx.root_fh();
     let fsinfo_resok = ctx
         .client
@@ -504,7 +501,7 @@ pub async fn fsinfo_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_
     assert!(fsinfo_resok.wtmax > 0, "wtmax should be greater than 0");
 }
 
-pub async fn pathconf_root(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn pathconf_root(ctx: &mut TestContext, _subdir: PathBuf, _subdir_fh: nfs_fh3) {
     let root_fh = ctx.root_fh();
     let pathconf_resok = ctx
         .client
@@ -592,7 +589,7 @@ pub async fn special_characters_filename(
         fs::write(&file_path, &content)
             .unwrap_or_else(|e| panic!("failed to write file '{}': {}", filename, e));
 
-        let file_fh = ctx
+        let _file_fh = ctx
             .just_lookup(&subdir_fh, filename)
             .await
             .unwrap_or_else(|e| panic!("failed to lookup file '{}': {}", filename, e));
@@ -758,7 +755,7 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
     }
 }
 
-pub async fn create_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn create_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdir_fh: nfs_fh3) {
     const CREATE_TEST_FILE: &str = "create_test.txt";
 
     let create_result = ctx
@@ -784,7 +781,7 @@ pub async fn create_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
     }
 }
 
-pub async fn mkdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn mkdir_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdir_fh: nfs_fh3) {
     const MKDIR_TEST_DIR: &str = "mkdir_test";
 
     let mkdir_result = ctx
@@ -810,7 +807,7 @@ pub async fn mkdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
     }
 }
 
-pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn symlink_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdir_fh: nfs_fh3) {
     const SYMLINK_TEST: &str = "symlink_test";
     const SYMLINK_TARGET: &str = "target.txt";
 
@@ -842,7 +839,7 @@ pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
     }
 }
 
-pub async fn mknod_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
+pub async fn mknod_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdir_fh: nfs_fh3) {
     const MKNOD_TEST: &str = "mknod_test";
 
     let mknod_result = ctx
