@@ -13,7 +13,7 @@ mod readwrite;
 mod server;
 
 use context::ServerMode;
-use nfs3_types::nfs3::nfs_fh3;
+use nfs3_client::nfs3_types::nfs3::nfs_fh3;
 use server::init_context;
 
 const SEPARATOR: &str =

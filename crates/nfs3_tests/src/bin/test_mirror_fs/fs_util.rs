@@ -3,8 +3,8 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use anyhow::bail;
+use nfs3_client::nfs3_types::nfs3::{Nfs3Result, fattr3, ftype3, nfs_fh3};
 use nfs3_tests::JustClientExt;
-use nfs3_types::nfs3::{Nfs3Result, fattr3, ftype3};
 
 use crate::context::TestContext;
 
@@ -159,7 +159,7 @@ pub fn create_test_file(fs_path: &std::path::Path, size: u64) -> anyhow::Result<
 
 pub async fn assert_files_equal(
     test_dir_path: &Path,
-    test_dir_handle: &nfs3_types::nfs3::nfs_fh3,
+    test_dir_handle: &nfs_fh3,
     filename: &str,
     expected_len: u64,
     ctx: &mut TestContext,
@@ -187,7 +187,7 @@ pub async fn assert_files_equal(
 
 pub async fn assert_files_equal_ex(
     test_dir_path: &Path,
-    nfs_file_handle: &nfs3_types::nfs3::nfs_fh3,
+    nfs_file_handle: &nfs_fh3,
     nfs_attr: &fattr3,
     filename: &str,
     expected_len: u64,
@@ -247,7 +247,7 @@ pub async fn assert_files_equal_ex(
     while offset < remaining {
         let nfs_read_result = ctx
             .client
-            .read(&nfs3_types::nfs3::READ3args {
+            .read(&nfs3_client::nfs3_types::nfs3::READ3args {
                 file: nfs_file_handle.clone(),
                 offset,
                 count: BUFFER_SIZE as u32,
@@ -284,7 +284,7 @@ pub async fn assert_files_equal_ex(
 
 pub async fn assert_folders_equal(
     test_dir_path: &Path,
-    test_dir_handle: &nfs3_types::nfs3::nfs_fh3,
+    test_dir_handle: &nfs_fh3,
     foldername: &str,
     ctx: &mut TestContext,
 ) {
@@ -310,7 +310,7 @@ pub async fn assert_folders_equal(
 
 pub async fn assert_folders_equal_ex(
     test_dir_path: &Path,
-    nfs_dir_handle: &nfs3_types::nfs3::nfs_fh3,
+    nfs_dir_handle: &nfs_fh3,
     nfs_attr: &fattr3,
     foldername: &str,
     ctx: &mut TestContext,

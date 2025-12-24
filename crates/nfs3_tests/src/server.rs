@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use nfs3_client::nfs3_types::nfs3::nfs_fh3;
 use nfs3_server::test_reexports::RPCContext;
 use nfs3_server::vfs::NfsFileSystem;
-use nfs3_types::nfs3::nfs_fh3;
 
 pub struct Server<IO, FS: NfsFileSystem> {
     context: RPCContext<FS>,

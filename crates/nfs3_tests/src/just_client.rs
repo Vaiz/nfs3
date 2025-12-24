@@ -1,5 +1,5 @@
-use nfs3_types::nfs3::{Nfs3Result, cookieverf3, fattr3, nfs_fh3, nfsstat3};
-use nfs3_types::xdr_codec::Opaque;
+use nfs3_client::nfs3_types::nfs3::{Nfs3Result, cookieverf3, entry3, fattr3, nfs_fh3, nfsstat3};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 
 /// Core trait needed for `JustClientExt` to operate
 pub trait JustClient {
@@ -16,7 +16,7 @@ pub trait JustClient {
 pub trait JustClientExt: JustClient {
     /// Lookup a file on the NFS server and return its filehandle
     async fn just_lookup(&mut self, dir: &nfs_fh3, filename: &str) -> Result<nfs_fh3, nfsstat3> {
-        use nfs3_types::nfs3::{LOOKUP3args, diropargs3};
+        use nfs3_client::nfs3_types::nfs3::{LOOKUP3args, diropargs3};
 
         let result = self
             .client()
@@ -36,7 +36,7 @@ pub trait JustClientExt: JustClient {
     }
 
     async fn just_getattr(&mut self, file: &nfs_fh3) -> Result<fattr3, nfsstat3> {
-        use nfs3_types::nfs3::{GETATTR3args, Nfs3Result};
+        use nfs3_client::nfs3_types::nfs3::{GETATTR3args, Nfs3Result};
 
         let result = self
             .client()
@@ -59,14 +59,14 @@ pub trait JustClientExt: JustClient {
         filename: &str,
         content: &[u8],
     ) -> Result<nfs_fh3, nfsstat3> {
-        use nfs3_types::nfs3::{
+        use nfs3_client::nfs3_types::nfs3::{
             CREATE3args, Nfs3Result, WRITE3args, createhow3, sattr3, stable_how,
         };
 
         let create_result = self
             .client()
             .create(&CREATE3args {
-                where_: nfs3_types::nfs3::diropargs3 {
+                where_: nfs3_client::nfs3_types::nfs3::diropargs3 {
                     dir: dir.clone(),
                     name: filename.as_bytes().into(),
                 },
@@ -104,12 +104,12 @@ pub trait JustClientExt: JustClient {
 
     /// Create a directory on the NFS server
     async fn just_mkdir(&mut self, dir: &nfs_fh3, dirname: &str) -> Result<nfs_fh3, nfsstat3> {
-        use nfs3_types::nfs3::{MKDIR3args, Nfs3Result, sattr3};
+        use nfs3_client::nfs3_types::nfs3::{MKDIR3args, Nfs3Result, sattr3};
 
         let result = self
             .client()
             .mkdir(&MKDIR3args {
-                where_: nfs3_types::nfs3::diropargs3 {
+                where_: nfs3_client::nfs3_types::nfs3::diropargs3 {
                     dir: dir.clone(),
                     name: dirname.as_bytes().into(),
                 },
@@ -126,7 +126,7 @@ pub trait JustClientExt: JustClient {
 
     /// Read the entire contents of a file from the NFS server
     async fn just_read(&mut self, file: &nfs_fh3) -> Result<Vec<u8>, nfsstat3> {
-        use nfs3_types::nfs3::{Nfs3Result, READ3args};
+        use nfs3_client::nfs3_types::nfs3::{Nfs3Result, READ3args};
 
         let mut offset = 0u64;
         let mut result = Vec::new();
@@ -157,11 +157,8 @@ pub trait JustClientExt: JustClient {
         Ok(result)
     }
 
-    async fn just_readdir(
-        &mut self,
-        dir: &nfs_fh3,
-    ) -> Result<Vec<nfs3_types::nfs3::entry3<'static>>, nfsstat3> {
-        use nfs3_types::nfs3::{Nfs3Result, READDIR3args};
+    async fn just_readdir(&mut self, dir: &nfs_fh3) -> Result<Vec<entry3<'static>>, nfsstat3> {
+        use nfs3_client::nfs3_types::nfs3::{Nfs3Result, READDIR3args};
 
         let mut cookie: u64 = 0;
         let mut cookieverf: cookieverf3 = cookieverf3::default();
