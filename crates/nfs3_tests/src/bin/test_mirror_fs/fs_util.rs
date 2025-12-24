@@ -165,7 +165,7 @@ pub async fn assert_files_equal(
     ctx: &mut TestContext,
 ) {
     let nfs_file_handle = ctx
-        .just_lookup(&test_dir_handle, filename)
+        .just_lookup(test_dir_handle, filename)
         .await
         .expect("failed to lookup file on NFS server");
 
@@ -289,7 +289,7 @@ pub async fn assert_folders_equal(
     ctx: &mut TestContext,
 ) {
     let nfs_folder_handle = ctx
-        .just_lookup(&test_dir_handle, foldername)
+        .just_lookup(test_dir_handle, foldername)
         .await
         .expect("failed to lookup folder on NFS server");
 
@@ -331,7 +331,7 @@ pub async fn assert_folders_equal_ex(
     assert_eq!(nfs_ctime, local_ctime);
 
     let nfs_entries = ctx
-        .just_readdir(&nfs_dir_handle)
+        .just_readdir(nfs_dir_handle)
         .await
         .expect("failed to read directory entries from NFS server");
 

@@ -239,7 +239,7 @@ impl NfsFileSystem for Fs {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
-        (async || {
+        async {
             let mut file = tokio::fs::OpenOptions::new()
                 .write(true)
                 .open(&path)
@@ -247,7 +247,7 @@ impl NfsFileSystem for Fs {
             file.seek(SeekFrom::Start(offset)).await?;
             file.write_all(data).await?;
             file.flush().await
-        })()
+        }
         .await
         .map_err(map_io_error)?;
 
@@ -263,13 +263,13 @@ impl NfsFileSystem for Fs {
         let dir_path = self.path(*dirid)?;
         let file_path = dir_path.join(filename.as_os_str());
 
-        (async || {
+        async {
             let file = tokio::fs::File::create(&file_path).await?;
             if let set_size3::Some(size) = attr.size {
                 file.set_len(size).await?;
             }
             Ok(())
-        })()
+        }
         .await
         .map_err(map_io_error)?;
 
@@ -332,14 +332,14 @@ impl NfsFileSystem for Fs {
         let file_path = dir_path.join(filename.as_os_str());
 
         // Check if it's a file or directory
-        (async || {
+        async {
             let metadata = tokio::fs::symlink_metadata(&file_path).await?;
             if metadata.is_dir() {
                 tokio::fs::remove_dir(&file_path).await
             } else {
                 tokio::fs::remove_file(&file_path).await
             }
-        })()
+        }
         .await
         .map_err(map_io_error)
     }

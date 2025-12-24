@@ -173,7 +173,7 @@ pub trait JustClientExt: JustClient {
                 .readdir(&READDIR3args {
                     dir: dir.clone(),
                     cookie,
-                    cookieverf: cookieverf.clone(),
+                    cookieverf,
                     count: 64 * 1024,
                 })
                 .await
