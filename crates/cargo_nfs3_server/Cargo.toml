@@ -21,8 +21,6 @@ tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
 intaglio = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"], default-features = false }
-moka = { version = "0.12.10", features = ["future"] }
-filetime.workspace = true
 
 [lints]
 workspace = true
