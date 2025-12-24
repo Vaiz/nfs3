@@ -317,7 +317,11 @@ pub async fn assert_folders_equal_ex(
 ) {
     let path = test_dir_path.join(foldername);
     let local_metadata = std::fs::metadata(&path).expect("failed to get local folder metadata");
-    assert!(local_metadata.is_dir(), "local path is not a directory");
+    assert!(
+        local_metadata.is_dir(),
+        "`{}` is not a directory",
+        path.display()
+    );
 
     assert_eq!(nfs_attr.type_, ftype3::NF3DIR);
     assert_eq!(nfs_attr.size, 0);

@@ -116,6 +116,7 @@ async fn run_readonly_tests() {
     println!("  Special Cases");
     test!(ctx, readonly::special_characters_filename);
     test!(ctx, readonly::concurrent_reads);
+    test!(ctx, readonly::file_disappearance_and_reappearance);
 
     println!();
     println!("  Write Operations (ROFS Error Tests)");

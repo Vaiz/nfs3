@@ -1004,6 +1004,65 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
     }
 }
 
+pub async fn file_disappearance_and_reappearance(
+    ctx: &mut TestContext,
+    subdir: PathBuf,
+    subdir_fh: nfs_fh3,
+) {
+    const TEST_FILE: &str = "disappearing_file.txt";
+    const CONTENT_V1: &str = "original content";
+    const CONTENT_V2: &str = "new content after reappearance";
+
+    let file_path = subdir.join(TEST_FILE);
+
+    // Step 1: Create the file and verify it exists via NFS
+    fs::write(&file_path, CONTENT_V1).expect("failed to write test file");
+
+    let file_fh = ctx.just_lookup(&subdir_fh, TEST_FILE).await.unwrap();
+
+    let attr = ctx.just_getattr(&file_fh).await.unwrap();
+    assert_eq!(attr.type_, ftype3::NF3REG);
+    assert_eq!(attr.size, CONTENT_V1.len() as u64);
+
+    // Read and verify content
+    let read_data = ctx.just_read(&file_fh).await.unwrap();
+    assert_eq!(read_data, CONTENT_V1.as_bytes());
+
+    assert_folders_equal(subdir.as_path(), &subdir_fh, ".", ctx).await;
+
+    // Step 2: Delete the file from filesystem
+    fs::remove_file(&file_path).expect("failed to remove file");
+    assert!(!file_path.exists(), "file should not exist after deletion");
+
+    assert_folders_equal(subdir.as_path(), &subdir_fh, ".", ctx).await;
+
+    // it still resolves via lookup, but getattr should fail
+    let lookup_result = ctx.just_lookup(&subdir_fh, TEST_FILE).await.unwrap();
+    assert_eq!(file_fh, lookup_result); // FH should be the same
+
+    let get_attr = ctx.just_getattr(&file_fh).await.unwrap_err(); // Old FH should be invalid
+    assert_eq!(get_attr, nfsstat3::NFS3ERR_NOENT);
+
+    // Step 3: Recreate the file with different content
+    fs::write(&file_path, CONTENT_V2).expect("failed to recreate test file");
+    assert!(file_path.exists(), "file should exist after recreation");
+
+    assert_folders_equal(subdir.as_path(), &subdir_fh, ".", ctx).await;
+
+    // Verify lookup succeeds for the recreated file
+    let new_file_fh = ctx.just_lookup(&subdir_fh, TEST_FILE).await.unwrap();
+    // fh should be the same as before
+    assert_eq!(file_fh, new_file_fh);
+
+    let new_attr = ctx.just_getattr(&new_file_fh).await.unwrap();
+    assert_eq!(new_attr.type_, ftype3::NF3REG);
+    assert_eq!(new_attr.size, CONTENT_V2.len() as u64);
+
+    // Read and verify new content
+    let read_data = ctx.just_read(&new_file_fh).await.unwrap();
+    assert_eq!(read_data, CONTENT_V2.as_bytes());
+}
+
 pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     const COMMIT_TEST_FILE: &str = "commit_test.txt";
     const TEST_CONTENT: &str = "test content";
