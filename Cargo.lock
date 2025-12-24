@@ -275,6 +275,7 @@ dependencies = [
  "ctrlc",
  "intaglio",
  "nfs3_server",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-appender",
@@ -689,6 +690,7 @@ dependencies = [
  "nfs3_client",
  "nfs3_server",
  "nfs3_types",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1007,6 +1009,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d31c77bdf42a745371d260a26ca7163f1e0924b64afa0b688e61b5a9fa02f16"
+dependencies = [
+ "fastrand",
+ "getrandom",
+ "once_cell",
+ "rustix",
+ "windows-sys 0.61.0",
 ]
 
 [[package]]

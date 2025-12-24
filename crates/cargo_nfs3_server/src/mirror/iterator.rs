@@ -1,112 +1,146 @@
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
-use nfs3_server::nfs3_types::nfs3::{fileid3, filename3, ftype3, nfsstat3};
+use nfs3_server::fs_util::metadata_to_fattr3;
+use nfs3_server::nfs3_types::nfs3::nfsstat3;
 use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, ReadDirIterator, ReadDirPlusIterator,
 };
+use tokio::fs::ReadDir;
 use tracing::debug;
 
-use super::fs_map::{FSEntry, FSMap};
-use super::string_ext::FromOsString;
+use super::{IteratorCache, SymbolsCache};
+use crate::string_ext::FromOsString;
 
-pub(super) struct MirrorFsIterator {
-    fsmap: Arc<tokio::sync::RwLock<FSMap>>,
-    entries: Vec<fileid3>,
-    index: usize,
+#[derive(Debug)]
+pub struct MirrorFsIterator {
+    root_path: PathBuf,
+    cache: Arc<SymbolsCache>,
+    dirid: FileHandleU64,
+    read_dir: Option<ReadDir>,
+    /// Cookie starts as base (with unique counter) and gets incremented for each entry
+    cookie: u64,
+    /// Direct reference to the iterator cache for Drop implementation
+    iterator_cache: Arc<IteratorCache>,
 }
 
 impl MirrorFsIterator {
-    #[allow(clippy::significant_drop_tightening)] // doesn't really matter in this case
-    pub(super) async fn new(
-        fsmap: Arc<tokio::sync::RwLock<FSMap>>,
-        dirid: fileid3,
-        start_after: fileid3,
-    ) -> Result<Self, nfsstat3> {
-        let fsmap_clone = Arc::clone(&fsmap);
-        let mut fsmap = fsmap.write().await;
-        fsmap.refresh_entry(dirid).await?;
-        fsmap.refresh_dir_list(dirid).await?;
-
-        let entry = fsmap.find_entry(dirid)?;
-        if !matches!(entry.fsmeta.type_, ftype3::NF3DIR) {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
+    pub const fn new(
+        root_path: PathBuf,
+        cache: Arc<SymbolsCache>,
+        iterator_cache: Arc<IteratorCache>,
+        dirid: FileHandleU64,
+        read_dir: Option<ReadDir>,
+        cookie: u64,
+    ) -> Self {
+        Self {
+            root_path,
+            cache,
+            dirid,
+            read_dir,
+            cookie,
+            iterator_cache,
         }
-        debug!("readdir({:?}, {:?})", entry, start_after);
-        // we must have children here
-        let children = entry.children.as_ref().ok_or(nfsstat3::NFS3ERR_IO)?;
-
-        let pos = match children.binary_search(&start_after) {
-            Ok(pos) => pos + 1,
-            Err(pos) => {
-                // just ignore missing entry
-                pos
-            }
-        };
-
-        let remain_children = children.iter().skip(pos).copied().collect::<Vec<_>>();
-        debug!("children len: {:?}", children.len());
-        debug!("remaining_len : {:?}", remain_children.len());
-
-        Ok(Self {
-            fsmap: fsmap_clone,
-            entries: remain_children,
-            index: 0,
-        })
     }
 
-    async fn visit_next_entry<R>(
-        &mut self,
-        f: fn(fileid3, &FSEntry, filename3<'static>) -> R,
-    ) -> NextResult<R> {
-        loop {
-            if self.index >= self.entries.len() {
-                return NextResult::Eof;
+    /// Common logic for getting the next directory entry and creating a handle
+    async fn next_entry_common(&mut self) -> NextResult<(FileHandleU64, std::ffi::OsString, u64)> {
+        let Some(read_dir) = self.read_dir.as_mut() else {
+            return NextResult::Eof;
+        };
+
+        match read_dir.next_entry().await {
+            Ok(Some(entry)) => {
+                let name = entry.file_name();
+
+                let handle = match self.cache.symbols_path(self.dirid) {
+                    Ok(parent_symbols) => match self.cache.lookup(&parent_symbols, &name, false) {
+                        Ok(handle) => handle,
+                        Err(e) => return NextResult::Err(e),
+                    },
+                    Err(e) => return NextResult::Err(e),
+                };
+
+                self.cookie += 1;
+
+                NextResult::Ok((handle, name, self.cookie))
             }
+            Ok(None) => {
+                self.read_dir = None;
+                NextResult::Eof
+            }
+            Err(_) => NextResult::Err(nfsstat3::NFS3ERR_IO),
+        }
+    }
+}
 
-            let fileid = self.entries[self.index];
-            self.index += 1;
+impl Drop for MirrorFsIterator {
+    fn drop(&mut self) {
+        if let Some(read_dir) = self.read_dir.take() {
+            self.iterator_cache
+                .cache_state(self.dirid, self.cookie, read_dir, Instant::now());
+            debug!(
+                "Cached iterator state for dir_id: {} at cookie: {:#018x}",
+                self.dirid.as_u64(),
+                self.cookie
+            );
+        }
+    }
+}
 
-            let fsmap = self.fsmap.read().await;
-            let fs_entry = match fsmap.find_entry(fileid) {
-                Ok(entry) => entry,
-                Err(nfsstat3::NFS3ERR_NOENT) => {
-                    // skip missing entries
-                    debug!("missing entry {fileid}");
-                    continue;
-                }
-                Err(e) => {
-                    return NextResult::Err(e);
-                }
-            };
-
-            let name = fsmap.sym_to_fname(&fs_entry.path);
-            debug!("\t --- {fileid} {name:?}");
-            let name = filename3::from_os_string(name);
-            return NextResult::Ok(f(fileid, fs_entry, name));
+impl ReadDirIterator for MirrorFsIterator {
+    async fn next(&mut self) -> NextResult<DirEntry> {
+        match self.next_entry_common().await {
+            NextResult::Ok((handle, name, cookie)) => {
+                let dir_entry = DirEntry {
+                    fileid: handle.as_u64(),
+                    name: FromOsString::from_os_string(name),
+                    cookie,
+                };
+                NextResult::Ok(dir_entry)
+            }
+            NextResult::Err(e) => NextResult::Err(e),
+            NextResult::Eof => NextResult::Eof,
         }
     }
 }
 
 impl ReadDirPlusIterator<FileHandleU64> for MirrorFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        self.visit_next_entry(|fileid, fs_entry, name| DirEntryPlus {
-            fileid,
-            name,
-            cookie: fileid,
-            name_attributes: Some(fs_entry.fsmeta.clone()),
-            name_handle: Some(FileHandleU64::new(fileid)),
-        })
-        .await
-    }
-}
+        loop {
+            match self.next_entry_common().await {
+                NextResult::Ok((handle, name, cookie)) => {
+                    let path = {
+                        if let Ok(relative_path) = self.cache.handle_to_path(handle) {
+                            self.root_path.join(&relative_path)
+                        } else {
+                            debug!("Invalid handle for entry: {:?}", handle);
+                            continue;
+                        }
+                    };
 
-impl ReadDirIterator for MirrorFsIterator {
-    async fn next(&mut self) -> NextResult<DirEntry> {
-        self.visit_next_entry(|fileid, _fs_entry, name| DirEntry {
-            fileid,
-            name,
-            cookie: fileid,
-        })
-        .await
+                    let fattr = tokio::fs::symlink_metadata(&path).await.map_or_else(
+                        |_| {
+                            debug!("Failed to get metadata for: {:?}", path);
+                            None
+                        },
+                        |metadata| Some(metadata_to_fattr3(handle.as_u64(), &metadata)),
+                    );
+
+                    let dir_entry_plus = DirEntryPlus {
+                        fileid: handle.as_u64(),
+                        name: FromOsString::from_os_string(name),
+                        cookie,
+                        name_attributes: fattr,
+                        name_handle: Some(handle),
+                    };
+
+                    return NextResult::Ok(dir_entry_plus);
+                }
+                NextResult::Err(e) => return NextResult::Err(e),
+                NextResult::Eof => return NextResult::Eof,
+            }
+        }
     }
 }

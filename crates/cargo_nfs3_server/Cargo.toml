@@ -24,3 +24,6 @@ tokio = { workspace = true, features = ["rt-multi-thread"], default-features = f
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3.21.0"

@@ -16,7 +16,8 @@ nfs3_types = { path = "../nfs3_types", version = "0.4.1" }
 
 anyhow.workspace = true
 intaglio.workspace = true
-tokio = { workspace = true, default-features = false, features = ["rt", "sync", "io-util"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "io-util", "rt-multi-thread"], default-features = false }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 wasmer-vfs = { workspace = true, default-features = false, features = ["mem-fs"] }

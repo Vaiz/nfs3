@@ -10,7 +10,7 @@ const CAT: &str = r"
 
 const WRITABLE_README: &str = r"
 This is in memory filesystem for NFSv3 server.
-It contains a few files and directories for testing purposes.    
+It contains a few files and directories for testing purposes.
 
 WARNING: It stores data in memory, so it will be lost when the server is stopped.
          The total size of the filesystem is limited by the available memory.
