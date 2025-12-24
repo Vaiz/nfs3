@@ -225,6 +225,12 @@ pub struct FSINFO3args {
     pub fsroot: nfs_fh3,
 }
 
+impl From<nfs_fh3> for FSINFO3args {
+    fn from(fh: nfs_fh3) -> Self {
+        Self { fsroot: fh }
+    }
+}
+
 #[derive(Debug, Default, XdrCodec)]
 pub struct FSINFO3resfail {
     pub obj_attributes: post_op_attr,
@@ -250,6 +256,12 @@ pub struct FSSTAT3args {
     pub fsroot: nfs_fh3,
 }
 
+impl From<nfs_fh3> for FSSTAT3args {
+    fn from(fh: nfs_fh3) -> Self {
+        Self { fsroot: fh }
+    }
+}
+
 #[derive(Debug, Default, XdrCodec)]
 pub struct FSSTAT3resfail {
     pub obj_attributes: post_op_attr,
@@ -270,6 +282,12 @@ pub struct FSSTAT3resok {
 #[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct GETATTR3args {
     pub object: nfs_fh3,
+}
+
+impl From<nfs_fh3> for GETATTR3args {
+    fn from(fh: nfs_fh3) -> Self {
+        Self { object: fh }
+    }
 }
 
 #[derive(Debug, XdrCodec)]
@@ -351,6 +369,12 @@ pub struct MKNOD3resok {
 #[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct PATHCONF3args {
     pub object: nfs_fh3,
+}
+
+impl From<nfs_fh3> for PATHCONF3args {
+    fn from(fh: nfs_fh3) -> Self {
+        Self { object: fh }
+    }
 }
 
 #[derive(Debug, Default, XdrCodec)]
@@ -689,6 +713,21 @@ pub enum ftype3 {
     NF3FIFO = 7,
 }
 
+impl std::fmt::Display for ftype3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::NF3REG => "NF3REG",
+            Self::NF3DIR => "NF3DIR",
+            Self::NF3BLK => "NF3BLK",
+            Self::NF3CHR => "NF3CHR",
+            Self::NF3LNK => "NF3LNK",
+            Self::NF3SOCK => "NF3SOCK",
+            Self::NF3FIFO => "NF3FIFO",
+        };
+        std::fmt::Display::fmt(name, f)
+    }
+}
+
 #[derive(Debug)]
 pub enum mknoddata3 {
     NF3CHR(devicedata3),
@@ -702,6 +741,7 @@ pub enum mknoddata3 {
 pub struct nfs_fh3 {
     pub data: Opaque<'static>,
 }
+
 impl Default for nfs_fh3 {
     fn default() -> Self {
         Self {
@@ -834,6 +874,22 @@ impl TryFrom<std::time::SystemTime> for nfstime3 {
                 seconds: u32::try_from(duration.as_secs()).unwrap_or(u32::MAX),
                 nseconds: duration.subsec_nanos(),
             })
+    }
+}
+
+impl From<nfstime3> for std::time::SystemTime {
+    fn from(nfs_time: nfstime3) -> Self {
+        std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(u64::from(nfs_time.seconds))
+            + std::time::Duration::from_nanos(u64::from(nfs_time.nseconds))
+    }
+}
+
+impl From<&nfstime3> for std::time::SystemTime {
+    fn from(nfs_time: &nfstime3) -> Self {
+        std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(u64::from(nfs_time.seconds))
+            + std::time::Duration::from_nanos(u64::from(nfs_time.nseconds))
     }
 }
 
