@@ -579,75 +579,23 @@ pub async fn deep_directory_navigation(ctx: &mut TestContext, subdir: PathBuf, s
     const DEEP_FILE: &str = "deep.txt";
     const DEEP_CONTENT: &str = "deep content";
 
-    // Create nested directory structure: level1/level2/level3
     let level1 = subdir.join(LEVEL1_DIR);
     let level2 = level1.join(LEVEL2_DIR);
     let level3 = level2.join(LEVEL3_DIR);
+
     fs::create_dir_all(&level3).expect("failed to create nested directories");
     let deep_file = level3.join(DEEP_FILE);
     fs::write(&deep_file, DEEP_CONTENT).expect("failed to write deep file");
 
-    // Navigate to level1
-    let level1_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: subdir_fh.clone(),
-                name: LEVEL1_DIR.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup level1 failed")
-        .unwrap();
-
-    let level1_fh = level1_resok.object;
     assert_folders_equal(subdir.as_path(), &subdir_fh, LEVEL1_DIR, ctx).await;
 
-    // Navigate to level2
-    let level2_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: level1_fh.clone(),
-                name: LEVEL2_DIR.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup level2 failed")
-        .unwrap();
-
-    let level2_fh = level2_resok.object;
+    let level1_fh = ctx.just_lookup(&subdir_fh, LEVEL1_DIR).await.unwrap();
     assert_folders_equal(level1.as_path(), &level1_fh, LEVEL2_DIR, ctx).await;
 
-    // Navigate to level3
-    let level3_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: level2_fh.clone(),
-                name: LEVEL3_DIR.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup level3 failed")
-        .unwrap();
-
-    let level3_fh = level3_resok.object;
+    let level2_fh = ctx.just_lookup(&level1_fh, LEVEL2_DIR).await.unwrap();
     assert_folders_equal(level2.as_path(), &level2_fh, LEVEL3_DIR, ctx).await;
 
-    // Lookup the deep file
-    let file_resok = ctx
-        .client
-        .lookup(&LOOKUP3args {
-            what: diropargs3 {
-                dir: level3_fh.clone(),
-                name: DEEP_FILE.as_bytes().into(),
-            },
-        })
-        .await
-        .expect("lookup deep file failed")
-        .unwrap();
-
+    let level3_fh = ctx.just_lookup(&level2_fh, LEVEL3_DIR).await.unwrap();
     assert_files_equal(
         level3.as_path(),
         &level3_fh,
