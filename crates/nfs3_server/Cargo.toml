@@ -19,6 +19,7 @@ doctest = false
 
 [features]
 __test_reexports = [] # should not be used outside nfs3_tests crate
+fs_util = ["dep:filetime"]
 memfs = []
 
 [dependencies]
@@ -27,7 +28,7 @@ nfs3_types = { path = "../nfs3_types", version = "0.4.1" }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
 anyhow.workspace = true
-filetime.workspace = true
+filetime = { workspace = true, optional = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
@@ -48,3 +49,7 @@ required-features = ["memfs"]
 [[example]]
 name = "ro_memfs"
 required-features = ["memfs"]
+
+[[example]]
+name = "mirrorfs"
+required-features = ["fs_util"]
