@@ -689,7 +689,6 @@ dependencies = [
  "intaglio",
  "nfs3_client",
  "nfs3_server",
- "nfs3_types",
  "tempfile",
  "tokio",
  "tracing",

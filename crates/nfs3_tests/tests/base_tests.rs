@@ -1,6 +1,6 @@
+use nfs3_client::nfs3_types::nfs3::*;
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::{JustClientExt, TestContext};
-use nfs3_types::nfs3::*;
-use nfs3_types::xdr_codec::Opaque;
 
 #[tokio::test]
 async fn lookup_root() -> Result<(), anyhow::Error> {

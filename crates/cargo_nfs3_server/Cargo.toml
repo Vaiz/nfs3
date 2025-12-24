@@ -12,7 +12,7 @@ description = "Simple and easy-to-deploy NFSv3 server"
 readme = "README.md"
 
 [dependencies]
-nfs3_server = { path = "../nfs3_server", features = ["memfs", "fs_util"] }
+nfs3_server = { workspace = true, features = ["memfs", "fs_util"] }
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
 ctrlc = { workspace = true } 

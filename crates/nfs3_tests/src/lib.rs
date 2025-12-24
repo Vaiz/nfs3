@@ -6,10 +6,10 @@ pub mod wasm_fs;
 use std::ops::{Deref, DerefMut};
 
 pub use just_client::{JustClient, JustClientExt};
+use nfs3_client::nfs3_types::nfs3::nfs_fh3;
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::vfs::adapters::ReadOnlyAdapter;
-use nfs3_types::nfs3::nfs_fh3;
 pub use rpc_tests::RpcTestContext;
 pub use server::Server;
 use tokio::io::{DuplexStream, duplex};

@@ -4,12 +4,12 @@ use std::fs::File;
 use std::path::Path;
 
 use intaglio::Symbol;
+use nfs3_client::nfs3_types::nfs3::*;
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_server::vfs::{
     DirEntry, DirEntryPlus, FileHandle, FileHandleU64, NfsFileSystem, NfsReadFileSystem,
     ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
 };
-use nfs3_types::nfs3::*;
-use nfs3_types::xdr_codec::Opaque;
 use tracing_subscriber::field::debug;
 
 use crate::server;

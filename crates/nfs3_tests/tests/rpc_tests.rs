@@ -1,4 +1,5 @@
 use anyhow::{Context, bail};
+use nfs3_client::nfs3_types;
 use nfs3_tests::RpcTestContext;
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, msg_body, opaque_auth, reply_body, rpc_msg};
