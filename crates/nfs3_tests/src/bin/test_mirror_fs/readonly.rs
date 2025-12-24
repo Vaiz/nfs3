@@ -830,11 +830,9 @@ pub async fn symlink_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
         .expect("symlink call failed");
 
     match symlink_result {
-        SYMLINK3res::Err((nfsstat3::NFS3ERR_ROFS, _)) => {
+        SYMLINK3res::Err((nfsstat3::NFS3ERR_ROFS, _))
+        | SYMLINK3res::Err((nfsstat3::NFS3ERR_NOTSUPP, _)) => {
             // Expected error - readonly filesystem
-        }
-        SYMLINK3res::Err((nfsstat3::NFS3ERR_NOTSUPP, _)) => {
-            // Symlinks may not be supported on all filesystems - this is acceptable
         }
         _ => panic!(
             "Expected NFS3ERR_ROFS or NFS3ERR_NOTSUPP error for symlink on readonly filesystem, \
@@ -865,21 +863,11 @@ pub async fn mknod_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
         .await;
 
     match mknod_result {
-        Ok(MKNOD3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {
-            // Expected error - readonly filesystem
-        }
-        Ok(MKNOD3res::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) => {
-            // Special files may not be supported - this is acceptable
-        }
-        Err(e) if e.to_string().contains("Procedure unavailable") => {
-            // MKNOD procedure not implemented by server - this is acceptable
-        }
-        Ok(result) => panic!(
-            "Expected NFS3ERR_ROFS or NFS3ERR_NOTSUPP error for mknod on readonly filesystem, \
-             got: {:?}",
-            result
+        Err(nfs3_client::error::Error::Rpc(nfs3_client::error::RpcError::ProcUnavail)) => {}
+        _ => panic!(
+            "Expected RpcError::ProcUnavail error for mknod on readonly filesystem, got: \
+             {mknod_result:?}"
         ),
-        Err(e) => panic!("Unexpected RPC error for mknod: {}", e),
     }
 }
 
@@ -1008,17 +996,11 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
         .await;
 
     match link_result {
-        Ok(LINK3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {
-            // Expected error - readonly filesystem
-        }
-        Err(e) if e.to_string().contains("Procedure unavailable") => {
-            // LINK procedure not implemented by server - this is acceptable
-        }
-        Ok(result) => panic!(
-            "Expected NFS3ERR_ROFS error for link on readonly filesystem, got: {:?}",
-            result
+        Err(nfs3_client::error::Error::Rpc(nfs3_client::error::RpcError::ProcUnavail)) => {}
+        _ => panic!(
+            "Expected RpcError::ProcUnavail error for link on readonly filesystem, got: \
+             {link_result:?}"
         ),
-        Err(e) => panic!("Unexpected RPC error for link: {}", e),
     }
 }
 
@@ -1041,20 +1023,10 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .await;
 
     match commit_result {
-        Ok(COMMIT3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {
-            // Expected error - readonly filesystem
-        }
-        Ok(COMMIT3res::Ok(_)) => {
-            // Some implementations may allow COMMIT on readonly filesystems
-            // since it's essentially a no-op. This is acceptable.
-        }
-        Err(e) if e.to_string().contains("Procedure unavailable") => {
-            // COMMIT procedure not implemented by server - this is acceptable
-        }
-        Ok(result) => panic!(
-            "Expected NFS3ERR_ROFS error or success for commit on readonly filesystem, got: {:?}",
-            result
+        Err(nfs3_client::error::Error::Rpc(nfs3_client::error::RpcError::ProcUnavail)) => {}
+        _ => panic!(
+            "Expected RpcError::ProcUnavail error for commit on readonly filesystem, got: \
+             {commit_result:?}"
         ),
-        Err(e) => panic!("Unexpected RPC error for commit: {}", e),
     }
 }
