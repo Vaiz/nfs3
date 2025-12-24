@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "nfs3_client"
-version = "0.7.1"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "nfs3_types",

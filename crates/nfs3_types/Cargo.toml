@@ -12,7 +12,7 @@ readme = "README.md"
 keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 
 [dependencies]
-nfs3_macros = { path = "../nfs3_macros", version = "0.4.0" }
+nfs3_macros = { path = "../nfs3_macros" }
 
 [package.metadata.cargo-machete]
 ignored = ["byteorder"]

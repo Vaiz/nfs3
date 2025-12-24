@@ -23,7 +23,7 @@ fs_util = ["dep:filetime"]
 memfs = []
 
 [dependencies]
-nfs3_types = { path = "../nfs3_types", version = "0.4.2" }
+nfs3_types = { path = "../nfs3_types" }
 
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
