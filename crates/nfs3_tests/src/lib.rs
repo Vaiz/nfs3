@@ -1,7 +1,6 @@
 mod just_client;
 pub mod rpc_tests;
 mod server;
-pub mod wasm_fs;
 
 use std::ops::{Deref, DerefMut};
 

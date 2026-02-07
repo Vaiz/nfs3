@@ -19,4 +19,3 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "rt-multi-thread"], default-features = false }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-wasmer-vfs = { workspace = true, default-features = false, features = ["mem-fs"] }
