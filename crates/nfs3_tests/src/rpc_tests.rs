@@ -65,7 +65,7 @@ impl RpcTestContext {
         T: Pack,
     {
         let total_len = msg.packed_size() + args.packed_size();
-        if total_len % 4 != 0 {
+        if !total_len.is_multiple_of(4) {
             anyhow::bail!("Total length is not a multiple of 4: {total_len}");
         }
 
