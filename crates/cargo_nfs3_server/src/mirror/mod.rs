@@ -1,3 +1,4 @@
+mod file_cache;
 mod iterator;
 mod iterator_cache;
 mod symbols_cache;
@@ -6,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use file_cache::FileCache;
 use iterator::MirrorFsIterator;
 use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
@@ -18,8 +20,7 @@ use nfs3_server::vfs::{
     VFSCapabilities,
 };
 use symbols_cache::SymbolsCache;
-use tokio::fs::{File, ReadDir};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::fs::ReadDir;
 use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
@@ -29,6 +30,7 @@ pub struct Fs {
     root: PathBuf,
     cache: Arc<SymbolsCache>,
     iterator_cache: Arc<IteratorCache>,
+    file_cache: FileCache,
     _cleaner_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -37,6 +39,7 @@ impl Fs {
         let root = root.as_ref().to_path_buf();
         let cache = Arc::new(SymbolsCache::new(root.clone()));
         let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
+        let file_cache = FileCache::new(Duration::from_secs(300), 1000);
         let cleaner =
             IteratorCacheCleaner::new(Arc::clone(&iterator_cache), Duration::from_secs(30));
         let cleaner_handle = cleaner.start();
@@ -45,6 +48,7 @@ impl Fs {
             root,
             cache,
             iterator_cache,
+            file_cache,
             _cleaner_handle: Some(cleaner_handle),
         }
     }
@@ -54,25 +58,20 @@ impl Fs {
         Ok(self.root.join(relative_path))
     }
 
-    async fn read(
-        &self,
-        path: PathBuf,
-        start: u64,
-        count: u32,
-    ) -> std::io::Result<(Vec<u8>, bool)> {
-        let mut f = File::open(&path).await?;
-        let len = f.metadata().await?.len();
-        if start >= len || count == 0 {
-            return Ok((Vec::new(), u64::from(count) >= len));
-        }
+    async fn read(&self, path: &Path, start: u64, count: u32) -> std::io::Result<(Vec<u8>, bool)> {
+        self.file_cache
+            .get_for_read(path)
+            .await?
+            .read(start, count)
+            .await
+    }
 
-        let count = u64::from(count).min(len - start);
-        f.seek(SeekFrom::Start(start)).await?;
-
-        let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
-        f.read_exact(&mut buf).await?;
-
-        Ok((buf, start + count >= len))
+    async fn write(&self, path: &Path, offset: u64, data: &[u8]) -> std::io::Result<()> {
+        self.file_cache
+            .get_for_write(path)
+            .await?
+            .write(offset, data)
+            .await
     }
 
     async fn get_or_create_iterator(
@@ -165,7 +164,7 @@ impl NfsReadFileSystem for Fs {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let path = self.path(*id)?;
-        self.read(path, offset, count).await.map_err(map_io_error)
+        self.read(&path, offset, count).await.map_err(map_io_error)
     }
 
     async fn readdir(
@@ -239,17 +238,9 @@ impl NfsFileSystem for Fs {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
-        async {
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .await?;
-            file.seek(SeekFrom::Start(offset)).await?;
-            file.write_all(data).await?;
-            file.flush().await
-        }
-        .await
-        .map_err(map_io_error)?;
+        self.write(&path, offset, data)
+            .await
+            .map_err(map_io_error)?;
 
         self.getattr(id).await
     }
@@ -331,6 +322,8 @@ impl NfsFileSystem for Fs {
         let dir_path = self.path(*dirid)?;
         let file_path = dir_path.join(filename.as_os_str());
 
+        self.file_cache.invalidate(&file_path).await;
+
         // Check if it's a file or directory
         async {
             let metadata = tokio::fs::symlink_metadata(&file_path).await?;
@@ -391,12 +384,16 @@ impl NfsFileSystem for Fs {
             }
         }
 
+        // Invalidate file cache entries
+        self.file_cache.invalidate(&from_path).await;
+        self.file_cache.invalidate(&to_path).await;
+
         // Perform the rename
         tokio::fs::rename(&from_path, &to_path)
             .await
             .map_err(map_io_error)?;
 
-        // Invalidate cache entries
+        // Invalidate symbol cache entries
         let _ = self
             .cache
             .lookup_by_id(*from_dirid, from_filename.as_os_str(), false);
