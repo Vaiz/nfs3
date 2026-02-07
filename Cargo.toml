@@ -6,7 +6,7 @@ resolver = "3"
 
 [workspace.package]
 authors = ["Vaiz"]
-rust-version = "1.85"
+rust-version = "1.88"
 edition = "2024"
 homepage = "https://github.com/Vaiz/nfs3"
 repository = "https://github.com/Vaiz/nfs3"
