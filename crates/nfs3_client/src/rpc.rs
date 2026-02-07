@@ -87,7 +87,7 @@ where
         T: Pack + Send + Sync,
     {
         let total_len = msg.packed_size() + args.packed_size();
-        if total_len % 4 != 0 {
+        if !total_len.is_multiple_of(4) {
             return Err(RpcError::WrongLength.into());
         }
 
