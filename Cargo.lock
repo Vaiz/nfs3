@@ -636,7 +636,6 @@ name = "nfs3_tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "intaglio",
  "nfs3_client",
  "nfs3_server",
  "tempfile",

@@ -14,7 +14,6 @@ nfs3_client = { workspace = true, features = ["tokio"] }
 nfs3_server = { workspace = true, features = ["__test_reexports", "memfs"] }
 
 anyhow.workspace = true
-intaglio.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "rt-multi-thread"], default-features = false }
 tracing.workspace = true
