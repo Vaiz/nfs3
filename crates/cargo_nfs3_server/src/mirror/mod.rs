@@ -333,14 +333,12 @@ impl NfsFileSystem for Fs {
         let dir_path = self.path(*dirid)?;
         let file_path = dir_path.join(filename.as_os_str());
 
-        self.file_cache.invalidate_for_remove(&file_path).await;
-
-        // Check if it's a file or directory
         async {
             let metadata = tokio::fs::symlink_metadata(&file_path).await?;
             if metadata.is_dir() {
                 tokio::fs::remove_dir(&file_path).await
             } else {
+                self.file_cache.invalidate_for_remove(&file_path).await;
                 tokio::fs::remove_file(&file_path).await
             }
         }
@@ -380,7 +378,9 @@ impl NfsFileSystem for Fs {
             .map_err(map_io_error)?;
 
         // Check if target exists
+        let mut target_exists = false;
         if let Ok(to_metadata) = tokio::fs::symlink_metadata(&to_path).await {
+            target_exists = true;
             // Both must be compatible types
             if from_metadata.is_dir() != to_metadata.is_dir() {
                 return Err(nfsstat3::NFS3ERR_EXIST);
@@ -395,9 +395,13 @@ impl NfsFileSystem for Fs {
             }
         }
 
-        // Invalidate file cache entries
-        self.file_cache.invalidate_for_rename(&from_path).await;
-        self.file_cache.invalidate_for_remove(&to_path).await;
+        if from_metadata.is_file() {
+            self.file_cache.invalidate_for_rename(&from_path).await;
+            if target_exists {
+                // target will be overwritten, there is no need to flush it
+                self.file_cache.invalidate_for_remove(&to_path).await;
+            }
+        }
 
         // Perform the rename
         tokio::fs::rename(&from_path, &to_path)
