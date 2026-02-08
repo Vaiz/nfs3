@@ -22,8 +22,6 @@ pub enum FileHandle {
     Read(File),
     /// File is open for both reading and writing.
     ReadWrite(File, FlushMarker),
-    /// Drop
-    DropStub,
 }
 
 impl FileHandle {
@@ -33,10 +31,9 @@ impl FileHandle {
     }
 
     /// Gets a mutable reference to the underlying file.
-    fn file_mut(&mut self) -> &mut File {
+    const fn file_mut(&mut self) -> &mut File {
         match self {
             Self::Read(f) | Self::ReadWrite(f, _) => f,
-            Self::DropStub => unreachable!("invalid file handle state"),
         }
     }
 
@@ -49,23 +46,36 @@ impl FileHandle {
         file.sync_all().await
     }
 
-    fn dont_flush_on_drop(&mut self) {
+    const fn dont_flush_on_drop(&mut self) {
         if let Self::ReadWrite(_, flush_marker) = self {
             *flush_marker = FlushMarker::DropWithoutFlush;
         }
     }
 }
 
-/// Spawn a task to flush and sync the file asynchronously on drop.
+/// Best-effort sync on drop for write handles.
 impl Drop for FileHandle {
     fn drop(&mut self) {
-        let mut this = std::mem::replace(self, FileHandle::DropStub);
-        if let Self::ReadWrite(_, FlushMarker::FlushAndSync) = this {
-            _ = tokio::spawn(async move {
-                if let Err(e) = this.flush().await {
-                    warn!("failed to flush file on drop: {e}");
-                }
-            });
+        // Only flush ReadWrite files with FlushAndSync marker
+        let Self::ReadWrite(file, FlushMarker::FlushAndSync) = self else {
+            return;
+        };
+
+        // Take ownership of the file using mem::replace with a dummy
+        let dummy_file = match std::fs::File::options().read(true).open(if cfg!(windows) {
+            "NUL"
+        } else {
+            "/dev/null"
+        }) {
+            Ok(f) => File::from_std(f),
+            Err(_) => return,
+        };
+
+        let tokio_file = std::mem::replace(file, dummy_file);
+
+        // Try to convert to std file synchronously - works if no pending I/O
+        if let Ok(std_file) = tokio_file.try_into_std() {
+            let _ = std_file.sync_all();
         }
     }
 }

@@ -401,6 +401,8 @@ impl NfsFileSystem for Fs {
                 // target will be overwritten, there is no need to flush it
                 self.file_cache.invalidate_for_remove(&to_path).await;
             }
+        } else if from_metadata.is_dir() {
+            self.file_cache.invalidate_dir_for_rename(&from_path).await;
         }
 
         // Perform the rename

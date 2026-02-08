@@ -45,6 +45,7 @@ impl FileCache {
         let cache = Cache::builder()
             .max_capacity(max_capacity)
             .time_to_idle(time_to_idle)
+            .support_invalidation_closures()
             .build();
 
         Self { cache }
@@ -101,6 +102,20 @@ impl FileCache {
             }
             cached.dont_flush_on_drop().await; // Ensure we don't flush in background on drop
         }
+    }
+
+    /// Invalidates all cached file entries under a directory prefix.
+    /// Used when a directory is being renamed. Files are flushed via their Drop implementation.
+    pub async fn invalidate_dir_for_rename(&self, dir_path: &Path) {
+        let dir_path = dir_path.to_path_buf();
+        // Use invalidate_entries_if to invalidate all entries under the directory
+        // The Drop implementation on FileHandle will flush files with FlushAndSync marker
+        let _ = self
+            .cache
+            .invalidate_entries_if(move |path, _| path.starts_with(&dir_path));
+
+        // Run pending tasks to ensure invalidations are processed
+        self.cache.run_pending_tasks().await;
     }
 
     /// Returns the number of files currently in the cache.
