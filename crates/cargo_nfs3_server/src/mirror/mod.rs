@@ -58,20 +58,27 @@ impl Fs {
         Ok(self.root.join(relative_path))
     }
 
-    async fn read(&self, path: &Path, start: u64, count: u32) -> std::io::Result<(Vec<u8>, bool)> {
+    async fn read(
+        &self,
+        path: PathBuf,
+        start: u64,
+        count: u32,
+    ) -> Result<(Vec<u8>, bool), nfsstat3> {
         self.file_cache
             .get_for_read(path)
             .await?
             .read(start, count)
             .await
+            .map_err(map_io_error)
     }
 
-    async fn write(&self, path: &Path, offset: u64, data: &[u8]) -> std::io::Result<()> {
+    async fn write(&self, path: PathBuf, offset: u64, data: &[u8]) -> Result<(), nfsstat3> {
         self.file_cache
             .get_for_write(path)
             .await?
             .write(offset, data)
             .await
+            .map_err(map_io_error)
     }
 
     async fn get_or_create_iterator(
@@ -164,7 +171,7 @@ impl NfsReadFileSystem for Fs {
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         let path = self.path(*id)?;
-        self.read(&path, offset, count).await.map_err(map_io_error)
+        self.read(path, offset, count).await
     }
 
     async fn readdir(
@@ -201,6 +208,14 @@ impl NfsReadFileSystem for Fs {
 
 #[expect(clippy::needless_pass_by_value)]
 fn map_io_error(err: std::io::Error) -> nfsstat3 {
+    map_io_error_impl(&err)
+}
+
+fn map_io_error_arc(err: Arc<std::io::Error>) -> nfsstat3 {
+    map_io_error_impl(&*err)
+}
+
+fn map_io_error_impl(err: &std::io::Error) -> nfsstat3 {
     use std::io::ErrorKind;
     match err.kind() {
         ErrorKind::NotFound => nfsstat3::NFS3ERR_NOENT,
@@ -238,10 +253,7 @@ impl NfsFileSystem for Fs {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
-        self.write(&path, offset, data)
-            .await
-            .map_err(map_io_error)?;
-
+        self.write(path, offset, data).await?;
         self.getattr(id).await
     }
 
