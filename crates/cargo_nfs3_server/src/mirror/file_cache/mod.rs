@@ -56,7 +56,7 @@ impl FileCache {
             .entry(path.clone())
             .or_try_insert_with(async { CachedFile::open_read(path.clone()).await })
             .await
-            .map(|e| e.into_value())
+            .map(moka::Entry::into_value)
             .map_err(|e| {
                 warn!("failed to open file for read. Path: {}", path.display());
                 map_io_error_arc(e)
@@ -76,7 +76,7 @@ impl FileCache {
             .entry(path.clone())
             .or_try_insert_with(async { CachedFile::open_read_write(path.clone()).await })
             .await
-            .map(|e| e.into_value())
+            .map(moka::Entry::into_value)
             .map_err(|e| {
                 warn!("failed to open file for write. Path: {}", path.display());
                 map_io_error_arc(e)

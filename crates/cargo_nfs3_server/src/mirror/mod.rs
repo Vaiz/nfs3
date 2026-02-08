@@ -69,7 +69,6 @@ impl Fs {
             .await?
             .read(start, count)
             .await
-            .map_err(map_io_error)
     }
 
     async fn write(&self, path: PathBuf, offset: u64, data: &[u8]) -> Result<(), nfsstat3> {
@@ -78,7 +77,6 @@ impl Fs {
             .await?
             .write(offset, data)
             .await
-            .map_err(map_io_error)
     }
 
     async fn get_or_create_iterator(
@@ -207,12 +205,13 @@ impl NfsReadFileSystem for Fs {
 }
 
 #[expect(clippy::needless_pass_by_value)]
-fn map_io_error(err: std::io::Error) -> nfsstat3 {
+pub fn map_io_error(err: std::io::Error) -> nfsstat3 {
     map_io_error_impl(&err)
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn map_io_error_arc(err: Arc<std::io::Error>) -> nfsstat3 {
-    map_io_error_impl(&*err)
+    map_io_error_impl(&err)
 }
 
 fn map_io_error_impl(err: &std::io::Error) -> nfsstat3 {

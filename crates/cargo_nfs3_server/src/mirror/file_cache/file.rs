@@ -1,9 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use nfs3_server::nfs3_types::nfs3::nfsstat3;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
+use tracing::warn;
+
+use crate::mirror::map_io_error;
 
 /// A file handle with its access mode. The file object is contained within the enum variant.
 #[derive(Debug)]
@@ -66,42 +70,56 @@ impl CachedFile {
     /// Ensures the file is open for reading and performs a read operation.
     ///
     /// Returns the data read and whether EOF was reached.
-    pub async fn read(&self, offset: u64, count: u32) -> std::io::Result<(Vec<u8>, bool)> {
-        let mut handle_guard = self.handle.write().await;
-        let file = handle_guard.file_mut();
+    pub async fn read(&self, offset: u64, count: u32) -> Result<(Vec<u8>, bool), nfsstat3> {
+        async {
+            let mut handle_guard = self.handle.write().await;
+            let file = handle_guard.file_mut();
 
-        let len = file.metadata().await?.len();
-        if offset >= len || count == 0 {
-            return Ok((Vec::new(), u64::from(count) >= len));
+            let len = file.metadata().await?.len();
+            if offset >= len || count == 0 {
+                return Ok((Vec::new(), u64::from(count) >= len));
+            }
+
+            let count = u64::from(count).min(len - offset);
+            file.seek(SeekFrom::Start(offset)).await?;
+
+            let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
+            file.read_exact(&mut buf).await?;
+
+            Ok((buf, offset + count >= len))
         }
-
-        let count = u64::from(count).min(len - offset);
-        file.seek(SeekFrom::Start(offset)).await?;
-
-        let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
-        file.read_exact(&mut buf).await?;
-
-        Ok((buf, offset + count >= len))
+        .await
+        .map_err(|e: std::io::Error| {
+            warn!("read failed: {} - {}", self.path.display(), e);
+            map_io_error(e)
+        })
     }
 
     /// Ensures the file is open for writing and performs a write operation.
     ///
     /// If the file is currently open for read only, it will be reopened
     /// with read-write access.
-    pub async fn write(&self, offset: u64, data: &[u8]) -> std::io::Result<()> {
-        // Check if we need to upgrade to read-write mode
-        if !self.handle.read().await.is_read_write() {
-            self.upgrade_to_read_write().await?;
+    pub async fn write(&self, offset: u64, data: &[u8]) -> Result<(), nfsstat3> {
+        async {
+            // Check if we need to upgrade to read-write mode
+            if !self.handle.read().await.is_read_write() {
+                self.upgrade_to_read_write().await?;
+            }
+
+            let mut handle_guard = self.handle.write().await;
+            let file = handle_guard.file_mut();
+
+            file.seek(SeekFrom::Start(offset)).await?;
+            file.write_all(data).await?;
+            file.flush().await?;
+
+            Ok(())
         }
-
-        let mut handle_guard = self.handle.write().await;
-        let file = handle_guard.file_mut();
-
-        file.seek(SeekFrom::Start(offset)).await?;
-        file.write_all(data).await?;
-        file.flush().await?;
-
-        Ok(())
+        .await
+        .map_err(|e: std::io::Error| {
+            warn!("write failed: {} - {}", self.path.display(), e);
+            map_io_error(e)
+        })
     }
 
     /// Upgrades the file from read mode to read-write mode.
