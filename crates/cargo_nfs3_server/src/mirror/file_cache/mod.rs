@@ -83,9 +83,24 @@ impl FileCache {
             })
     }
 
-    /// Invalidates a cached file entry. Call this when a file is deleted or renamed.
-    pub async fn invalidate(&self, path: &Path) {
-        self.cache.invalidate(path).await;
+    /// Invalidates a cached file entry without flushing or syncing. Used when a file is removed or renamed.
+    pub async fn invalidate_for_remove(&self, path: &Path) {
+        if let Some(cached) = self.cache.remove(path).await {
+            cached.dont_flush_on_drop().await;
+        }
+    }
+
+    /// Invalidates a cached file entry with flushing and syncing. Used when a file is renamed.
+    pub async fn invalidate_for_rename(&self, path: &Path) {
+        if let Some(cached) = self.cache.remove(path).await {
+            if let Err(e) = cached.flush().await {
+                warn!(
+                    "failed to flush file on invalidate for rename: {} - {e}",
+                    path.display()
+                );
+            }
+            cached.dont_flush_on_drop().await; // Ensure we don't flush in background on drop
+        }
     }
 
     /// Returns the number of files currently in the cache.
@@ -193,7 +208,7 @@ mod tests {
         cache.cache.run_pending_tasks().await;
         assert_eq!(cache.entry_count(), 1);
 
-        cache.invalidate(&path).await;
+        cache.invalidate_for_remove(&path).await;
 
         // Run pending tasks to process the invalidation
         cache.cache.run_pending_tasks().await;

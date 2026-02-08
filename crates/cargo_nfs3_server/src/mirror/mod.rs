@@ -333,7 +333,7 @@ impl NfsFileSystem for Fs {
         let dir_path = self.path(*dirid)?;
         let file_path = dir_path.join(filename.as_os_str());
 
-        self.file_cache.invalidate(&file_path).await;
+        self.file_cache.invalidate_for_remove(&file_path).await;
 
         // Check if it's a file or directory
         async {
@@ -396,8 +396,8 @@ impl NfsFileSystem for Fs {
         }
 
         // Invalidate file cache entries
-        self.file_cache.invalidate(&from_path).await;
-        self.file_cache.invalidate(&to_path).await;
+        self.file_cache.invalidate_for_rename(&from_path).await;
+        self.file_cache.invalidate_for_remove(&to_path).await;
 
         // Perform the rename
         tokio::fs::rename(&from_path, &to_path)

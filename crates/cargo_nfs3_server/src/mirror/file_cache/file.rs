@@ -9,25 +9,63 @@ use tracing::warn;
 
 use crate::mirror::map_io_error;
 
+#[derive(Debug)]
+pub enum FlushMarker {
+    FlushAndSync,
+    DropWithoutFlush,
+}
+
 /// A file handle with its access mode. The file object is contained within the enum variant.
 #[derive(Debug)]
 pub enum FileHandle {
     /// File is open for reading only.
     Read(File),
     /// File is open for both reading and writing.
-    ReadWrite(File),
+    ReadWrite(File, FlushMarker),
+    /// Drop
+    DropStub,
 }
 
 impl FileHandle {
     /// Returns whether this handle is in read-write mode.
     const fn is_read_write(&self) -> bool {
-        matches!(self, Self::ReadWrite(_))
+        matches!(self, Self::ReadWrite(_, _))
     }
 
     /// Gets a mutable reference to the underlying file.
-    const fn file_mut(&mut self) -> &mut File {
+    fn file_mut(&mut self) -> &mut File {
         match self {
-            Self::Read(f) | Self::ReadWrite(f) => f,
+            Self::Read(f) | Self::ReadWrite(f, _) => f,
+            Self::DropStub => unreachable!("invalid file handle state"),
+        }
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        let Self::ReadWrite(file, _) = self else {
+            return Ok(());
+        };
+
+        file.flush().await?;
+        file.sync_all().await
+    }
+
+    fn dont_flush_on_drop(&mut self) {
+        if let Self::ReadWrite(_, flush_marker) = self {
+            *flush_marker = FlushMarker::DropWithoutFlush;
+        }
+    }
+}
+
+/// Spawn a task to flush and sync the file asynchronously on drop.
+impl Drop for FileHandle {
+    fn drop(&mut self) {
+        let mut this = std::mem::replace(self, FileHandle::DropStub);
+        if let Self::ReadWrite(_, FlushMarker::FlushAndSync) = this {
+            _ = tokio::spawn(async move {
+                if let Err(e) = this.flush().await {
+                    warn!("failed to flush file on drop: {e}");
+                }
+            });
         }
     }
 }
@@ -58,7 +96,7 @@ impl CachedFile {
             .await?;
         Ok(Arc::new(Self {
             path,
-            handle: RwLock::new(FileHandle::ReadWrite(file)),
+            handle: RwLock::new(FileHandle::ReadWrite(file, FlushMarker::FlushAndSync)),
         }))
     }
 
@@ -138,8 +176,16 @@ impl CachedFile {
             .open(&self.path)
             .await?;
 
-        *handle_guard = FileHandle::ReadWrite(new_file);
+        *handle_guard = FileHandle::ReadWrite(new_file, FlushMarker::FlushAndSync);
 
         Ok(())
+    }
+
+    pub async fn dont_flush_on_drop(&self) {
+        self.handle.write().await.dont_flush_on_drop();
+    }
+
+    pub async fn flush(&self) -> std::io::Result<()> {
+        self.handle.write().await.flush().await
     }
 }
