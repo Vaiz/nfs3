@@ -58,22 +58,27 @@ impl Fs {
         Ok(self.root.join(relative_path))
     }
 
-    async fn read(
+    async fn read_file(
         &self,
-        path: PathBuf,
+        id: FileHandleU64,
         start: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
         self.file_cache
-            .get_for_read(path)
+            .get_for_read(id, || self.path(id))
             .await?
             .read(start, count)
             .await
     }
 
-    async fn write(&self, path: PathBuf, offset: u64, data: &[u8]) -> Result<(), nfsstat3> {
+    async fn write_file(
+        &self,
+        id: FileHandleU64,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), nfsstat3> {
         self.file_cache
-            .get_for_write(path)
+            .get_for_write(id, || self.path(id))
             .await?
             .write(offset, data)
             .await
@@ -168,8 +173,7 @@ impl NfsReadFileSystem for Fs {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let path = self.path(*id)?;
-        self.read(path, offset, count).await
+        self.read_file(*id, offset, count).await
     }
 
     async fn readdir(
@@ -206,11 +210,6 @@ impl NfsReadFileSystem for Fs {
 
 #[expect(clippy::needless_pass_by_value)]
 pub fn map_io_error(err: std::io::Error) -> nfsstat3 {
-    map_io_error_impl(&err)
-}
-
-#[expect(clippy::needless_pass_by_value)]
-fn map_io_error_arc(err: Arc<std::io::Error>) -> nfsstat3 {
     map_io_error_impl(&err)
 }
 
@@ -252,7 +251,7 @@ impl NfsFileSystem for Fs {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
 
-        self.write(path, offset, data).await?;
+        self.write_file(*id, offset, data).await?;
         self.getattr(id).await
     }
 
@@ -338,7 +337,12 @@ impl NfsFileSystem for Fs {
             if metadata.is_dir() {
                 tokio::fs::remove_dir(&file_path).await
             } else {
-                self.file_cache.invalidate_for_remove(&file_path).await;
+                // Look up the file handle for cache invalidation
+                if let Ok(file_handle) =
+                    self.cache.lookup_by_id(*dirid, filename.as_os_str(), false)
+                {
+                    self.file_cache.invalidate_for_remove(file_handle).await;
+                }
                 tokio::fs::remove_file(&file_path).await
             }
         }
@@ -396,10 +400,15 @@ impl NfsFileSystem for Fs {
         }
 
         if from_metadata.is_file() {
-            self.file_cache.invalidate_for_rename(&from_path).await;
+            // Look up file handles for cache invalidation
+            if let Ok(from_handle) = self.cache.lookup_by_id(*from_dirid, from_name, false) {
+                self.file_cache.invalidate_for_rename(from_handle).await;
+            }
             if target_exists {
                 // target will be overwritten, there is no need to flush it
-                self.file_cache.invalidate_for_remove(&to_path).await;
+                if let Ok(to_handle) = self.cache.lookup_by_id(*to_dirid, to_name, false) {
+                    self.file_cache.invalidate_for_remove(to_handle).await;
+                }
             }
         } else if from_metadata.is_dir() {
             self.file_cache.invalidate_dir_for_rename(&from_path).await;

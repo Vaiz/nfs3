@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use nfs3_server::nfs3_types::nfs3::nfsstat3;
@@ -197,5 +197,10 @@ impl CachedFile {
 
     pub async fn flush(&self) -> std::io::Result<()> {
         self.handle.write().await.flush().await
+    }
+
+    /// Returns a reference to the file path.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }

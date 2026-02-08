@@ -3,6 +3,9 @@
 //! Files are stored in cache with a time-to-idle expiration policy.
 //! When a file is opened for read and a write operation comes in,
 //! the file is automatically reopened with read-write access.
+//!
+//! The cache uses `nfs_fh3`-equivalent handles (u64) as keys, and
+//! resolves full paths lazily only when opening the file.
 
 mod file;
 
@@ -10,20 +13,27 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use file::CachedFile;
+pub use file::CachedFile;
 use moka::future::Cache;
 use nfs3_server::nfs3_types::nfs3::nfsstat3;
+use nfs3_server::vfs::FileHandleU64;
 use tracing::warn;
 
-use crate::mirror::{map_io_error, map_io_error_arc};
+use crate::mirror::map_io_error;
+
+#[expect(clippy::needless_pass_by_value)]
+fn map_nfsstat_arc(e: Arc<nfsstat3>) -> nfsstat3 {
+    *e
+}
 
 /// File cache using moka with time-to-idle expiration.
 ///
-/// Files are cached based on their path and will be automatically
-/// evicted if not accessed within the configured TTL.
+/// Files are cached based on their file handle (`nfs_fh3` equivalent) and will be
+/// automatically evicted if not accessed within the configured TTL.
+/// Paths are resolved lazily only when opening a file.
 #[derive(Clone)]
 pub struct FileCache {
-    cache: Cache<PathBuf, Arc<CachedFile>>,
+    cache: Cache<FileHandleU64, Arc<CachedFile>>,
 }
 
 impl std::fmt::Debug for FileCache {
@@ -51,53 +61,67 @@ impl FileCache {
         Self { cache }
     }
 
-    /// Gets a file handle for reading. If not cached, opens the file.
-    pub async fn get_for_read(&self, path: PathBuf) -> Result<Arc<CachedFile>, nfsstat3> {
+    /// Gets a file handle for reading. If not cached, resolves the path and opens the file.
+    ///
+    /// The path resolver is only called if the file is not already cached.
+    pub async fn get_for_read(
+        &self,
+        handle: FileHandleU64,
+        path: impl FnOnce() -> Result<PathBuf, nfsstat3>,
+    ) -> Result<Arc<CachedFile>, nfsstat3> {
         self.cache
-            .entry(path.clone())
-            .or_try_insert_with(async { CachedFile::open_read(path.clone()).await })
+            .entry(handle)
+            .or_try_insert_with(async {
+                let path = path()?;
+                CachedFile::open_read(path).await.map_err(map_io_error)
+            })
             .await
             .map(moka::Entry::into_value)
-            .map_err(|e| {
-                warn!("failed to open file for read. Path: {}", path.display());
-                map_io_error_arc(e)
-            })
+            .map_err(map_nfsstat_arc)
     }
 
     /// Gets a file handle for writing. If cached as read-only, upgrades to read-write.
-    pub async fn get_for_write(&self, path: PathBuf) -> Result<Arc<CachedFile>, nfsstat3> {
-        if let Some(cached) = self.cache.get(&path).await {
-            if !cached.is_read_write().await {
-                cached.upgrade_to_read_write().await.map_err(map_io_error)?;
-            }
-            return Ok(cached);
-        }
-
-        self.cache
-            .entry(path.clone())
-            .or_try_insert_with(async { CachedFile::open_read_write(path.clone()).await })
-            .await
-            .map(moka::Entry::into_value)
-            .map_err(|e| {
-                warn!("failed to open file for write. Path: {}", path.display());
-                map_io_error_arc(e)
+    ///
+    /// The path resolver is only called if the file is not already cached.
+    pub async fn get_for_write(
+        &self,
+        handle: FileHandleU64,
+        path: impl FnOnce() -> Result<PathBuf, nfsstat3>,
+    ) -> Result<Arc<CachedFile>, nfsstat3> {
+        let entry = self
+            .cache
+            .entry(handle)
+            .or_try_insert_with(async {
+                let path = path()?;
+                CachedFile::open_read_write(path)
+                    .await
+                    .map_err(map_io_error)
             })
+            .await
+            .map_err(map_nfsstat_arc)?;
+
+        // If this was a cache hit, we may need to upgrade from read-only to read-write
+        let cached = entry.into_value();
+        if !cached.is_read_write().await {
+            cached.upgrade_to_read_write().await.map_err(map_io_error)?;
+        }
+        Ok(cached)
     }
 
-    /// Invalidates a cached file entry without flushing or syncing. Used when a file is removed or renamed.
-    pub async fn invalidate_for_remove(&self, path: &Path) {
-        if let Some(cached) = self.cache.remove(path).await {
+    /// Invalidates a cached file entry without flushing or syncing. Used when a file is removed.
+    pub async fn invalidate_for_remove(&self, handle: FileHandleU64) {
+        if let Some(cached) = self.cache.remove(&handle).await {
             cached.dont_flush_on_drop().await;
         }
     }
 
     /// Invalidates a cached file entry with flushing and syncing. Used when a file is renamed.
-    pub async fn invalidate_for_rename(&self, path: &Path) {
-        if let Some(cached) = self.cache.remove(path).await {
+    pub async fn invalidate_for_rename(&self, handle: FileHandleU64) {
+        if let Some(cached) = self.cache.remove(&handle).await {
             if let Err(e) = cached.flush().await {
                 warn!(
                     "failed to flush file on invalidate for rename: {} - {e}",
-                    path.display()
+                    cached.path().display()
                 );
             }
             cached.dont_flush_on_drop().await; // Ensure we don't flush in background on drop
@@ -112,7 +136,7 @@ impl FileCache {
         // The Drop implementation on FileHandle will flush files with FlushAndSync marker
         let _ = self
             .cache
-            .invalidate_entries_if(move |path, _| path.starts_with(&dir_path));
+            .invalidate_entries_if(move |_, cached| cached.path().starts_with(&dir_path));
 
         // Run pending tasks to ensure invalidations are processed
         self.cache.run_pending_tasks().await;
@@ -143,8 +167,9 @@ mod tests {
             .expect("failed to write");
 
         let cache = FileCache::new(Duration::from_secs(60), 100);
+        let handle = FileHandleU64::new(1);
         let cached = cache
-            .get_for_read(path)
+            .get_for_read(handle, || Ok(path))
             .await
             .expect("failed to get for read");
 
@@ -166,10 +191,11 @@ mod tests {
             .expect("failed to write");
 
         let cache = FileCache::new(Duration::from_secs(60), 100);
+        let handle = FileHandleU64::new(1);
 
         // First, get for read
         let cached = cache
-            .get_for_read(path)
+            .get_for_read(handle, || Ok(path))
             .await
             .expect("failed to get for read");
         assert!(!cached.is_read_write().await);
@@ -189,13 +215,15 @@ mod tests {
             .expect("failed to write");
 
         let cache = FileCache::new(Duration::from_secs(60), 100);
+        let handle = FileHandleU64::new(1);
+        let path_clone = path.clone();
 
         let cached1 = cache
-            .get_for_read(path.clone())
+            .get_for_read(handle, || Ok(path))
             .await
             .expect("failed to get for read");
         let cached2 = cache
-            .get_for_read(path)
+            .get_for_read(handle, || Ok(path_clone))
             .await
             .expect("failed to get for read");
 
@@ -213,9 +241,10 @@ mod tests {
             .expect("failed to write");
 
         let cache = FileCache::new(Duration::from_secs(60), 100);
+        let handle = FileHandleU64::new(1);
 
         let _cached = cache
-            .get_for_read(path.clone())
+            .get_for_read(handle, || Ok(path))
             .await
             .expect("failed to get for read");
 
@@ -223,7 +252,7 @@ mod tests {
         cache.cache.run_pending_tasks().await;
         assert_eq!(cache.entry_count(), 1);
 
-        cache.invalidate_for_remove(&path).await;
+        cache.invalidate_for_remove(handle).await;
 
         // Run pending tasks to process the invalidation
         cache.cache.run_pending_tasks().await;
@@ -241,10 +270,12 @@ mod tests {
             .expect("failed to write");
 
         let cache = FileCache::new(Duration::from_secs(60), 100);
+        let handle = FileHandleU64::new(1);
+        let path_clone = path.clone();
 
         // Get directly for write
         let cached = cache
-            .get_for_write(path.clone())
+            .get_for_write(handle, || Ok(path_clone))
             .await
             .expect("failed to get for write");
         assert!(cached.is_read_write().await);
