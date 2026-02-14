@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.4.2...nfs3_types-v0.5.0) - 2026-02-14
+
+### Other
+
+- [**breaking**] bump msrv to 1.88 ([#132](https://github.com/Vaiz/nfs3/pull/132))
+
 ## [0.4.2](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.4.1...nfs3_types-v0.4.2) - 2025-12-24
 
 ### Added
