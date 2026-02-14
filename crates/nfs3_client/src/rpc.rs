@@ -42,7 +42,7 @@ where
     ) -> Self {
         Self {
             io,
-            xid: rand::random(),
+            xid: fastrand::u32(..),
             credential,
             verifier,
         }
