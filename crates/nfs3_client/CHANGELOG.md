@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - [**breaking**] bump msrv to 1.88 ([#132](https://github.com/Vaiz/nfs3/pull/132))
-- fix publishing ([#127](https://github.com/Vaiz/nfs3/pull/127))
-- release ([#116](https://github.com/Vaiz/nfs3/pull/116))
 
 ## [0.7.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.6.0...nfs3_client-v0.7.0) - 2025-07-26
 
