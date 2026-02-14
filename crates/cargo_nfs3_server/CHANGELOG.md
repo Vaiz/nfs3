@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0...cargo-nfs3-server-v0.2.0) - 2026-02-14
+
+### Other
+
+- [**breaking**] bump msrv to 1.88 ([#132](https://github.com/Vaiz/nfs3/pull/132))
+
 ## [0.0.1](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0-alpha.2...cargo-nfs3-server-v0.0.1) - 2025-06-29
 
 ### Changes
