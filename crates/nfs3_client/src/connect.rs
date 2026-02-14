@@ -222,8 +222,7 @@ where
     const MIN_PORT: u16 = 300;
     const MAX_PORT: u16 = 1023;
     /// a hack to reduce the chance of port collision
-    static PORT_INDEX: LazyLock<AtomicU16> =
-        LazyLock::new(|| AtomicU16::new(rand::random::<u16>()));
+    static PORT_INDEX: LazyLock<AtomicU16> = LazyLock::new(|| AtomicU16::new(fastrand::u16(..)));
 
     for _ in MIN_PORT..=MAX_PORT {
         let index = PORT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

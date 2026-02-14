@@ -22,11 +22,11 @@ anyhow = "1.0.98"
 chrono = "0.4"
 clap = { version = "4.5", default-features = false }
 ctrlc = { version = "3.5" }
+fastrand = "2.3"
 filetime = "0.2.25"
 intaglio = "1.10"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
-rand = "0.9.1"
 socket2 = "0.6"
 smol = "2.0"
 syn = "2.0.101"
