@@ -20,7 +20,7 @@ nfs3_client = { version = "0.8.0", path = "crates/nfs3_client" }
 
 anyhow = "1.0.98"
 chrono = "0.4"
-clap = { version = "4.5", default-features = false }
+clap = { version = "4.6", default-features = false }
 ctrlc = { version = "3.5" }
 fastrand = "2.3"
 filetime = "0.2.25"
