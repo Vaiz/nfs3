@@ -137,6 +137,28 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsFileSystem`].
     pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
+        Self::bind_inner(ipstr, fs, None).await
+    }
+
+    /// Create a new `NFSTcpListener` with a specific generation number.
+    ///
+    /// The generation number is embedded in file handles and used to detect
+    /// stale handles from previous server instances. When multiple NFS server
+    /// instances share the same generation number, file handles remain valid
+    /// across all instances (e.g. behind a load balancer).
+    ///
+    /// See [`FileHandleConverter::with_generation_number`] for details.
+    ///
+    /// [`FileHandleConverter::with_generation_number`]: crate::vfs::handle::FileHandleConverter::with_generation_number
+    pub async fn bind_with_generation(
+        ipstr: &str,
+        fs: T,
+        generation_number: u64,
+    ) -> io::Result<Self> {
+        Self::bind_inner(ipstr, fs, Some(generation_number)).await
+    }
+
+    async fn bind_inner(ipstr: &str, fs: T, generation_number: Option<u64>) -> io::Result<Self> {
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -158,7 +180,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result = Self::bind_internal(&ip, port, arcfs.clone()).await;
+                let result = Self::bind_internal(&ip, port, arcfs.clone(), generation_number).await;
 
                 match result {
                     Err(_) => {
@@ -175,11 +197,16 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             unreachable!(); // Does not detect automatically that loop above never terminates.
         } else {
             // Otherwise, try this.
-            Self::bind_internal(ip, port, arcfs).await
+            Self::bind_internal(ip, port, arcfs, generation_number).await
         }
     }
 
-    async fn bind_internal(ip: &str, port: u16, arcfs: Arc<T>) -> io::Result<Self> {
+    async fn bind_internal(
+        ip: &str,
+        port: u16,
+        arcfs: Arc<T>,
+        generation_number: Option<u64>,
+    ) -> io::Result<Self> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
         info!("Listening on {:?}", &ipstr);
@@ -188,6 +215,12 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             SocketAddr::V4(s) => s.port(),
             SocketAddr::V6(s) => s.port(),
         };
+
+        let file_handle_converter = generation_number.map_or_else(
+            crate::vfs::handle::FileHandleConverter::new,
+            crate::vfs::handle::FileHandleConverter::with_generation_number,
+        );
+
         Ok(Self {
             listener,
             port,
@@ -196,7 +229,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             export_name: Arc::from("/".to_string()),
             transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
-            file_handle_converter: crate::vfs::handle::FileHandleConverter::new(),
+            file_handle_converter,
         })
     }
 

@@ -108,6 +108,16 @@ impl FileHandleConverter {
             .expect("failed to get system time")
             .as_millis() as u64;
 
+        Self::with_generation_number(generation_number)
+    }
+
+    /// Creates a `FileHandleConverter` with a specific generation number.
+    ///
+    /// Use this when multiple NFS server instances need to share the same
+    /// generation number so that file handles remain valid across all
+    /// instances (e.g. behind a load balancer).
+    #[must_use]
+    pub const fn with_generation_number(generation_number: u64) -> Self {
         Self {
             generation_number,
             generation_number_le: generation_number.to_le_bytes(),
@@ -208,6 +218,59 @@ mod tests {
 
         let converted_handle = converter.fh_from_nfs::<TestHandle<3>>(&nfs_handle).unwrap();
         assert_eq!(converted_handle, handle);
+    }
+
+    #[test]
+    fn test_with_generation_number_round_trip() {
+        let converter = FileHandleConverter::with_generation_number(12345);
+        let handle = TestHandle { id: [1, 2, 3] };
+        let nfs_handle = converter.fh_to_nfs(&handle);
+
+        assert_eq!(nfs_handle.data[0..8], 12345u64.to_le_bytes());
+
+        let round_tripped = converter.fh_from_nfs::<TestHandle<3>>(&nfs_handle).unwrap();
+        assert_eq!(round_tripped, handle);
+    }
+
+    #[test]
+    fn test_with_generation_number_shared_across_instances() {
+        // Two converters with the same generation (simulating cluster nodes)
+        // must accept each other's handles.
+        let node_a = FileHandleConverter::with_generation_number(42);
+        let node_b = FileHandleConverter::with_generation_number(42);
+
+        let handle = TestHandle { id: [7, 8, 9] };
+        let nfs_handle = node_a.fh_to_nfs(&handle);
+
+        let decoded = node_b.fh_from_nfs::<TestHandle<3>>(&nfs_handle).unwrap();
+        assert_eq!(decoded, handle);
+    }
+
+    #[test]
+    fn test_with_generation_number_stale_vs_badhandle() {
+        let converter = FileHandleConverter::with_generation_number(1000);
+        let handle = TestHandle { id: [1, 2, 3] };
+        let nfs_handle = converter.fh_to_nfs(&handle);
+
+        // Newer generation → STALE (handle is from an older server)
+        let newer = FileHandleConverter::with_generation_number(2000);
+        assert_eq!(
+            newer.fh_from_nfs::<TestHandle<3>>(&nfs_handle),
+            Err(nfsstat3::NFS3ERR_STALE)
+        );
+
+        // Older generation → BADHANDLE (handle is from a future server, unexpected)
+        let older = FileHandleConverter::with_generation_number(500);
+        assert_eq!(
+            older.fh_from_nfs::<TestHandle<3>>(&nfs_handle),
+            Err(nfsstat3::NFS3ERR_BADHANDLE)
+        );
+    }
+
+    #[test]
+    fn test_with_generation_number_verf() {
+        let converter = FileHandleConverter::with_generation_number(12345);
+        assert_eq!(converter.verf().0, 12345u64.to_le_bytes());
     }
 
     #[test]
