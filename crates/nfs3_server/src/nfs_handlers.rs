@@ -201,9 +201,8 @@ where
     let id = fh_to_id!(context, &handle);
     let obj_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
 
-    // is this a bug?
     if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
-        access &= ACCESS3_READ | ACCESS3_LOOKUP;
+        access &= ACCESS3_READ | ACCESS3_LOOKUP | ACCESS3_EXECUTE;
     }
 
     debug!("access success {xid} --> {access:?}");
