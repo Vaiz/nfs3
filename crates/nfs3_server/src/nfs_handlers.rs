@@ -131,7 +131,7 @@ where
             })
         }
         Err(stat) => {
-            warn!("lookup error {xid}({:?}) --> {stat}", dirops.name,);
+            debug!("lookup error {xid}({:?}) --> {stat}", dirops.name,);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
         }
     }
