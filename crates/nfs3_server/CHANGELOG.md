@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.10.1...nfs3_server-v0.10.2) - 2026-03-31
+
+### Fixed
+
+- *(nfs3_server)* downgrade lookup ENOENT to debug level ([#143](https://github.com/Vaiz/nfs3/pull/143))
+- *(nfs3_server)* allow execution of files from read-only filesystems ([#142](https://github.com/Vaiz/nfs3/pull/142))
+
 ## [0.10.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.10.0...nfs3_server-v0.10.1) - 2026-03-24
 
 ### Added
