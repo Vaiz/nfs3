@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.0...cargo-nfs3-server-v0.2.1) - 2026-03-31
 
-### Other
+### Fixed
 
-- update Cargo.lock dependencies
+- *(nfs3_server)* downgrade lookup ENOENT to debug level ([#143](https://github.com/Vaiz/nfs3/pull/143))
+- *(nfs3_server)* allow execution of files from read-only filesystems ([#142](https://github.com/Vaiz/nfs3/pull/142))
 
 ## [0.2.0](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.1.0...cargo-nfs3-server-v0.2.0) - 2026-02-14
 
