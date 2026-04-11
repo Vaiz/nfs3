@@ -206,9 +206,10 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// - [`stable_how::DATA_SYNC`]: all data and enough metadata to retrieve it must be committed
     ///   before returning. Could be implemented identically to `FILE_SYNC`.
     /// - [`stable_how::UNSTABLE`]: the server may defer committing any data or metadata.
-    ///   Uncommitted data can later be flushed via [`commit`]. Usually, clients will send a series
-    ///   of UNSTABLE writes followed by a [`commit`], so servers can optimize for this case by
-    ///   deferring the actual disk writes until the [`commit`] is received.
+    ///   Uncommitted data can later be flushed via [`commit`][NfsFileSystem::commit]. Usually,
+    ///   clients will send a series of UNSTABLE writes followed by a
+    ///   [`commit`][NfsFileSystem::commit], so servers can optimize for this case by deferring the
+    ///   actual disk writes until the [`commit`][NfsFileSystem::commit] is received.
     ///
     /// # `NFS3ERR_INVAL`:
     ///
