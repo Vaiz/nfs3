@@ -305,10 +305,6 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     ///
     /// `offset` and `count` indicate the region to commit. If `count` is 0
     /// the entire file should be committed.
-    ///
-    /// The default implementation returns [`nfsstat3::NFS3ERR_NOTSUPP`].
-    /// Implementations should override this to flush written data to disk,
-    /// or return `Ok(())` if all writes are already [`stable_how::FILE_SYNC`].
     fn commit(
         &self,
         id: &Self::Handle,
