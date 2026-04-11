@@ -768,6 +768,7 @@ async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{commit:?}");
+    assert_eq!(write.verf, commit.verf);
 
     // Data must be readable after commit.
     let read = client
