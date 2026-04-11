@@ -712,6 +712,10 @@ impl NfsFileSystem for MirrorFs {
         .await
         .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
+
+    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        Ok(())
+    }
 }
 
 struct MirrorFsIterator {

@@ -281,4 +281,32 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         symlink: &nfspath3<'a>,
         attr: &sattr3,
     ) -> impl Future<Output = Result<(Self::Handle, fattr3), nfsstat3>> + Send;
+
+    /// Commits previously written data to stable storage.
+    ///
+    /// `offset` and `count` indicate the region to commit. If `count` is 0
+    /// the entire file should be committed.
+    ///
+    /// The default implementation returns [`nfsstat3::NFS3ERR_NOTSUPP`].
+    /// Implementations should override this to flush written data to disk,
+    /// or return `Ok(())` if all writes are already [`stable_how::FILE_SYNC`].
+    // TODO: remove the default implementation with the next breaking release
+    #[expect(
+        unused_variables,
+        reason = "trait methods should have proper arguments' names"
+    )]
+    fn commit(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        count: u32,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        async move {
+            if self.capabilities() == VFSCapabilities::ReadOnly {
+                Err(nfsstat3::NFS3ERR_ROFS)
+            } else {
+                Err(nfsstat3::NFS3ERR_NOTSUPP)
+            }
+        }
+    }ss
 }

@@ -452,6 +452,11 @@ impl NfsFileSystem for Fs {
         let fattr = self.getattr(&link_id).await?;
         Ok((link_id, fattr))
     }
+
+    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
+        Ok(())
+    }
 }
 
 #[cfg(test)]

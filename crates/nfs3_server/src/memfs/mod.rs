@@ -831,6 +831,11 @@ impl NfsFileSystem for MemFs {
         tracing::warn!("symlink not implemented");
         Err(nfsstat3::NFS3ERR_NOTSUPP)
     }
+
+    async fn commit(&self, _id: &FileHandleU64, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        // In-memory filesystem: all writes are immediately "committed".
+        Ok(())
+    }
 }
 
 struct MemFsIterator {

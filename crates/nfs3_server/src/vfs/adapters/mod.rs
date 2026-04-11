@@ -164,6 +164,10 @@ where
     ) -> Result<(Self::Handle, fattr3), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
+
+    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_ROFS)
+    }
 }
 
 #[derive(Debug)]

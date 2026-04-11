@@ -60,7 +60,8 @@ where
         NFSPROC3_MKDIR => handle(context, message, nfsproc3_mkdir).await,
         NFSPROC3_SYMLINK => handle(context, message, nfsproc3_symlink).await,
         NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
-        NFSPROC3_MKNOD | NFSPROC3_LINK | NFSPROC3_COMMIT => {
+        NFSPROC3_COMMIT => handle(context, message, nfsproc3_commit).await,
+        NFSPROC3_MKNOD | NFSPROC3_LINK => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
@@ -569,6 +570,46 @@ where
                         before,
                         after: post_op_attr::None,
                     },
+                },
+            ))
+        }
+    }
+}
+
+async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args) -> COMMIT3res
+where
+    T: NfsFileSystem,
+{
+    let id = match context.file_handle_converter.fh_from_nfs(&args.file) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("cannot resolve fh: {stat}");
+            return COMMIT3res::Err((
+                stat,
+                COMMIT3resfail {
+                    file_wcc: wcc_data::default(),
+                },
+            ));
+        }
+    };
+    match context.vfs.commit(&id, args.offset, args.count).await {
+        Ok(()) => {
+            let file_attr = nfs_option_from_result(context.vfs.getattr(&id).await);
+            debug!("commit success {xid}");
+            COMMIT3res::Ok(COMMIT3resok {
+                file_wcc: wcc_data {
+                    before: pre_op_attr::None,
+                    after: file_attr,
+                },
+                verf: context.file_handle_converter.verf(),
+            })
+        }
+        Err(stat) => {
+            error!("commit error {xid} --> {stat}");
+            COMMIT3res::Err((
+                stat,
+                COMMIT3resfail {
+                    file_wcc: wcc_data::default(),
                 },
             ))
         }
