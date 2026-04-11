@@ -207,6 +207,8 @@ async fn test_write() -> Result<(), anyhow::Error> {
 
     tracing::info!("{write:?}");
     assert_eq!(write.count, COUNT as u32);
+    // MemFs always commits synchronously regardless of the requested stable level.
+    assert_eq!(write.committed, stable_how::FILE_SYNC);
 
     // Additional check to verify the file was written correctly
     let read = client
@@ -703,24 +705,81 @@ async fn test_pathconf() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_commit() -> Result<(), anyhow::Error> {
-    use nfs3_client::error::*;
-
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
 
+    // MemFs commits immediately; COMMIT on the root dir should succeed.
     let commit = client
         .commit(&COMMIT3args {
             file: root.clone(),
             offset: 0,
             count: 1024,
         })
-        .await;
+        .await?
+        .unwrap();
 
-    if let Err(Error::Rpc(RpcError::ProcUnavail)) = commit {
-        tracing::info!("Server does not support COMMIT yet");
-    } else {
-        panic!("Expected ProcUnavail error");
-    }
+    tracing::info!("{commit:?}");
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
+    const DATA: &[u8] = b"unstable write data";
+
+    let mut client = TestContext::setup();
+    let root = client.root_dir().clone();
+
+    let create = client
+        .create(&CREATE3args {
+            where_: diropargs3 {
+                dir: root.clone(),
+                name: b"unstable.txt".as_slice().into(),
+            },
+            how: createhow3::UNCHECKED(sattr3::default()),
+        })
+        .await?
+        .unwrap();
+
+    let file_handle = create.obj.unwrap();
+
+    let write = client
+        .write(&WRITE3args {
+            file: file_handle.clone(),
+            offset: 0,
+            count: DATA.len() as u32,
+            stable: stable_how::UNSTABLE,
+            data: Opaque::borrowed(DATA),
+        })
+        .await?
+        .unwrap();
+
+    assert_eq!(write.count, DATA.len() as u32);
+    assert_eq!(write.committed, stable_how::FILE_SYNC); // MemFs ignores the requested stable level and always commits synchronously.
+
+    // COMMIT should succeed regardless.
+    let commit = client
+        .commit(&COMMIT3args {
+            file: file_handle.clone(),
+            offset: 0,
+            count: 1024,
+        })
+        .await?
+        .unwrap();
+
+    tracing::info!("{commit:?}");
+
+    // Data must be readable after commit.
+    let read = client
+        .read(&READ3args {
+            file: file_handle.clone(),
+            offset: 0,
+            count: DATA.len() as u32,
+        })
+        .await?
+        .unwrap();
+
+    assert_eq!(read.data.as_ref(), DATA);
 
     client.shutdown().await
 }

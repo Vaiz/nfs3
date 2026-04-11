@@ -727,8 +727,6 @@ async fn test_pathconf() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_commit() -> Result<(), anyhow::Error> {
-    use nfs3_client::error::*;
-
     let mut client = TestContext::setup_ro();
     let root = client.root_dir().clone();
 
@@ -738,13 +736,12 @@ async fn test_commit() -> Result<(), anyhow::Error> {
             offset: 0,
             count: 1024,
         })
-        .await;
+        .await?;
 
-    if let Err(Error::Rpc(RpcError::ProcUnavail)) = commit {
-        tracing::info!("Server does not support COMMIT yet");
-    } else {
-        panic!("Expected ProcUnavail error");
-    }
+    assert!(
+        matches!(commit, Nfs3Result::Err((nfsstat3::NFS3ERR_ROFS, _))),
+        "Expected NFS3ERR_ROFS, got {commit:?}"
+    );
 
     client.shutdown().await
 }
