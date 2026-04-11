@@ -146,10 +146,6 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// stale handles from previous server instances. When multiple NFS server
     /// instances share the same generation number, file handles remain valid
     /// across all instances (e.g. behind a load balancer).
-    ///
-    /// See [`FileHandleConverter::with_generation_number`] for details.
-    ///
-    /// [`FileHandleConverter::with_generation_number`]: crate::vfs::handle::FileHandleConverter::with_generation_number
     pub async fn bind_with_generation(
         ipstr: &str,
         fs: T,

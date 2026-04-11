@@ -11,7 +11,7 @@ use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
 use nfs3_server::nfs3_types::nfs3::{
     createverf3, fattr3, filename3, nfspath3, nfsstat3, sattr3, set_gid3, set_mode3, set_size3,
-    set_uid3,
+    set_uid3, stable_how,
 };
 use nfs3_server::vfs::{
     FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirIterator, ReadDirPlusIterator,
@@ -227,7 +227,13 @@ impl NfsFileSystem for Fs {
         self.getattr(id).await
     }
 
-    async fn write(&self, id: &Self::Handle, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        data: &[u8],
+        _stable: stable_how,
+    ) -> Result<(fattr3, stable_how), nfsstat3> {
         let path = self.path(*id)?;
 
         // Check if it's a regular file
@@ -251,7 +257,8 @@ impl NfsFileSystem for Fs {
         .await
         .map_err(map_io_error)?;
 
-        self.getattr(id).await
+        let attr = self.getattr(id).await?;
+        Ok((attr, stable_how::FILE_SYNC))
     }
 
     async fn create(
@@ -451,6 +458,11 @@ impl NfsFileSystem for Fs {
 
         let fattr = self.getattr(&link_id).await?;
         Ok((link_id, fattr))
+    }
+
+    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
+        Ok(())
     }
 }
 

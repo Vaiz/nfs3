@@ -60,7 +60,8 @@ where
         NFSPROC3_MKDIR => handle(context, message, nfsproc3_mkdir).await,
         NFSPROC3_SYMLINK => handle(context, message, nfsproc3_symlink).await,
         NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
-        NFSPROC3_MKNOD | NFSPROC3_LINK | NFSPROC3_COMMIT => {
+        NFSPROC3_COMMIT => handle(context, message, nfsproc3_commit).await,
+        NFSPROC3_MKNOD | NFSPROC3_LINK => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
         }
@@ -545,18 +546,18 @@ where
 
     match context
         .vfs
-        .write(&id, write3args.offset, &write3args.data)
+        .write(&id, write3args.offset, &write3args.data, write3args.stable)
         .await
     {
-        Ok(fattr) => {
-            debug!("write success {xid} --> {fattr:?}");
+        Ok((fattr, committed)) => {
+            debug!("write success {xid} --> {fattr:?}, committed: {committed}");
             WRITE3res::Ok(WRITE3resok {
                 file_wcc: wcc_data {
                     before,
                     after: post_op_attr::Some(fattr),
                 },
                 count: write3args.count,
-                committed: stable_how::FILE_SYNC,
+                committed,
                 verf: context.file_handle_converter.verf(),
             })
         }
@@ -569,6 +570,47 @@ where
                         before,
                         after: post_op_attr::None,
                     },
+                },
+            ))
+        }
+    }
+}
+
+async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args) -> COMMIT3res
+where
+    T: NfsFileSystem,
+{
+    let id = match context.file_handle_converter.fh_from_nfs(&args.file) {
+        Ok(id) => id,
+        Err(stat) => {
+            warn!("cannot resolve fh: {stat}");
+            return COMMIT3res::Err((
+                stat,
+                COMMIT3resfail {
+                    file_wcc: wcc_data::default(),
+                },
+            ));
+        }
+    };
+    let before = get_wcc_attr(&context, &id)
+        .await
+        .map_or(pre_op_attr::None, pre_op_attr::Some);
+    match context.vfs.commit(&id, args.offset, args.count).await {
+        Ok(()) => {
+            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
+            debug!("commit success {xid}");
+            COMMIT3res::Ok(COMMIT3resok {
+                file_wcc: wcc_data { before, after },
+                verf: context.file_handle_converter.verf(),
+            })
+        }
+        Err(stat) => {
+            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
+            error!("commit error {xid} --> {stat}");
+            COMMIT3res::Err((
+                stat,
+                COMMIT3resfail {
+                    file_wcc: wcc_data { before, after },
                 },
             ))
         }

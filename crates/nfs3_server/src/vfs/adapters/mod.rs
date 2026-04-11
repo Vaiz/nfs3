@@ -107,7 +107,8 @@ where
         _id: &Self::Handle,
         _offset: u64,
         _data: &[u8],
-    ) -> Result<fattr3, nfsstat3> {
+        _stable: nfs3_types::nfs3::stable_how,
+    ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 
@@ -162,6 +163,10 @@ where
         _symlink: &nfs3_types::nfs3::nfspath3<'a>,
         _attr: &sattr3,
     ) -> Result<(Self::Handle, fattr3), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_ROFS)
+    }
+
+    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 }

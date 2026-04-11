@@ -1079,10 +1079,9 @@ pub async fn commit_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
         .await;
 
     match commit_result {
-        Err(nfs3_client::error::Error::Rpc(nfs3_client::error::RpcError::ProcUnavail)) => {}
+        Ok(COMMIT3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {}
         _ => panic!(
-            "Expected RpcError::ProcUnavail error for commit on readonly filesystem, got: \
-             {commit_result:?}"
+            "Expected NFS3ERR_ROFS error for commit on readonly filesystem, got: {commit_result:?}"
         ),
     }
 }

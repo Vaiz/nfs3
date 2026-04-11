@@ -939,6 +939,16 @@ pub enum stable_how {
     FILE_SYNC = 2,
 }
 
+impl std::fmt::Display for stable_how {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::UNSTABLE => "UNSTABLE",
+            Self::DATA_SYNC => "DATA_SYNC",
+            Self::FILE_SYNC => "FILE_SYNC",
+        })
+    }
+}
+
 #[derive(Debug, XdrCodec)]
 pub struct symlinkdata3<'a> {
     pub symlink_attributes: sattr3,
