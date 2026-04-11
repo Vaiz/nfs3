@@ -758,12 +758,14 @@ impl NfsFileSystem for MemFs {
         id: &FileHandleU64,
         offset: u64,
         data: &[u8],
-    ) -> Result<fattr3, nfsstat3> {
+        _stable: nfs::stable_how, // MemFs writes are always `FILE_SYNC`
+    ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
         let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file_mut().map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
-        file.write(offset, data)
+        let attr = file.write(offset, data)?;
+        Ok((attr, nfs::stable_how::FILE_SYNC))
     }
 
     async fn create(

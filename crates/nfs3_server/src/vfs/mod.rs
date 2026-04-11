@@ -30,7 +30,7 @@ pub use iterator::*;
 
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3,
+    filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
 };
 use crate::units::{GIBIBYTE, MEBIBYTE};
 use crate::vfs::adapters::ReadDirPlusToReadDir;
@@ -186,11 +186,29 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         setattr: sattr3,
     ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
-    /// Writes the contents of a file returning (bytes, EOF)
-    /// Note that offset/count may go past the end of the file and that
-    /// in that case, the file is extended.
-    /// If not supported due to readonly file system
-    /// this should return `Err(nfsstat3::NFS3ERR_ROFS)`
+    /// Writes the contents of a file.
+    ///
+    /// If the offset and count go past the end of the file, the file is extended.
+    /// If not supported due to readonly file system this should return
+    /// `Err(nfsstat3::NFS3ERR_ROFS)`
+    ///
+    /// # Returns
+    ///
+    /// On success, returns `(fattr3, stable_how)` where:
+    /// - [`fattr3`] contains the updated file attributes after the write.
+    /// - [`stable_how`] reflects the level of stability actually achieved, which must be equal to
+    ///   or greater than the requested `stable` level.
+    ///
+    /// # `stable` parameter
+    ///
+    /// - [`stable_how::FILE_SYNC`]: all data and metadata must be committed to stable storage
+    ///   before returning. Any other behavior is a protocol violation.
+    /// - [`stable_how::DATA_SYNC`]: all data and enough metadata to retrieve it must be committed
+    ///   before returning. Could be implemented identically to `FILE_SYNC`.
+    /// - [`stable_how::UNSTABLE`]: the server may defer committing any data or metadata.
+    ///   Uncommitted data can later be flushed via [`commit`]. Usually, clients will send a series
+    ///   of UNSTABLE writes followed by a [`commit`], so servers can optimize for this case by
+    ///   deferring the actual disk writes until the [`commit`] is received.
     ///
     /// # `NFS3ERR_INVAL`:
     ///
@@ -203,7 +221,8 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         id: &Self::Handle,
         offset: u64,
         data: &[u8],
-    ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
+        stable: stable_how,
+    ) -> impl Future<Output = Result<(fattr3, stable_how), nfsstat3>> + Send;
 
     /// Creates a file with the following attributes.
     /// If not supported due to readonly file system
@@ -290,23 +309,10 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// The default implementation returns [`nfsstat3::NFS3ERR_NOTSUPP`].
     /// Implementations should override this to flush written data to disk,
     /// or return `Ok(())` if all writes are already [`stable_how::FILE_SYNC`].
-    // TODO: remove the default implementation with the next breaking release
-    #[expect(
-        unused_variables,
-        reason = "trait methods should have proper arguments' names"
-    )]
     fn commit(
         &self,
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
-        async move {
-            if self.capabilities() == VFSCapabilities::ReadOnly {
-                Err(nfsstat3::NFS3ERR_ROFS)
-            } else {
-                Err(nfsstat3::NFS3ERR_NOTSUPP)
-            }
-        }
-    }ss
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
 }

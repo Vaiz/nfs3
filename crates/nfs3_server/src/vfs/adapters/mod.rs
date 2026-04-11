@@ -107,7 +107,8 @@ where
         _id: &Self::Handle,
         _offset: u64,
         _data: &[u8],
-    ) -> Result<fattr3, nfsstat3> {
+        _stable: nfs3_types::nfs3::stable_how,
+    ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }
 

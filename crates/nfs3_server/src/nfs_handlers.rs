@@ -546,18 +546,18 @@ where
 
     match context
         .vfs
-        .write(&id, write3args.offset, &write3args.data)
+        .write(&id, write3args.offset, &write3args.data, write3args.stable)
         .await
     {
-        Ok(fattr) => {
-            debug!("write success {xid} --> {fattr:?}");
+        Ok((fattr, committed)) => {
+            debug!("write success {xid} --> {fattr:?}, committed: {committed}");
             WRITE3res::Ok(WRITE3resok {
                 file_wcc: wcc_data {
                     before,
                     after: post_op_attr::Some(fattr),
                 },
                 count: write3args.count,
-                committed: stable_how::FILE_SYNC,
+                committed,
                 verf: context.file_handle_converter.verf(),
             })
         }

@@ -15,6 +15,7 @@ use nfs3_server::fs_util::{
 };
 use nfs3_server::nfs3_types::nfs3::{
     cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
+    stable_how,
 };
 use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
 use nfs3_server::vfs::{
@@ -503,7 +504,13 @@ impl NfsFileSystem for MirrorFs {
         }
         Ok(metadata_to_fattr3(id, &metadata))
     }
-    async fn write(&self, id: &Self::Handle, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
+    async fn write(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        data: &[u8],
+        _stable: stable_how,
+    ) -> Result<(fattr3, stable_how), nfsstat3> {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let ent = fsmap.find_entry(id)?;
@@ -517,22 +524,22 @@ impl NfsFileSystem for MirrorFs {
             .open(&path)
             .await
             .map_err(|e| {
-                debug!("Unable to open {:?}", e);
+                debug!("Unable to open: {e}");
                 nfsstat3::NFS3ERR_IO
             })?;
         f.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-            debug!("Unable to seek {:?}", e);
+            debug!("Unable to seek: {e}");
             nfsstat3::NFS3ERR_IO
         })?;
         f.write_all(data).await.map_err(|e| {
-            debug!("Unable to write {:?}", e);
+            debug!("Unable to write: {e}");
             nfsstat3::NFS3ERR_IO
         })?;
-        debug!("write to {:?} {:?} {:?}", path, offset, data.len());
+        debug!("write to {:?} {offset} {:?}", path.display(), data.len());
         let _ = f.flush().await;
         let _ = f.sync_all().await;
         let meta = f.metadata().await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok(metadata_to_fattr3(id, &meta))
+        Ok((metadata_to_fattr3(id, &meta), stable_how::FILE_SYNC))
     }
 
     async fn create(
