@@ -53,9 +53,10 @@ async fn test_rename_noent() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{rename:?}");
-    if !matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
-        panic!("Expected NFS3ERR_NOENT error");
-    }
+    assert!(
+        matches!(rename, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))),
+        "Expected NFS3ERR_NOENT error"
+    );
 
     client.shutdown().await
 }

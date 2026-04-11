@@ -512,6 +512,8 @@ pub async fn commit_writes(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
         .await;
 
     let resok = commit_res.expect("commit call failed").unwrap();
+    let before_wcc = resok.file_wcc.before.unwrap();
+    assert_eq!(before_wcc.size, COMMIT_CONTENT.len() as u64);
     let attrs = resok.file_wcc.after.unwrap();
     assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
         .expect("commit file attributes do not match filesystem");

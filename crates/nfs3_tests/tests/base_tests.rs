@@ -52,9 +52,10 @@ async fn test_getattr_bad_handle() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{getattr:?}");
-    if !matches!(getattr, Nfs3Result::Err((nfsstat3::NFS3ERR_BADHANDLE, _))) {
-        panic!("Expected NFS3ERR_BADHANDLE error");
-    }
+    assert!(
+        matches!(getattr, Nfs3Result::Err((nfsstat3::NFS3ERR_BADHANDLE, _))),
+        "Expected NFS3ERR_BADHANDLE error"
+    );
 
     client.shutdown().await
 }
@@ -107,11 +108,10 @@ async fn test_readlink() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{readlink:?}");
-    if matches!(readlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
-    }
+    assert!(
+        matches!(readlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))),
+        "Expected NFS3ERR_NOTSUPP error"
+    );
 
     client.shutdown().await
 }
@@ -130,11 +130,10 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{read:?}");
-    if matches!(read, Nfs3Result::Err((nfsstat3::NFS3ERR_ISDIR, _))) {
-        tracing::info!("not supported by current implementation");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
-    }
+    assert!(
+        matches!(read, Nfs3Result::Err((nfsstat3::NFS3ERR_ISDIR, _))),
+        "Expected NFS3ERR_ISDIR error"
+    );
 
     client.shutdown().await
 }
@@ -300,11 +299,10 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
         })
         .await?;
 
-    if matches!(create, Nfs3Result::Err((nfsstat3::NFS3ERR_EXIST, _))) {
-        tracing::info!("file already exists, as expected");
-    } else {
-        panic!("Expected NFS3ERR_EXIST error");
-    }
+    assert!(
+        matches!(create, Nfs3Result::Err((nfsstat3::NFS3ERR_EXIST, _))),
+        "Expected NFS3ERR_EXIST error"
+    );
 
     // recreate the file with the same verifier, should succeed
     let _create = client
@@ -365,11 +363,10 @@ async fn test_symlink() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{symlink:?}");
-    if matches!(symlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))) {
-        tracing::info!("not supported by current implementation yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
-    }
+    assert!(
+        matches!(symlink, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTSUPP, _))),
+        "Expected NFS3ERR_NOTSUPP error"
+    );
 
     client.shutdown().await
 }
@@ -392,11 +389,10 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
         .await;
 
     tracing::info!("{mknod:?}");
-    if matches!(mknod, Err(Error::Rpc(RpcError::ProcUnavail))) {
-        tracing::info!("not supported by nfs3_server yet");
-    } else {
-        panic!("Expected NFS3ERR_NOTSUPP error");
-    }
+    assert!(
+        matches!(mknod, Err(Error::Rpc(RpcError::ProcUnavail))),
+        "Expected ProcUnavail error"
+    );
 
     client.shutdown().await
 }
@@ -435,9 +431,10 @@ async fn test_remove_noent() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{remove:?}");
-    if !matches!(remove, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
-        panic!("Expected NFS3ERR_NOENT error");
-    }
+    assert!(
+        matches!(remove, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))),
+        "Expected NFS3ERR_NOENT error"
+    );
 
     client.shutdown().await
 }
@@ -457,9 +454,10 @@ async fn test_rmdir_noent() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{rmdir:?}");
-    if !matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))) {
-        panic!("Expected NFS3ERR_NOENT error");
-    }
+    assert!(
+        matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOENT, _))),
+        "Expected NFS3ERR_NOENT error"
+    );
 
     client.shutdown().await
 }
@@ -479,9 +477,10 @@ async fn test_rmdir_notempty() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{rmdir:?}");
-    if !matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTEMPTY, _))) {
-        panic!("Expected NFS3ERR_NOTEMPTY error");
-    }
+    assert!(
+        matches!(rmdir, Nfs3Result::Err((nfsstat3::NFS3ERR_NOTEMPTY, _))),
+        "Expected NFS3ERR_NOTEMPTY error"
+    );
 
     client.shutdown().await
 }
@@ -533,11 +532,10 @@ async fn test_link() -> Result<(), anyhow::Error> {
         })
         .await;
 
-    if let Err(Error::Rpc(RpcError::ProcUnavail)) = link {
-        tracing::info!("Server does not support COMMIT yet");
-    } else {
-        panic!("Expected ProcUnavail error");
-    }
+    assert!(
+        matches!(link, Err(Error::Rpc(RpcError::ProcUnavail))),
+        "Expected ProcUnavail error"
+    );
 
     client.shutdown().await
 }
@@ -576,9 +574,10 @@ async fn test_readdir_too_small() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{readdir:?}");
-    if !matches!(readdir, Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))) {
-        panic!("Expected NFS3ERR_TOOSMALL error");
-    }
+    assert!(
+        matches!(readdir, Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))),
+        "Expected NFS3ERR_TOOSMALL error"
+    );
 
     client.shutdown().await
 }
@@ -619,12 +618,13 @@ async fn test_readdirplus_dircount_too_small() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{readdirplus:?}");
-    if !matches!(
-        readdirplus,
-        Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
-    ) {
-        panic!("Expected NFS3ERR_TOOSMALL error");
-    }
+    assert!(
+        matches!(
+            readdirplus,
+            Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
+        ),
+        "Expected NFS3ERR_TOOSMALL error"
+    );
 
     client.shutdown().await
 }
@@ -645,12 +645,13 @@ async fn test_readdirplus_maxcount_too_small() -> Result<(), anyhow::Error> {
         .await?;
 
     tracing::info!("{readdirplus:?}");
-    if !matches!(
-        readdirplus,
-        Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
-    ) {
-        panic!("Expected NFS3ERR_TOOSMALL error");
-    }
+    assert!(
+        matches!(
+            readdirplus,
+            Nfs3Result::Err((nfsstat3::NFS3ERR_TOOSMALL, _))
+        ),
+        "Expected NFS3ERR_TOOSMALL error"
+    );
 
     client.shutdown().await
 }
@@ -769,6 +770,12 @@ async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
 
     tracing::info!("{commit:?}");
     assert_eq!(write.verf, commit.verf);
+
+    let before_wcc = commit.file_wcc.before.unwrap();
+    assert_eq!(before_wcc.size, DATA.len() as u64);
+    let after_attr = commit.file_wcc.after.unwrap();
+    assert_eq!(after_attr.type_, ftype3::NF3REG);
+    assert_eq!(after_attr.size, DATA.len() as u64);
 
     // Data must be readable after commit.
     let read = client

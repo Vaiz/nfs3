@@ -592,24 +592,25 @@ where
             ));
         }
     };
+    let before = get_wcc_attr(&context, &id)
+        .await
+        .map_or(pre_op_attr::None, pre_op_attr::Some);
     match context.vfs.commit(&id, args.offset, args.count).await {
         Ok(()) => {
-            let file_attr = nfs_option_from_result(context.vfs.getattr(&id).await);
+            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
             debug!("commit success {xid}");
             COMMIT3res::Ok(COMMIT3resok {
-                file_wcc: wcc_data {
-                    before: pre_op_attr::None,
-                    after: file_attr,
-                },
+                file_wcc: wcc_data { before, after },
                 verf: context.file_handle_converter.verf(),
             })
         }
         Err(stat) => {
+            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
             error!("commit error {xid} --> {stat}");
             COMMIT3res::Err((
                 stat,
                 COMMIT3resfail {
-                    file_wcc: wcc_data::default(),
+                    file_wcc: wcc_data { before, after },
                 },
             ))
         }
