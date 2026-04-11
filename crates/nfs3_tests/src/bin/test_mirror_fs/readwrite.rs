@@ -511,18 +511,8 @@ pub async fn commit_writes(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
         })
         .await;
 
-    // Commit may not be supported - handle both procedure unavailable and result errors
-    match commit_res {
-        Err(e) if e.to_string().contains("Procedure unavailable") => {
-            // Commit not supported by this filesystem - this is OK
-        }
-        Ok(commit_result) => {
-            if let COMMIT3res::Ok(resok) = commit_result {
-                let attrs = resok.file_wcc.after.unwrap();
-                assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
-                    .expect("commit file attributes do not match filesystem");
-            }
-        }
-        Err(e) => panic!("Commit operation failed: {}", e),
-    }
+    let resok = commit_res.expect("commit call failed").unwrap();
+    let attrs = resok.file_wcc.after.unwrap();
+    assert_attributes_match(&attrs, &file_path, ftype3::NF3REG)
+        .expect("commit file attributes do not match filesystem");
 }
