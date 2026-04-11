@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.0...nfs3_types-v0.6.0) - 2026-04-11
+
+### Added
+
+- *(nfs3_server)* [**breaking**] add support for unstable writes/commit in NfsFileSystem trait ([#147](https://github.com/Vaiz/nfs3/pull/147))
+
 ## [0.5.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.4.2...nfs3_types-v0.5.0) - 2026-02-14
 
 ### Other
