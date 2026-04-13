@@ -2,10 +2,9 @@ use std::io::Cursor;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nfs3_client::nfs3_types::nfs3::{
-    GETATTR3args, GETATTR3res, GETATTR3resok, NFS_PROGRAM, PROGRAM, READ3args,
-    READDIRPLUS3res, READDIRPLUS3resok, VERSION, WRITE3args, cookieverf3, dirlistplus3,
-    entryplus3, fattr3, filename3, ftype3, nfs_fh3, nfstime3, post_op_attr, post_op_fh3,
-    specdata3, stable_how,
+    GETATTR3args, GETATTR3res, GETATTR3resok, NFS_PROGRAM, PROGRAM, READ3args, READDIRPLUS3res,
+    READDIRPLUS3resok, VERSION, WRITE3args, cookieverf3, dirlistplus3, entryplus3, fattr3,
+    filename3, ftype3, nfs_fh3, nfstime3, post_op_attr, post_op_fh3, specdata3, stable_how,
 };
 use nfs3_client::nfs3_types::rpc::{RPC_VERSION_2, call_body, msg_body, opaque_auth, rpc_msg};
 use nfs3_client::nfs3_types::xdr_codec::{List, Opaque, Pack, Unpack};
@@ -234,10 +233,9 @@ fn bench_pack_getattr3res(c: &mut Criterion) {
     let args = GETATTR3args {
         object: make_fh(32),
     };
-    let res: GETATTR3res =
-        nfs3_client::nfs3_types::nfs3::Nfs3Result::Ok(GETATTR3resok {
-            obj_attributes: make_fattr3(),
-        });
+    let res: GETATTR3res = nfs3_client::nfs3_types::nfs3::Nfs3Result::Ok(GETATTR3resok {
+        obj_attributes: make_fattr3(),
+    });
 
     // Pack the outgoing request too, so we can measure encode on both sides.
     let mut req_buf = Vec::with_capacity(args.packed_size());
@@ -264,10 +262,9 @@ fn bench_pack_getattr3res(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_unpack_getattr3res(c: &mut Criterion) {
-    let res: GETATTR3res =
-        nfs3_client::nfs3_types::nfs3::Nfs3Result::Ok(GETATTR3resok {
-            obj_attributes: make_fattr3(),
-        });
+    let res: GETATTR3res = nfs3_client::nfs3_types::nfs3::Nfs3Result::Ok(GETATTR3resok {
+        obj_attributes: make_fattr3(),
+    });
     let mut raw = Vec::with_capacity(res.packed_size());
     res.pack(&mut raw).unwrap();
 

@@ -64,7 +64,7 @@ fn bench_readdirplus_10k(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_write_throughput(c: &mut Criterion) {
-    use nfs3_client::nfs3_types::nfs3::{Nfs3Result, WRITE3args, stable_how};
+    use nfs3_client::nfs3_types::nfs3::{WRITE3args, stable_how};
     use nfs3_client::nfs3_types::xdr_codec::Opaque;
     use nfs3_tests::JustClient;
 
@@ -86,7 +86,7 @@ fn bench_write_throughput(c: &mut Criterion) {
             rt.block_on(async {
                 for i in 0..iterations {
                     let offset = i * chunk.len() as u64;
-                    let result = ctx
+                    let _result = ctx
                         .client()
                         .write(&WRITE3args {
                             file: fh.clone(),
@@ -96,11 +96,8 @@ fn bench_write_throughput(c: &mut Criterion) {
                             data: Opaque::borrowed(&chunk),
                         })
                         .await
+                        .unwrap()
                         .unwrap();
-                    match result {
-                        Nfs3Result::Ok(_) => {}
-                        Nfs3Result::Err((stat, _)) => panic!("write failed: {stat:?}"),
-                    }
                 }
             });
         });

@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nfs3_client::nfs3_types::nfs3::{
-    GETATTR3args, GETATTR3res, NFS_PROGRAM, PROGRAM, READ3args, REMOVE3args, WRITE3args,
-    VERSION, diropargs3, nfs_fh3, stable_how,
+    GETATTR3args, GETATTR3res, NFS_PROGRAM, PROGRAM, READ3args, REMOVE3args, VERSION, WRITE3args,
+    diropargs3, nfs_fh3, stable_how,
 };
 use nfs3_client::nfs3_types::rpc::{RPC_VERSION_2, call_body, msg_body, opaque_auth, rpc_msg};
 use nfs3_client::nfs3_types::xdr_codec::{Opaque, Void};
@@ -55,7 +55,8 @@ fn bench_pipelined_null(c: &mut Criterion) {
             rt.block_on(async {
                 // Send PIPELINE_DEPTH calls without waiting for replies
                 for i in 0..PIPELINE_DEPTH {
-                    let call = make_call(base_xid.wrapping_add(i as u32), NFS_PROGRAM::NFSPROC3_NULL);
+                    let call =
+                        make_call(base_xid.wrapping_add(i as u32), NFS_PROGRAM::NFSPROC3_NULL);
                     ctx.send_call(&call, &Void).await.unwrap();
                 }
                 // Collect all replies (server may return them in any order)
@@ -84,8 +85,10 @@ fn bench_pipelined_getattr(c: &mut Criterion) {
             base_xid = base_xid.wrapping_add(PIPELINE_DEPTH as u32);
             rt.block_on(async {
                 for i in 0..PIPELINE_DEPTH {
-                    let call =
-                        make_call(base_xid.wrapping_add(i as u32), NFS_PROGRAM::NFSPROC3_GETATTR);
+                    let call = make_call(
+                        base_xid.wrapping_add(i as u32),
+                        NFS_PROGRAM::NFSPROC3_GETATTR,
+                    );
                     ctx.send_call(&call, &args).await.unwrap();
                 }
                 for _ in 0..PIPELINE_DEPTH {
@@ -166,64 +169,57 @@ fn bench_write_read_cycle(c: &mut Criterion) {
             let config = MemFsConfig::default();
             let mut ctx = TestContext::setup_with_config(config, false, tracing::Level::WARN);
             let root = ctx.root_dir().clone();
-            let fh = ctx
-                .just_create(&root, "cycle.bin", &payload)
-                .await
-                .unwrap();
+            let fh = ctx.just_create(&root, "cycle.bin", &payload).await.unwrap();
             (ctx, fh)
         });
 
         group.throughput(Throughput::Bytes(size as u64 * 2)); // write + read
-        group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &size,
-            |b, &sz| {
-                b.iter(|| {
-                    rt.block_on(async {
-                        // Write
-                        ctx.client()
-                            .write(&WRITE3args {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+            b.iter(|| {
+                rt.block_on(async {
+                    // Write
+                    ctx.client()
+                        .write(&WRITE3args {
+                            file: fh.clone(),
+                            offset: 0,
+                            count: sz as u32,
+                            stable: stable_how::UNSTABLE,
+                            data: Opaque::borrowed(&payload),
+                        })
+                        .await
+                        .unwrap();
+                    // Read back
+                    let mut offset = 0u64;
+                    let mut remaining = sz as u64;
+                    while remaining > 0 {
+                        let count = remaining.min(1024 * 1024) as u32;
+                        let res = ctx
+                            .client()
+                            .read(&READ3args {
                                 file: fh.clone(),
-                                offset: 0,
-                                count: sz as u32,
-                                stable: stable_how::UNSTABLE,
-                                data: Opaque::borrowed(&payload),
+                                offset,
+                                count,
                             })
                             .await
                             .unwrap();
-                        // Read back
-                        let mut offset = 0u64;
-                        let mut remaining = sz as u64;
-                        while remaining > 0 {
-                            let count = remaining.min(1024 * 1024) as u32;
-                            let res = ctx
-                                .client()
-                                .read(&READ3args {
-                                    file: fh.clone(),
-                                    offset,
-                                    count,
-                                })
-                                .await
-                                .unwrap();
-                            use nfs3_client::nfs3_types::nfs3::Nfs3Result;
-                            match res {
-                                Nfs3Result::Ok(ok) => {
-                                    let got = ok.count as u64;
-                                    offset += got;
-                                    remaining = remaining.saturating_sub(got);
-                                    if ok.eof {
-                                        break;
-                                    }
-                                }
-                                Nfs3Result::Err((stat, _)) => {
-                                    panic!("read failed: {stat:?}");
+                        use nfs3_client::nfs3_types::nfs3::Nfs3Result;
+                        match res {
+                            Nfs3Result::Ok(ok) => {
+                                let got = ok.count as u64;
+                                offset += got;
+                                remaining = remaining.saturating_sub(got);
+                                if ok.eof {
+                                    break;
                                 }
                             }
+                            Nfs3Result::Err((stat, _)) => {
+                                panic!("read failed: {stat:?}");
+                            }
                         }
-                    });
+                    }
                 });
-            },
-        );
+            });
+        });
     }
     group.finish();
 }
@@ -260,10 +256,7 @@ fn bench_file_lifecycle(c: &mut Criterion) {
             let name = format!("bench_{counter}");
             rt.block_on(async {
                 // Create + write
-                let fh = ctx
-                    .just_create(&root, &name, PAYLOAD)
-                    .await
-                    .unwrap();
+                let fh = ctx.just_create(&root, &name, PAYLOAD).await.unwrap();
 
                 // Read back
                 let _ = ctx.just_read(&fh).await.unwrap();
