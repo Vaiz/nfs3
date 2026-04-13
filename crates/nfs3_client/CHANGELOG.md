@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.8.0...nfs3_client-v0.8.1) - 2026-04-11
-
-### Other
-
-- updated the following local packages: nfs3_types
-
 ## [0.8.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.7.0...nfs3_client-v0.8.0) - 2026-02-14
 
 ### Added

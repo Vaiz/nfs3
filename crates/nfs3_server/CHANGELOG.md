@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.11.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.10.2...nfs3_server-v0.11.0) - 2026-04-11
+## [0.11.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.10.2...nfs3_server-v0.11.0) - 2026-04-13
 
 ### Added
 
