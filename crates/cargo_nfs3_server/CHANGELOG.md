@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- add support for `commit` command. Currently, it always succeeds for existing files since current implementation doesn't support unstable writes ([#147](https://github.com/Vaiz/nfs3/pull/147), [issue #145](https://github.com/Vaiz/nfs3/issues/145))
+- add support for `commit` command. It always succeeds for existing files since current implementation doesn't support unstable writes ([#147](https://github.com/Vaiz/nfs3/pull/147), [issue #145](https://github.com/Vaiz/nfs3/issues/145))
 
 ## [0.2.1](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.0...cargo-nfs3-server-v0.2.1) - 2026-03-31
 
