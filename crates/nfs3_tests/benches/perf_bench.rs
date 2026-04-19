@@ -9,10 +9,6 @@ use nfs3_tests::perf::{ListFs, ReadFs, WriteFs};
 use tokio::io::DuplexStream;
 use tokio::runtime::Runtime;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 struct PerfCtx {
     _server_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
     client: nfs3_client::Nfs3Client<nfs3_client::tokio::TokioIo<DuplexStream>>,
