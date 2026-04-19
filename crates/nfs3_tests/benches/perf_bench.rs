@@ -1,3 +1,8 @@
+#![allow(
+    clippy::await_holding_refcell_ref,
+    reason = "criterion doesn't support closures with lifetime"
+)]
+
 use std::cell::RefCell;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
