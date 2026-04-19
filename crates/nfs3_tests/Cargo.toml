@@ -23,15 +23,7 @@ tracing-subscriber.workspace = true
 criterion = { workspace = true }
 
 [[bench]]
-name = "rpc_bench"
-harness = false
-
-[[bench]]
-name = "codec_bench"
-harness = false
-
-[[bench]]
-name = "e2e_bench"
+name = "perf_bench"
 harness = false
 
 [lints.clippy]

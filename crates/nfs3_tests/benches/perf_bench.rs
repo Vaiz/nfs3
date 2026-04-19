@@ -1,0 +1,178 @@
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use nfs3_client::nfs3_types::nfs3::{
+    READ3args, READDIRPLUS3args, WRITE3args, cookieverf3, nfs_fh3, stable_how,
+};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
+use nfs3_tests::Server;
+use nfs3_tests::perf::{ListFs, ReadFs, WriteFs};
+use tokio::io::DuplexStream;
+use tokio::runtime::Runtime;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+struct PerfCtx {
+    _server_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
+    client: nfs3_client::Nfs3Client<nfs3_client::tokio::TokioIo<DuplexStream>>,
+    root_dir: nfs_fh3,
+}
+
+fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx {
+    nfs3_tests::init_logging(tracing::Level::WARN);
+
+    let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
+    let server = Server::new(server_io, fs).unwrap();
+    let root_dir = server.root_dir();
+    let server_handle = tokio::task::spawn(server.run());
+
+    let client_io = nfs3_client::tokio::TokioIo::new(client_io);
+    let client = nfs3_client::Nfs3Client::new(client_io);
+
+    PerfCtx {
+        _server_handle: server_handle,
+        client,
+        root_dir,
+    }
+}
+
+// The file handle the perf FSes use for the single file (id = 2).
+// We need to get it through the server's handle converter — just use root_dir
+// as lookup always returns the file handle, so we do a lookup at setup time.
+async fn get_file_handle(ctx: &mut PerfCtx) -> nfs_fh3 {
+    use nfs3_client::nfs3_types::nfs3::{LOOKUP3args, diropargs3};
+
+    ctx.client
+        .lookup(&LOOKUP3args {
+            what: diropargs3 {
+                dir: ctx.root_dir.clone(),
+                name: b"file"[..].into(),
+            },
+        })
+        .await
+        .expect("lookup failed")
+        .unwrap()
+        .object
+}
+
+/// bench `read` calls throughput for various sizes
+fn bench_read(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let mut group = c.benchmark_group("perf_read");
+
+    for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let (mut ctx, fh) = rt.block_on(async {
+            let mut ctx = setup_perf(ReadFs::new(size));
+            let fh = get_file_handle(&mut ctx).await;
+            (ctx, fh)
+        });
+
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let ok = ctx
+                        .client
+                        .read(&READ3args {
+                            file: fh.clone(),
+                            offset: 0,
+                            count: sz as u32,
+                        })
+                        .await
+                        .unwrap()
+                        .unwrap();
+
+                    debug_assert_eq!(ok.count as usize, sz);
+                });
+            });
+        });
+    }
+    group.finish();
+}
+
+/// bench `write` calls throughput for various sizes
+fn bench_write(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let mut group = c.benchmark_group("perf_write");
+
+    for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let payload = vec![0xBB_u8; size];
+
+        let (mut ctx, fh) = rt.block_on(async {
+            let mut ctx = setup_perf(WriteFs::new(size as u64));
+            let fh = get_file_handle(&mut ctx).await;
+            (ctx, fh)
+        });
+
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let ok = ctx
+                        .client
+                        .write(&WRITE3args {
+                            file: fh.clone(),
+                            offset: 0,
+                            count: sz as u32,
+                            stable: stable_how::UNSTABLE,
+                            data: Opaque::borrowed(&payload),
+                        })
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    debug_assert_eq!(ok.count as usize, sz);
+                });
+            });
+        });
+    }
+    group.finish();
+}
+
+/// bench `readdirplus` calls throughput for various sizes
+fn bench_readdirplus(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let mut group = c.benchmark_group("perf_readdirplus");
+
+    for entry_count in [100_usize, 1_000, 10_000] {
+        let mut ctx = rt.block_on(async { setup_perf(ListFs::new(entry_count)) });
+
+        group.bench_with_input(
+            BenchmarkId::from_parameter(entry_count),
+            &entry_count,
+            |b, _| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        let mut cookie: u64 = 0;
+                        let mut total = 0usize;
+                        loop {
+                            let ok = ctx
+                                .client
+                                .readdirplus(&READDIRPLUS3args {
+                                    dir: ctx.root_dir.clone(),
+                                    cookie,
+                                    cookieverf: cookieverf3::default(),
+                                    dircount: 1024 * 1024,
+                                    maxcount: 1024 * 1024,
+                                })
+                                .await
+                                .unwrap()
+                                .unwrap();
+
+                            let entries = &ok.reply.entries;
+                            total += entries.0.len();
+                            cookie = entries.0.last().map(|e| e.cookie).unwrap_or_default();
+                            if ok.reply.eof {
+                                break;
+                            }
+                        }
+                        debug_assert_eq!(total, entry_count);
+                    });
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_read, bench_write, bench_readdirplus);
+criterion_main!(benches);
