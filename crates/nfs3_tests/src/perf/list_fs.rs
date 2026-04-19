@@ -1,6 +1,6 @@
 use nfs3_server::vfs::{
-    DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem,
-    ReadDirPlusIterator, VFSCapabilities,
+    DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
+    VFSCapabilities,
 };
 
 use crate::perf::nfs3_types::nfs3::{

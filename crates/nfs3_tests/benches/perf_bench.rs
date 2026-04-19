@@ -1,6 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nfs3_client::nfs3_types::nfs3::{
-    READ3args, READDIRPLUS3args, WRITE3args, cookieverf3, nfs_fh3, stable_how,
+    GETATTR3args, LOOKUP3args, READ3args, READDIRPLUS3args, WRITE3args, cookieverf3, diropargs3,
+    nfs_fh3, stable_how,
 };
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::Server;
@@ -53,6 +54,73 @@ async fn get_file_handle(ctx: &mut PerfCtx) -> nfs_fh3 {
         .expect("lookup failed")
         .unwrap()
         .object
+}
+
+/// GETATTR on root and on a file handle — the most frequently called NFS3 operation.
+fn bench_getattr(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let (mut ctx, fh) = rt.block_on(async {
+        let mut ctx = setup_perf(ReadFs::new(64));
+        let fh = get_file_handle(&mut ctx).await;
+        (ctx, fh)
+    });
+
+    let mut group = c.benchmark_group("perf_getattr");
+    group.bench_function("null_baseline", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                ctx.client.null().await.unwrap();
+            });
+        });
+    });
+    group.bench_function("root", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                ctx.client
+                    .getattr(&GETATTR3args {
+                        object: ctx.root_dir.clone(),
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+            });
+        });
+    });
+    group.bench_function("file", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                ctx.client
+                    .getattr(&GETATTR3args { object: fh.clone() })
+                    .await
+                    .unwrap()
+                    .unwrap();
+            });
+        });
+    });
+    group.finish();
+}
+
+/// LOOKUP by name from root — exercises name resolution path.
+fn bench_lookup(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let mut ctx = rt.block_on(async { setup_perf(ReadFs::new(64)) });
+
+    c.bench_function("perf_lookup", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                ctx.client
+                    .lookup(&LOOKUP3args {
+                        what: diropargs3 {
+                            dir: ctx.root_dir.clone(),
+                            name: b"file"[..].into(),
+                        },
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+            });
+        });
+    });
 }
 
 /// bench `read` calls throughput for various sizes
@@ -174,5 +242,12 @@ fn bench_readdirplus(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_read, bench_write, bench_readdirplus);
+criterion_group!(
+    benches,
+    bench_getattr,
+    bench_lookup,
+    bench_read,
+    bench_write,
+    bench_readdirplus
+);
 criterion_main!(benches);
