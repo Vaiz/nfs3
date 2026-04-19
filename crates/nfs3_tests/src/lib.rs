@@ -1,4 +1,5 @@
 mod just_client;
+pub mod perf;
 pub mod rpc_tests;
 mod server;
 
