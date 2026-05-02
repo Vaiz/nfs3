@@ -3,11 +3,11 @@ use std::fmt;
 
 use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 
-/// RPC transport error.
+/// Error from an RPC call.
 ///
-/// Returned by methods that only perform RPC calls, such as
-/// [`RpcClient::call`](crate::rpc::RpcClient::call) and all [`Nfs3Client`](crate::Nfs3Client)
-/// operations.
+/// Covers I/O failures, XDR encoding/decoding issues, and RPC protocol errors.
+/// Returned by [`RpcClient::call`](crate::rpc::RpcClient::call) and all
+/// [`Nfs3Client`](crate::Nfs3Client) operations.
 #[derive(Debug)]
 pub enum Error {
     /// An I/O error occurred during network communication.
