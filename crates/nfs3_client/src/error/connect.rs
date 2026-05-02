@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use super::{MountError, PortmapError};
+use super::{MountError, PortmapError, RpcError};
 
 /// Error when establishing an NFS3 connection.
 ///
@@ -9,16 +9,22 @@ use super::{MountError, PortmapError};
 #[derive(Debug)]
 pub enum ConnectError {
     Io(std::io::Error),
-    Portmap(PortmapError),
-    Mount(MountError),
+    Xdr(nfs3_types::xdr_codec::Error),
+    Rpc(RpcError),
+    ProgramUnavailable,
+    InvalidPortValue(u32),
+    MountStatus(nfs3_types::mount::mountstat3),
 }
 
 impl fmt::Display for ConnectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(e) => e.fmt(f),
-            Self::Portmap(e) => e.fmt(f),
-            Self::Mount(e) => e.fmt(f),
+            Self::Xdr(e) => e.fmt(f),
+            Self::Rpc(e) => e.fmt(f),
+            Self::ProgramUnavailable => write!(f, "Program unavailable"),
+            Self::InvalidPortValue(value) => write!(f, "Invalid port value: {value}"),
+            Self::MountStatus(e) => e.fmt(f),
         }
     }
 }
@@ -27,8 +33,9 @@ impl StdError for ConnectError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io(e) => Some(e),
-            Self::Portmap(e) => Some(e),
-            Self::Mount(e) => Some(e),
+            Self::Xdr(e) => Some(e),
+            Self::Rpc(e) => Some(e),
+            Self::ProgramUnavailable | Self::InvalidPortValue(_) | Self::MountStatus(_) => None,
         }
     }
 }
@@ -41,12 +48,23 @@ impl From<std::io::Error> for ConnectError {
 
 impl From<PortmapError> for ConnectError {
     fn from(e: PortmapError) -> Self {
-        Self::Portmap(e)
+        match e {
+            PortmapError::Io(e) => Self::Io(e),
+            PortmapError::Xdr(e) => Self::Xdr(e),
+            PortmapError::Rpc(e) => Self::Rpc(e),
+            PortmapError::ProgramUnavailable => Self::ProgramUnavailable,
+            PortmapError::InvalidPortValue(v) => Self::InvalidPortValue(v),
+        }
     }
 }
 
 impl From<MountError> for ConnectError {
     fn from(e: MountError) -> Self {
-        Self::Mount(e)
+        match e {
+            MountError::Io(e) => Self::Io(e),
+            MountError::Xdr(e) => Self::Xdr(e),
+            MountError::Rpc(e) => Self::Rpc(e),
+            MountError::Status(s) => Self::MountStatus(s),
+        }
     }
 }
