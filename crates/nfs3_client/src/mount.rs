@@ -53,7 +53,7 @@ where
 
         match result {
             mountres3::Ok(ok) => Ok(ok),
-            mountres3::Err(err) => Err(crate::error::MountError::Status(err)),
+            mountres3::Err(err) => Err(crate::error::MountError::Denied(err)),
         }
     }
 

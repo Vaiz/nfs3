@@ -11,7 +11,7 @@ pub enum MountError {
     Io(std::io::Error),
     Xdr(nfs3_types::xdr_codec::Error),
     Rpc(RpcError),
-    Status(nfs3_types::mount::mountstat3),
+    Denied(nfs3_types::mount::mountstat3),
 }
 
 impl fmt::Display for MountError {
@@ -20,7 +20,7 @@ impl fmt::Display for MountError {
             Self::Io(e) => e.fmt(f),
             Self::Xdr(e) => e.fmt(f),
             Self::Rpc(e) => e.fmt(f),
-            Self::Status(e) => e.fmt(f),
+            Self::Denied(e) => e.fmt(f),
         }
     }
 }
@@ -31,7 +31,7 @@ impl StdError for MountError {
             Self::Io(e) => Some(e),
             Self::Xdr(e) => Some(e),
             Self::Rpc(e) => Some(e),
-            Self::Status(_) => None,
+            Self::Denied(_) => None,
         }
     }
 }

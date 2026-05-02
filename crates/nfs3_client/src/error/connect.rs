@@ -13,7 +13,7 @@ pub enum ConnectError {
     Rpc(RpcError),
     ProgramUnavailable,
     InvalidPortValue(u32),
-    MountStatus(nfs3_types::mount::mountstat3),
+    MountDenied(nfs3_types::mount::mountstat3),
 }
 
 impl fmt::Display for ConnectError {
@@ -24,7 +24,7 @@ impl fmt::Display for ConnectError {
             Self::Rpc(e) => e.fmt(f),
             Self::ProgramUnavailable => write!(f, "Program unavailable"),
             Self::InvalidPortValue(value) => write!(f, "Invalid port value: {value}"),
-            Self::MountStatus(e) => e.fmt(f),
+            Self::MountDenied(e) => e.fmt(f),
         }
     }
 }
@@ -35,7 +35,7 @@ impl StdError for ConnectError {
             Self::Io(e) => Some(e),
             Self::Xdr(e) => Some(e),
             Self::Rpc(e) => Some(e),
-            Self::ProgramUnavailable | Self::InvalidPortValue(_) | Self::MountStatus(_) => None,
+            Self::ProgramUnavailable | Self::InvalidPortValue(_) | Self::MountDenied(_) => None,
         }
     }
 }
@@ -64,7 +64,7 @@ impl From<MountError> for ConnectError {
             MountError::Io(e) => Self::Io(e),
             MountError::Xdr(e) => Self::Xdr(e),
             MountError::Rpc(e) => Self::Rpc(e),
-            MountError::Status(s) => Self::MountStatus(s),
+            MountError::Denied(s) => Self::MountDenied(s),
         }
     }
 }
