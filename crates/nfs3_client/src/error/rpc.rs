@@ -59,18 +59,49 @@ impl From<rejected_reply> for Error {
     }
 }
 
+/// RPC protocol error.
+///
+/// These errors originate from the RPC layer itself, either locally detected
+/// (e.g. wrong XID) or reported by the server in its reply
+/// (e.g. [`AUTH_ERROR`](rejected_reply::AUTH_ERROR), [`PROG_MISMATCH`](accept_stat_data::PROG_MISMATCH)).
 #[derive(Debug)]
 pub enum RpcError {
+    /// Received a CALL message when a REPLY was expected.
     UnexpectedCall,
+    /// Server rejected the request due to an authentication failure.
     Auth(auth_stat),
-    RpcMismatch { low: u32, high: u32 },
+    /// Server does not support the requested RPC version.
+    RpcMismatch {
+        /// Lowest supported RPC version.
+        low: u32,
+        /// Highest supported RPC version.
+        high: u32,
+    },
+    /// The serialized RPC message length is not a multiple of 4 bytes.
     WrongLength,
+    /// The reply XID does not match the request XID.
     UnexpectedXid,
-    NotFullyParsed { buf: Vec<u8>, pos: u64 },
+    /// The reply was not fully consumed after decoding.
+    NotFullyParsed {
+        /// Raw reply buffer.
+        buf: Vec<u8>,
+        /// Cursor position where parsing stopped.
+        pos: u64,
+    },
+    /// The requested program is not available on the server.
     ProgUnavail,
-    ProgMismatch { low: u32, high: u32 },
+    /// The requested program version is not supported.
+    ProgMismatch {
+        /// Lowest supported program version.
+        low: u32,
+        /// Highest supported program version.
+        high: u32,
+    },
+    /// The requested procedure is not available.
     ProcUnavail,
+    /// The server could not decode the procedure arguments.
     GarbageArgs,
+    /// An unspecified server-side system error occurred.
     SystemErr,
 }
 
