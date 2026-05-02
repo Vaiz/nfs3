@@ -1,18 +1,18 @@
-//! Error types
-
 use std::error::Error as StdError;
 use std::fmt;
 
 use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 
+/// RPC transport error.
+///
+/// Returned by methods that only perform RPC calls, such as
+/// [`RpcClient::call`](crate::rpc::RpcClient::call) and all [`Nfs3Client`](crate::Nfs3Client)
+/// operations.
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Xdr(nfs3_types::xdr_codec::Error),
     Rpc(RpcError),
-    Portmap(PortmapError),
-    MountError(nfs3_types::mount::mountstat3),
-    NfsError(nfs3_types::nfs3::nfsstat3),
 }
 
 impl fmt::Display for Error {
@@ -21,14 +21,19 @@ impl fmt::Display for Error {
             Self::Io(e) => e.fmt(f),
             Self::Xdr(e) => e.fmt(f),
             Self::Rpc(e) => e.fmt(f),
-            Self::Portmap(e) => e.fmt(f),
-            Self::MountError(e) => e.fmt(f),
-            Self::NfsError(e) => e.fmt(f),
         }
     }
 }
 
-impl StdError for Error {}
+impl StdError for Error {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Xdr(e) => Some(e),
+            Self::Rpc(e) => Some(e),
+        }
+    }
+}
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
@@ -114,28 +119,5 @@ impl TryFrom<accept_stat_data> for RpcError {
             accept_stat_data::GARBAGE_ARGS => Ok(Self::GarbageArgs),
             accept_stat_data::SYSTEM_ERR => Ok(Self::SystemErr),
         }
-    }
-}
-
-#[derive(Debug)]
-pub enum PortmapError {
-    ProgramUnavailable,
-    InvalidPortValue(u32),
-}
-
-impl fmt::Display for PortmapError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ProgramUnavailable => write!(f, "Program unavailable"),
-            Self::InvalidPortValue(value) => write!(f, "Invalid port value: {value}"),
-        }
-    }
-}
-
-impl StdError for PortmapError {}
-
-impl From<PortmapError> for Error {
-    fn from(e: PortmapError) -> Self {
-        Self::Portmap(e)
     }
 }

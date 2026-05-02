@@ -8,7 +8,7 @@ use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::Opaque;
 
-use crate::error::Error;
+use crate::error::{ConnectError, Error};
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::{MountClient, Nfs3Client, mount, portmapper};
 
@@ -141,7 +141,7 @@ where
     }
 
     /// Mounts the filesystem and returns the connection.
-    pub async fn mount(self) -> Result<Nfs3Connection<S>, Error> {
+    pub async fn mount(self) -> Result<Nfs3Connection<S>, ConnectError> {
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
         let io = self.connect(mount_port).await?;
@@ -164,7 +164,7 @@ where
         })
     }
 
-    async fn resolve_ports(&self) -> Result<(u16, u16), Error> {
+    async fn resolve_ports(&self) -> Result<(u16, u16), ConnectError> {
         if let (Some(mount_port), Some(nfs3_port)) = (self.mount_port, self.nfs3_port) {
             return Ok((mount_port, nfs3_port));
         }

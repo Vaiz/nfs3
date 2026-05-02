@@ -27,7 +27,11 @@ where
         Ok(())
     }
 
-    pub async fn getport(&mut self, prog: u32, vers: u32) -> Result<u16, crate::error::Error> {
+    pub async fn getport(
+        &mut self,
+        prog: u32,
+        vers: u32,
+    ) -> Result<u16, crate::error::PortmapError> {
         let args = mapping {
             prog,
             vers,
@@ -41,9 +45,9 @@ where
 
         let port_u16: Result<u16, _> = port.try_into();
         match port_u16 {
-            Ok(0) => Err(crate::error::PortmapError::ProgramUnavailable.into()),
+            Ok(0) => Err(crate::error::PortmapError::ProgramUnavailable),
             Ok(port) => Ok(port),
-            Err(_) => Err(crate::error::PortmapError::InvalidPortValue(port).into()),
+            Err(_) => Err(crate::error::PortmapError::InvalidPortValue(port)),
         }
     }
 
