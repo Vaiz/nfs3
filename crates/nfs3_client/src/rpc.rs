@@ -58,7 +58,7 @@ where
     /// connection can be kept.
     #[expect(
         clippy::similar_names,
-        reason = "prog and proc are parts of call_body struct"
+        reason = "prog and proc are fields of call_body"
     )]
     pub async fn call<C, R>(
         &mut self,
