@@ -8,9 +8,13 @@ use super::{Error, RpcError};
 /// Returned by [`MountClient::mnt`](crate::MountClient::mnt).
 #[derive(Debug)]
 pub enum MountError {
+    /// An I/O error occurred during network communication.
     Io(std::io::Error),
+    /// Failed to serialize or deserialize an XDR-encoded message.
     Xdr(nfs3_types::xdr_codec::Error),
+    /// The RPC layer reported a protocol-level error.
     Rpc(RpcError),
+    /// The mount server denied the request with the given status code.
     Denied(nfs3_types::mount::mountstat3),
 }
 

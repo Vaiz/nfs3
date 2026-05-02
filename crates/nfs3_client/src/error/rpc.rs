@@ -10,8 +10,11 @@ use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 /// operations.
 #[derive(Debug)]
 pub enum Error {
+    /// An I/O error occurred during network communication.
     Io(std::io::Error),
+    /// Failed to serialize or deserialize an XDR-encoded message.
     Xdr(nfs3_types::xdr_codec::Error),
+    /// The RPC layer reported a protocol-level error.
     Rpc(RpcError),
 }
 

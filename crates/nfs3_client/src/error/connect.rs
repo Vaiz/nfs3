@@ -8,11 +8,17 @@ use super::{MountError, PortmapError, RpcError};
 /// Returned by [`Nfs3ConnectionBuilder::mount`](crate::Nfs3ConnectionBuilder::mount).
 #[derive(Debug)]
 pub enum ConnectError {
+    /// An I/O error occurred during network communication.
     Io(std::io::Error),
+    /// Failed to serialize or deserialize an XDR-encoded message.
     Xdr(nfs3_types::xdr_codec::Error),
+    /// The RPC layer reported a protocol-level error.
     Rpc(RpcError),
+    /// The requested program is not registered with the portmapper.
     ProgramUnavailable,
+    /// The portmapper returned a port number that does not fit in a `u16`.
     InvalidPortValue(u32),
+    /// The mount server denied the request with the given status code.
     MountDenied(nfs3_types::mount::mountstat3),
 }
 

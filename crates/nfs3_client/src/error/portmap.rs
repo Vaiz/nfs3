@@ -8,10 +8,15 @@ use super::{Error, RpcError};
 /// Returned by [`PortmapperClient::getport`](crate::PortmapperClient::getport).
 #[derive(Debug)]
 pub enum PortmapError {
+    /// An I/O error occurred during network communication.
     Io(std::io::Error),
+    /// Failed to serialize or deserialize an XDR-encoded message.
     Xdr(nfs3_types::xdr_codec::Error),
+    /// The RPC layer reported a protocol-level error.
     Rpc(RpcError),
+    /// The requested program is not registered with the portmapper.
     ProgramUnavailable,
+    /// The portmapper returned a port number that does not fit in a `u16`.
     InvalidPortValue(u32),
 }
 
