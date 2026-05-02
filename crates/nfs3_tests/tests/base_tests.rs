@@ -390,7 +390,7 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
 
     tracing::info!("{mknod:?}");
     assert!(
-        matches!(mknod, Err(Error::Rpc(RpcError::ProcUnavail))),
+        matches!(mknod, Err(Error::ProcUnavail)),
         "Expected ProcUnavail error"
     );
 
@@ -533,7 +533,7 @@ async fn test_link() -> Result<(), anyhow::Error> {
         .await;
 
     assert!(
-        matches!(link, Err(Error::Rpc(RpcError::ProcUnavail))),
+        matches!(link, Err(Error::ProcUnavail)),
         "Expected ProcUnavail error"
     );
 

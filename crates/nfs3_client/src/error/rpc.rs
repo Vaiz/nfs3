@@ -3,72 +3,20 @@ use std::fmt;
 
 use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 
+/// Backward-compatible alias for [`RpcError`].
+pub type Error = RpcError;
+
 /// Error from an RPC call.
 ///
 /// Covers I/O failures, XDR encoding/decoding issues, and RPC protocol errors.
 /// Returned by [`RpcClient::call`](crate::rpc::RpcClient::call) and all
 /// [`Nfs3Client`](crate::Nfs3Client) operations.
 #[derive(Debug)]
-pub enum Error {
+pub enum RpcError {
     /// An I/O error occurred during network communication.
     Io(std::io::Error),
     /// Failed to serialize or deserialize an XDR-encoded message.
     Xdr(nfs3_types::xdr_codec::Error),
-    /// The RPC layer reported a protocol-level error.
-    Rpc(RpcError),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io(e) => e.fmt(f),
-            Self::Xdr(e) => e.fmt(f),
-            Self::Rpc(e) => e.fmt(f),
-        }
-    }
-}
-
-impl StdError for Error {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::Xdr(e) => Some(e),
-            Self::Rpc(e) => Some(e),
-        }
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<nfs3_types::xdr_codec::Error> for Error {
-    fn from(e: nfs3_types::xdr_codec::Error) -> Self {
-        Self::Xdr(e)
-    }
-}
-
-impl From<RpcError> for Error {
-    fn from(e: RpcError) -> Self {
-        Self::Rpc(e)
-    }
-}
-
-impl From<rejected_reply> for Error {
-    fn from(e: rejected_reply) -> Self {
-        Self::Rpc(e.into())
-    }
-}
-
-/// RPC protocol error.
-///
-/// These errors originate from the RPC layer itself, either locally detected
-/// (e.g. wrong XID) or reported by the server in its reply
-/// (e.g. [`AUTH_ERROR`](rejected_reply::AUTH_ERROR), [`PROG_MISMATCH`](accept_stat_data::PROG_MISMATCH)).
-#[derive(Debug)]
-pub enum RpcError {
     /// Received a CALL message when a REPLY was expected.
     UnexpectedCall,
     /// Server rejected the request due to an authentication failure.
@@ -111,6 +59,8 @@ pub enum RpcError {
 impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Io(e) => e.fmt(f),
+            Self::Xdr(e) => e.fmt(f),
             Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
             Self::Auth(stat) => write!(f, "Authentication error: {stat}"),
             Self::RpcMismatch { low, high } => {
@@ -130,7 +80,27 @@ impl fmt::Display for RpcError {
     }
 }
 
-impl StdError for RpcError {}
+impl StdError for RpcError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Xdr(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for RpcError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<nfs3_types::xdr_codec::Error> for RpcError {
+    fn from(e: nfs3_types::xdr_codec::Error) -> Self {
+        Self::Xdr(e)
+    }
+}
 
 impl From<rejected_reply> for RpcError {
     fn from(e: rejected_reply) -> Self {

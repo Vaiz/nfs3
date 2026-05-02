@@ -88,7 +88,7 @@ where
     {
         let total_len = msg.packed_size() + args.packed_size();
         if !total_len.is_multiple_of(4) {
-            return Err(RpcError::WrongLength.into());
+            return Err(RpcError::WrongLength);
         }
 
         let fragment_header = nfs3_types::rpc::fragment_header::new(
@@ -100,7 +100,7 @@ where
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
         if buf.len() - 4 != total_len {
-            return Err(RpcError::WrongLength.into());
+            return Err(RpcError::WrongLength);
         }
         io.async_write_all(&buf).await?;
         Ok(())
@@ -126,19 +126,18 @@ where
         let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;
 
         if resp_msg.xid != xid {
-            return Err(RpcError::UnexpectedXid.into());
+            return Err(RpcError::UnexpectedXid);
         }
 
         let reply = match resp_msg.body {
             msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
             msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(r.into()),
-            msg_body::CALL(_) => return Err(RpcError::UnexpectedCall.into()),
+            msg_body::CALL(_) => return Err(RpcError::UnexpectedCall),
         };
 
         if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
             return Err(crate::error::RpcError::try_from(reply.reply_data)
-                .expect("accept_stat_data::SUCCESS is not a valid error")
-                .into());
+                .expect("accept_stat_data::SUCCESS is not a valid error"));
         }
 
         let (final_value, _) = T::unpack(&mut cursor)?;
@@ -147,8 +146,7 @@ where
             return Err(RpcError::NotFullyParsed {
                 buf: cursor.into_inner(),
                 pos,
-            }
-            .into());
+            });
         }
         Ok(final_value)
     }
