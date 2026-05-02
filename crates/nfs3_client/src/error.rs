@@ -3,7 +3,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use nfs3_types::rpc::{accept_stat_data, rejected_reply};
+use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 
 #[derive(Debug)]
 pub enum Error {
@@ -22,8 +22,8 @@ impl fmt::Display for Error {
             Self::Xdr(e) => e.fmt(f),
             Self::Rpc(e) => e.fmt(f),
             Self::Portmap(e) => e.fmt(f),
-            Self::MountError(e) => (*e as u32).fmt(f),
-            Self::NfsError(e) => (*e as u32).fmt(f),
+            Self::MountError(e) => e.fmt(f),
+            Self::NfsError(e) => e.fmt(f),
         }
     }
 }
@@ -57,7 +57,7 @@ impl From<rejected_reply> for Error {
 #[derive(Debug)]
 pub enum RpcError {
     UnexpectedCall,
-    Auth,
+    Auth(auth_stat),
     RpcMismatch { low: u32, high: u32 },
     WrongLength,
     UnexpectedXid,
@@ -73,7 +73,7 @@ impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
-            Self::Auth => write!(f, "Authentication error"),
+            Self::Auth(stat) => write!(f, "Authentication error: {stat}"),
             Self::RpcMismatch { low, high } => {
                 write!(f, "RPC version mismatch (supported: {low}..={high})")
             }
@@ -97,7 +97,7 @@ impl From<rejected_reply> for RpcError {
     fn from(e: rejected_reply) -> Self {
         match e {
             rejected_reply::RPC_MISMATCH { low, high } => Self::RpcMismatch { low, high },
-            rejected_reply::AUTH_ERROR(_) => Self::Auth,
+            rejected_reply::AUTH_ERROR(stat) => Self::Auth(stat),
         }
     }
 }
