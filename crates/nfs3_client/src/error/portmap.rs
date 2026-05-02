@@ -40,3 +40,15 @@ impl From<RpcError> for PortmapError {
         Self::Rpc(e)
     }
 }
+
+impl PortmapError {
+    /// Returns `true` if the connection that produced this error is still in
+    /// a clean state and may be reused.
+    #[must_use]
+    pub const fn is_connection_reusable(&self) -> bool {
+        match self {
+            Self::Rpc(e) => e.is_connection_reusable(),
+            Self::ProgramUnavailable | Self::InvalidPortValue(_) => true,
+        }
+    }
+}

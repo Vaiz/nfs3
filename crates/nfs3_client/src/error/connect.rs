@@ -53,3 +53,16 @@ impl From<MountError> for ConnectError {
         Self::Mount(e)
     }
 }
+
+impl ConnectError {
+    /// Returns `true` if the connection that produced this error is still in
+    /// a clean state and may be reused.
+    #[must_use]
+    pub const fn is_connection_reusable(&self) -> bool {
+        match self {
+            Self::Io(_) => false,
+            Self::Portmap(e) => e.is_connection_reusable(),
+            Self::Mount(e) => e.is_connection_reusable(),
+        }
+    }
+}
