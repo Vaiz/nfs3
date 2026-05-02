@@ -50,9 +50,16 @@ where
 
     /// Call an RPC procedure
     ///
-    /// This method uses `Pack` trait to serialize the arguments and `Unpack` trait to deserialize
-    /// the reply.
-    #[allow(clippy::similar_names)] // prog and proc are part of call_body struct
+    /// # Errors and connection state
+    ///
+    /// On a successful return the connection is in a clean state and may be
+    /// reused for the next call. When an error is returned, use
+    /// [`RpcError::is_connection_reusable`] to decide whether the
+    /// connection can be kept.
+    #[expect(
+        clippy::similar_names,
+        reason = "prog and proc are fields of call_body"
+    )]
     pub async fn call<C, R>(
         &mut self,
         prog: u32,

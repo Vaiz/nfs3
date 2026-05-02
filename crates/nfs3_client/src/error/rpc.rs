@@ -8,6 +8,12 @@ use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 /// Covers I/O failures, XDR encoding/decoding issues, and RPC protocol errors.
 /// Returned by [`RpcClient::call`](crate::rpc::RpcClient::call) and all
 /// [`Nfs3Client`](crate::Nfs3Client) operations.
+///
+/// # Connection state after an error
+///
+/// Not every error leaves the underlying transport in the same state.
+/// Use [`is_connection_reusable`](Self::is_connection_reusable) to decide
+/// whether the connection can be kept.
 #[derive(Debug)]
 pub enum RpcError {
     /// An I/O error occurred during network communication.
@@ -127,5 +133,25 @@ impl TryFrom<accept_stat_data> for RpcError {
             accept_stat_data::GARBAGE_ARGS => Ok(Self::GarbageArgs),
             accept_stat_data::SYSTEM_ERR => Ok(Self::SystemErr),
         }
+    }
+}
+
+impl RpcError {
+    /// Returns `true` if the connection that produced this error is still in
+    /// a clean state and may be reused for the next call.
+    ///
+    /// Returns `false` only for [`Io`](Self::Io) (transport is dead) and
+    /// [`FragmentedReply`](Self::FragmentedReply) (unread fragment data left
+    /// in the socket).
+    ///
+    /// All other errors — including [`Xdr`](Self::Xdr),
+    /// [`WrongLength`](Self::WrongLength), [`NotFullyParsed`](Self::NotFullyParsed),
+    /// and [`UnexpectedXid`](Self::UnexpectedXid) — are produced while
+    /// operating on in-memory buffers after the full fragment has already been
+    /// consumed from the wire, so the transport remains at a clean message
+    /// boundary.
+    #[must_use]
+    pub const fn is_connection_reusable(&self) -> bool {
+        !matches!(self, Self::Io(_) | Self::FragmentedReply)
     }
 }
