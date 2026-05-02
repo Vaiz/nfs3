@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.1...nfs3_types-v0.6.0) - 2026-05-02
+
+### Added
+
+- *(nfs3_client)* [**breaking**] split error type into more specific errors ([#159](https://github.com/Vaiz/nfs3/pull/159))
+
 ## [0.5.1](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.0...nfs3_types-v0.6.0) - 2026-04-13
 
 ### Added
