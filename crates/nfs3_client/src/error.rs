@@ -58,12 +58,12 @@ impl From<rejected_reply> for Error {
 pub enum RpcError {
     UnexpectedCall,
     Auth,
-    RpcMismatch,
+    RpcMismatch { low: u32, high: u32 },
     WrongLength,
     UnexpectedXid,
     NotFullyParsed { buf: Vec<u8>, pos: u64 },
     ProgUnavail,
-    ProgMismatch,
+    ProgMismatch { low: u32, high: u32 },
     ProcUnavail,
     GarbageArgs,
     SystemErr,
@@ -74,12 +74,16 @@ impl fmt::Display for RpcError {
         match self {
             Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
             Self::Auth => write!(f, "Authentication error"),
-            Self::RpcMismatch => write!(f, "RPC version mismatch"),
+            Self::RpcMismatch { low, high } => {
+                write!(f, "RPC version mismatch (supported: {low}..={high})")
+            }
             Self::WrongLength => write!(f, "Wrong length in RPC message"),
             Self::UnexpectedXid => write!(f, "Unexpected XID in RPC reply"),
             Self::NotFullyParsed { .. } => write!(f, "Not fully parsed"),
             Self::ProgUnavail => write!(f, "Program unavailable"),
-            Self::ProgMismatch => write!(f, "Program mismatch"),
+            Self::ProgMismatch { low, high } => {
+                write!(f, "Program mismatch (supported: {low}..={high})")
+            }
             Self::ProcUnavail => write!(f, "Procedure unavailable"),
             Self::GarbageArgs => write!(f, "Garbage arguments"),
             Self::SystemErr => write!(f, "System error"),
@@ -92,7 +96,7 @@ impl StdError for RpcError {}
 impl From<rejected_reply> for RpcError {
     fn from(e: rejected_reply) -> Self {
         match e {
-            rejected_reply::RPC_MISMATCH { .. } => Self::RpcMismatch,
+            rejected_reply::RPC_MISMATCH { low, high } => Self::RpcMismatch { low, high },
             rejected_reply::AUTH_ERROR(_) => Self::Auth,
         }
     }
@@ -105,7 +109,7 @@ impl TryFrom<accept_stat_data> for RpcError {
         match value {
             accept_stat_data::SUCCESS => Err(()),
             accept_stat_data::PROG_UNAVAIL => Ok(Self::ProgUnavail),
-            accept_stat_data::PROG_MISMATCH { .. } => Ok(Self::ProgMismatch),
+            accept_stat_data::PROG_MISMATCH { low, high } => Ok(Self::ProgMismatch { low, high }),
             accept_stat_data::PROC_UNAVAIL => Ok(Self::ProcUnavail),
             accept_stat_data::GARBAGE_ARGS => Ok(Self::GarbageArgs),
             accept_stat_data::SYSTEM_ERR => Ok(Self::SystemErr),
