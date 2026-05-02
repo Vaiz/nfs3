@@ -113,10 +113,9 @@ where
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;
         let fragment_header: fragment_header = buf.into();
-        assert!(
-            fragment_header.eof(),
-            "Fragment header does not have EOF flag"
-        );
+        if !fragment_header.eof() {
+            return Err(RpcError::FragmentedReply);
+        }
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];

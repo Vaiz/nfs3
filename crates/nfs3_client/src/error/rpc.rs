@@ -49,6 +49,12 @@ pub enum RpcError {
     ProcUnavail,
     /// The server could not decode the procedure arguments.
     GarbageArgs,
+    /// The server sent a fragmented reply, which is not supported.
+    ///
+    /// Handling fragmented replies would require significant changes to the
+    /// receive logic because subsequent fragments are not guaranteed to arrive
+    /// immediately after the first one.
+    FragmentedReply,
     /// An unspecified server-side system error occurred.
     SystemErr,
 }
@@ -72,6 +78,7 @@ impl fmt::Display for RpcError {
             }
             Self::ProcUnavail => write!(f, "Procedure unavailable"),
             Self::GarbageArgs => write!(f, "Garbage arguments"),
+            Self::FragmentedReply => write!(f, "Fragmented replies are not supported"),
             Self::SystemErr => write!(f, "System error"),
         }
     }
