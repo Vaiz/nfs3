@@ -3,7 +3,7 @@ use std::env;
 use nfs3_client::PortmapError;
 use nfs3_client::nfs3_types::mount::{PROGRAM as MOUNT_PROGRAM, VERSION as MOUNT_VERSION};
 use nfs3_client::nfs3_types::nfs3::{PROGRAM as NFS3_PROGRAM, VERSION as NFS3_VERSION};
-use nfs3_client::nfs3_types::portmap::PMAP_PORT;
+use nfs3_client::nfs3_types::portmap::{IPPROTO_TCP, PMAP_PORT};
 use nfs3_client::tokio::TokioIo;
 use tokio::net::TcpStream;
 
@@ -23,7 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     portmapper.null().await?;
 
-    let result = portmapper.getport(MOUNT_PROGRAM, MOUNT_VERSION).await;
+    let result = portmapper
+        .getport(MOUNT_PROGRAM, MOUNT_VERSION, IPPROTO_TCP)
+        .await;
     match result {
         Ok(port) => println!("Resolved MOUNT3 port: {port}"),
         Err(PortmapError::ProgramUnavailable) => {
@@ -32,7 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => eprintln!("Failed to resolve MOUNT3 port: {e}"),
     }
 
-    let result = portmapper.getport(NFS3_PROGRAM, NFS3_VERSION).await;
+    let result = portmapper
+        .getport(NFS3_PROGRAM, NFS3_VERSION, IPPROTO_TCP)
+        .await;
     match result {
         Ok(port) => println!("Resolved NFSv3 port: {port}"),
         Err(PortmapError::ProgramUnavailable) => {

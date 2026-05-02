@@ -29,11 +29,17 @@ where
         Ok(())
     }
 
-    pub async fn getport(&mut self, prog: u32, vers: u32) -> Result<u16, PortmapError> {
+    /// Look up the port registered for `prog` v`vers` over transport `prot`.
+    ///
+    /// `prot` is one of [`IPPROTO_TCP`](nfs3_types::portmap::IPPROTO_TCP) or
+    /// [`IPPROTO_UDP`](nfs3_types::portmap::IPPROTO_UDP) as defined by
+    /// RFC 1057.
+    #[allow(clippy::similar_names)]
+    pub async fn getport(&mut self, prog: u32, vers: u32, prot: u32) -> Result<u16, PortmapError> {
         let args = mapping {
             prog,
             vers,
-            prot: nfs3_types::portmap::IPPROTO_TCP,
+            prot,
             port: 0,
         };
 
