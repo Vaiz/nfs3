@@ -8,7 +8,7 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 
-use crate::error::{Error, RpcError};
+use crate::RpcError;
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// RPC client
@@ -59,7 +59,7 @@ where
         vers: u32,
         proc: u32,
         args: &C,
-    ) -> Result<R, Error>
+    ) -> Result<R, RpcError>
     where
         R: Unpack,
         C: Pack + Send + Sync,
@@ -82,13 +82,13 @@ where
         Self::recv_reply::<R>(&mut self.io, msg.xid).await
     }
 
-    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), Error>
+    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), RpcError>
     where
         T: Pack + Send + Sync,
     {
         let total_len = msg.packed_size() + args.packed_size();
         if !total_len.is_multiple_of(4) {
-            return Err(RpcError::WrongLength.into());
+            return Err(RpcError::WrongLength);
         }
 
         let fragment_header = nfs3_types::rpc::fragment_header::new(
@@ -100,23 +100,22 @@ where
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
         if buf.len() - 4 != total_len {
-            return Err(RpcError::WrongLength.into());
+            return Err(RpcError::WrongLength);
         }
         io.async_write_all(&buf).await?;
         Ok(())
     }
 
-    async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, Error>
+    async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, RpcError>
     where
         T: Unpack,
     {
         let mut buf = [0u8; 4];
         io.async_read_exact(&mut buf).await?;
         let fragment_header: fragment_header = buf.into();
-        assert!(
-            fragment_header.eof(),
-            "Fragment header does not have EOF flag"
-        );
+        if !fragment_header.eof() {
+            return Err(RpcError::FragmentedReply);
+        }
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
@@ -126,19 +125,18 @@ where
         let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;
 
         if resp_msg.xid != xid {
-            return Err(RpcError::UnexpectedXid.into());
+            return Err(RpcError::UnexpectedXid);
         }
 
         let reply = match resp_msg.body {
             msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
-            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(r.into()),
-            msg_body::CALL(_) => return Err(RpcError::UnexpectedCall.into()),
+            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(RpcError::from(r)),
+            msg_body::CALL(_) => return Err(RpcError::UnexpectedCall),
         };
 
         if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
-            return Err(crate::error::RpcError::try_from(reply.reply_data)
-                .expect("accept_stat_data::SUCCESS is not a valid error")
-                .into());
+            return Err(RpcError::try_from(reply.reply_data)
+                .expect("accept_stat_data::SUCCESS is not a valid error"));
         }
 
         let (final_value, _) = T::unpack(&mut cursor)?;
@@ -147,8 +145,7 @@ where
             return Err(RpcError::NotFullyParsed {
                 buf: cursor.into_inner(),
                 pos,
-            }
-            .into());
+            });
         }
         Ok(final_value)
     }

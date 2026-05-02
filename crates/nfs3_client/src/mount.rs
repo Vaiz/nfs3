@@ -4,7 +4,7 @@ use nfs3_types::mount::{
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 
-use crate::error::Error;
+use crate::error::{MountError, RpcError};
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
@@ -36,49 +36,52 @@ where
         }
     }
 
-    pub async fn null(&mut self) -> Result<(), Error> {
+    pub async fn null(&mut self) -> Result<(), RpcError> {
         let _ = self
             .call::<Void, Void>(MOUNT_PROGRAM::MOUNTPROC3_NULL, Void)
             .await?;
         Ok(())
     }
 
-    pub async fn mnt(&mut self, dirpath_: dirpath<'_>) -> Result<mountres3_ok<'static>, Error> {
+    pub async fn mnt(
+        &mut self,
+        dirpath_: dirpath<'_>,
+    ) -> Result<mountres3_ok<'static>, MountError> {
         let result = self
             .call::<dirpath, mountres3>(MOUNT_PROGRAM::MOUNTPROC3_MNT, dirpath_)
             .await?;
 
         match result {
             mountres3::Ok(ok) => Ok(ok),
-            mountres3::Err(err) => Err(Error::MountError(err)),
+            mountres3::Err(err) => Err(MountError::Denied(err)),
         }
     }
 
-    pub async fn dump(&mut self) -> Result<mountlist<'static, 'static>, Error> {
+    pub async fn dump(&mut self) -> Result<mountlist<'static, 'static>, RpcError> {
         self.call::<Void, mountlist>(MOUNT_PROGRAM::MOUNTPROC3_DUMP, Void)
             .await
     }
 
-    pub async fn umnt(&mut self, dirpath_: dirpath<'_>) -> Result<(), Error> {
+    pub async fn umnt(&mut self, dirpath_: dirpath<'_>) -> Result<(), RpcError> {
         let _ = self
             .call::<dirpath, Void>(MOUNT_PROGRAM::MOUNTPROC3_UMNT, dirpath_)
             .await?;
         Ok(())
     }
 
-    pub async fn umntall(&mut self) -> Result<(), Error> {
+    pub async fn umntall(&mut self) -> Result<(), RpcError> {
         let _ = self
             .call::<Void, Void>(MOUNT_PROGRAM::MOUNTPROC3_UMNTALL, Void)
             .await?;
         Ok(())
     }
 
-    pub async fn export(&mut self) -> Result<exports<'static, 'static>, Error> {
+    pub async fn export(&mut self) -> Result<exports<'static, 'static>, RpcError> {
         self.call::<Void, exports>(MOUNT_PROGRAM::MOUNTPROC3_EXPORT, Void)
             .await
     }
 
-    async fn call<C, R>(&mut self, proc: MOUNT_PROGRAM, args: C) -> Result<R, crate::error::Error>
+    async fn call<C, R>(&mut self, proc: MOUNT_PROGRAM, args: C) -> Result<R, RpcError>
     where
         R: Unpack,
         C: Pack + Send + Sync,

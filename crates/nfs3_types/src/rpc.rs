@@ -106,6 +106,22 @@ pub enum auth_stat {
     AUTH_FAILED = 7,
 }
 
+impl std::fmt::Display for auth_stat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::AUTH_OK => "AUTH_OK",
+            Self::AUTH_BADCRED => "AUTH_BADCRED",
+            Self::AUTH_REJECTEDCRED => "AUTH_REJECTEDCRED",
+            Self::AUTH_BADVERF => "AUTH_BADVERF",
+            Self::AUTH_REJECTEDVERF => "AUTH_REJECTEDVERF",
+            Self::AUTH_TOOWEAK => "AUTH_TOOWEAK",
+            Self::AUTH_INVALIDRESP => "AUTH_INVALIDRESP",
+            Self::AUTH_FAILED => "AUTH_FAILED",
+        };
+        write!(f, "{name}")
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
 pub enum auth_flavor {

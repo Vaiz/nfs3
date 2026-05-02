@@ -1,6 +1,6 @@
 use std::env;
 
-use nfs3_client::error::{Error, PortmapError};
+use nfs3_client::PortmapError;
 use nfs3_client::nfs3_types::mount::{PROGRAM as MOUNT_PROGRAM, VERSION as MOUNT_VERSION};
 use nfs3_client::nfs3_types::nfs3::{PROGRAM as NFS3_PROGRAM, VERSION as NFS3_VERSION};
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = portmapper.getport(MOUNT_PROGRAM, MOUNT_VERSION).await;
     match result {
         Ok(port) => println!("Resolved MOUNT3 port: {port}"),
-        Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
+        Err(PortmapError::ProgramUnavailable) => {
             eprintln!("MOUNT3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve MOUNT3 port: {e}"),
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = portmapper.getport(NFS3_PROGRAM, NFS3_VERSION).await;
     match result {
         Ok(port) => println!("Resolved NFSv3 port: {port}"),
-        Err(Error::Portmap(PortmapError::ProgramUnavailable)) => {
+        Err(PortmapError::ProgramUnavailable) => {
             eprintln!("NFSv3 program is unavailable");
         }
         Err(e) => eprintln!("Failed to resolve NFSv3 port: {e}"),
