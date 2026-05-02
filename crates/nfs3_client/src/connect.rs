@@ -8,9 +8,8 @@ use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::Opaque;
 
-use crate::error::{ConnectError, Error};
 use crate::io::{AsyncRead, AsyncWrite};
-use crate::{MountClient, Nfs3Client, mount, portmapper};
+use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
 
 /// Contains the connection to the NFS server.
 #[derive(Debug)]
@@ -36,7 +35,7 @@ where
     }
 
     /// Unmounts the filesystem and drops the client.
-    pub async fn unmount(mut self) -> Result<(), Error> {
+    pub async fn unmount(mut self) -> Result<(), RpcError> {
         self.mount_client.umnt(self.mount_path).await
     }
 

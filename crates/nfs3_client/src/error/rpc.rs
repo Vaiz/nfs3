@@ -3,9 +3,6 @@ use std::fmt;
 
 use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 
-/// Backward-compatible alias for [`RpcError`].
-pub type Error = RpcError;
-
 /// Error from an RPC call.
 ///
 /// Covers I/O failures, XDR encoding/decoding issues, and RPC protocol errors.

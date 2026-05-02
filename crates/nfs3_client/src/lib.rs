@@ -2,7 +2,7 @@
 #![doc = include_str!("../README.md")]
 
 pub(crate) mod connect;
-pub mod error;
+mod error;
 pub mod io;
 pub(crate) mod mount;
 pub mod net;
@@ -19,6 +19,7 @@ pub mod tokio;
 pub mod smol;
 
 pub use connect::*;
+pub use error::{ConnectError, MountError, PortmapError, RpcError};
 pub use mount::*;
 pub use nfs::*;
 /// Re-export of `nfs3_types` for convenience

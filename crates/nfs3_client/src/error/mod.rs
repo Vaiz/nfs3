@@ -5,7 +5,7 @@ mod mount;
 mod portmap;
 mod rpc;
 
-pub use connect::*;
-pub use mount::*;
-pub use portmap::*;
-pub use rpc::*;
+pub use connect::ConnectError;
+pub use mount::MountError;
+pub use portmap::PortmapError;
+pub use rpc::RpcError;

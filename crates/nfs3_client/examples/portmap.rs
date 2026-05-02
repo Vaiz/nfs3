@@ -1,6 +1,6 @@
 use std::env;
 
-use nfs3_client::error::PortmapError;
+use nfs3_client::PortmapError;
 use nfs3_client::nfs3_types::mount::{PROGRAM as MOUNT_PROGRAM, VERSION as MOUNT_VERSION};
 use nfs3_client::nfs3_types::nfs3::{PROGRAM as NFS3_PROGRAM, VERSION as NFS3_VERSION};
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;

@@ -8,7 +8,7 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 
-use crate::error::{Error, RpcError};
+use crate::RpcError;
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// RPC client
@@ -59,7 +59,7 @@ where
         vers: u32,
         proc: u32,
         args: &C,
-    ) -> Result<R, Error>
+    ) -> Result<R, RpcError>
     where
         R: Unpack,
         C: Pack + Send + Sync,
@@ -82,7 +82,7 @@ where
         Self::recv_reply::<R>(&mut self.io, msg.xid).await
     }
 
-    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), Error>
+    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), RpcError>
     where
         T: Pack + Send + Sync,
     {
@@ -106,7 +106,7 @@ where
         Ok(())
     }
 
-    async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, Error>
+    async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, RpcError>
     where
         T: Unpack,
     {
@@ -131,12 +131,12 @@ where
 
         let reply = match resp_msg.body {
             msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
-            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(r.into()),
+            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(RpcError::from(r)),
             msg_body::CALL(_) => return Err(RpcError::UnexpectedCall),
         };
 
         if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
-            return Err(crate::error::RpcError::try_from(reply.reply_data)
+            return Err(RpcError::try_from(reply.reply_data)
                 .expect("accept_stat_data::SUCCESS is not a valid error"));
         }
 

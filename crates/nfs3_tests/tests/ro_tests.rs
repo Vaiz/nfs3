@@ -395,7 +395,7 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
 
     tracing::info!("{mknod:?}");
     assert!(
-        matches!(mknod, Err(Error::ProcUnavail)),
+        matches!(mknod, Err(RpcError::ProcUnavail)),
         "Expected ProcUnavail error"
     );
 
@@ -545,8 +545,6 @@ async fn test_rename() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_link() -> Result<(), anyhow::Error> {
-    use nfs3_client::error::*;
-
     let mut client = TestContext::setup_ro();
     let root = client.root_dir().clone();
 
@@ -561,7 +559,7 @@ async fn test_link() -> Result<(), anyhow::Error> {
         .await;
 
     assert!(
-        matches!(link, Err(Error::ProcUnavail)),
+        matches!(link, Err(RpcError::ProcUnavail)),
         "Expected ProcUnavail error"
     );
 
