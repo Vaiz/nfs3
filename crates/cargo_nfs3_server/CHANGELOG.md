@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.3](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.2...cargo-nfs3-server-v0.2.3) - 2026-05-02
-
-### Other
-
-- updated the following local packages: nfs3_server
-
 ## [0.2.2](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.1...cargo-nfs3-server-v0.3.0) - 2026-04-13
 
 ### Fixed

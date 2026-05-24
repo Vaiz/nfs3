@@ -14,8 +14,8 @@ license = "Unlicense"
 
 [workspace.dependencies]
 nfs3_macros = { version = "0.5.0", path = "crates/nfs3_macros" }
-nfs3_types = { version = "0.6.0", path = "crates/nfs3_types" }
-nfs3_server = { version = "0.11.1", path = "crates/nfs3_server" }
+nfs3_types = { version = "0.5.2", path = "crates/nfs3_types" }
+nfs3_server = { version = "0.11.0", path = "crates/nfs3_server" }
 nfs3_client = { version = "0.9.0", path = "crates/nfs3_client" }
 
 anyhow = "1.0.98"
