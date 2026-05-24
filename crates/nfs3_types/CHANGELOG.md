@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.1](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.0...nfs3_types-v0.6.0) - 2026-04-13
+## [0.5.2](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.1...nfs3_types-v0.5.2) - 2026-05-24
+
+### Added
+
+- implement `Display` for `auth_stat`
+
+## [0.5.1](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.0...nfs3_types-v0.5.1) - 2026-04-13
 
 ### Added
 

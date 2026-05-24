@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.8.0...nfs3_client-v0.9.0) - 2026-05-24
+
+### Added
+
+- *(nfs3_client)* add is_connection_reusable method to error types ([#162](https://github.com/Vaiz/nfs3/pull/162))
+- *(nfs3_client)* [**breaking**] add prot param to PortmapperClient::getport ([#161](https://github.com/Vaiz/nfs3/pull/161))
+- *(nfs3_client)* [**breaking**] split error type into more specific errors ([#159](https://github.com/Vaiz/nfs3/pull/159))
+
 ## [0.8.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.7.0...nfs3_client-v0.8.0) - 2026-02-14
 
 ### Added
