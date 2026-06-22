@@ -28,7 +28,7 @@ jobs:
     name: ${{ matrix.target }} (debug)
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
 
     - name: Add target
@@ -61,7 +61,7 @@ jobs:
     name: ${{ matrix.target }} (release)
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
 
     - name: Add target
@@ -81,7 +81,7 @@ jobs:
     name: MSRV Build
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
 
     - name: Get MSRV
@@ -104,7 +104,7 @@ jobs:
     name: Code guidelines
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Update Rust
       run: |
@@ -126,6 +126,6 @@ jobs:
     name: Linelint
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: fernandrone/linelint@0.0.6
         id: linelint
