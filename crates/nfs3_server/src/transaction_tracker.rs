@@ -393,8 +393,8 @@ mod tests {
         assert_eq!(client_transactions.transactions.len(), 2);
         assert_eq!(client_transactions.transactions[0].xid, 1);
         assert_eq!(client_transactions.transactions[1].xid, 2);
-        assert!(client_transactions.transactions[0].state == TransactionState::InProgress);
-        assert!(client_transactions.transactions[1].state == TransactionState::Completed(now));
+        assert_eq!(client_transactions.transactions[0].state, TransactionState::InProgress);
+        assert_eq!(client_transactions.transactions[1].state, TransactionState::Completed(now));
 
         client_transactions.remove_old_transactions(now + Duration::new(2, 0), Duration::new(1, 0));
         assert_eq!(client_transactions.transactions.len(), 2);
