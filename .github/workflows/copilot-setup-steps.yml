@@ -24,6 +24,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+        components: clippy
 
     - name: Cache Cargo dependencies
       uses: actions/cache@v6
