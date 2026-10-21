@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.11.0...nfs3_server-v0.11.1) - 2026-10-21
+
+### Added
+
+- *(nfs3_server)* let NfsReadFileSystem refuse callers by credential ([#169](https://github.com/Vaiz/nfs3/pull/169))
+
+### Fixed
+
+- clippy warnings ([#168](https://github.com/Vaiz/nfs3/pull/168))
+
 ## [0.11.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.10.2...nfs3_server-v0.11.0) - 2026-04-13
 
 ### Added
