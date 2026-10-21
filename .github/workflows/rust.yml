@@ -29,10 +29,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+    - name: Load toolchain versions
+      shell: bash
+      run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+        targets: ${{ matrix.target }}
     - uses: Swatinem/rust-cache@v2
-
-    - name: Add target
-      run: rustup target add ${{ matrix.target }}
 
     - name: Build
       run: cargo build --locked --verbose --target ${{ matrix.target }}
@@ -62,10 +66,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+    - name: Load toolchain versions
+      shell: bash
+      run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+        targets: ${{ matrix.target }}
     - uses: Swatinem/rust-cache@v2
-
-    - name: Add target
-      run: rustup target add ${{ matrix.target }}
 
     - name: Build
       run: cargo build --release --locked --verbose --target ${{ matrix.target }}
@@ -94,7 +102,9 @@ jobs:
         "msrv=$msrv" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
     - name: Install toolchain
-      run: rustup install ${{ steps.msrv.outputs.msrv }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.msrv.outputs.msrv }}
 
     - name: Build
       run: cargo +${{ steps.msrv.outputs.msrv }} build --locked --verbose
@@ -106,14 +116,22 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Update Rust
-      run: |
-        rustup update
-        rustup toolchain install nightly
-        rustup component add --toolchain nightly rustfmt
+    - name: Load toolchain versions
+      shell: bash
+      run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTFMT_TOOLCHAIN }}
+        components: rustfmt
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+        components: clippy
 
     - name: fmt
-      run: cargo +nightly fmt --check
+      run: cargo +"$RUSTFMT_TOOLCHAIN" fmt --check
 
     - name: clippy
       run: cargo clippy --locked --all-targets --all-features -- -D warnings

@@ -22,8 +22,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Update Rust
-        run: rustup update
+      - name: Load toolchain versions
+        shell: bash
+        run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
 
       - name: Run release-plz
         uses: release-plz/action@v0.5
@@ -49,8 +54,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Update Rust
-        run: rustup update
+      - name: Load toolchain versions
+        shell: bash
+        run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
 
       - name: Run release-plz
         uses: release-plz/action@v0.5
