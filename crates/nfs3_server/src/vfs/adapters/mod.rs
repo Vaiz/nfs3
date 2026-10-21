@@ -34,6 +34,10 @@ where
 {
     type Handle = T::Handle;
 
+    fn authorize(&self, auth: Option<&nfs3_types::rpc::auth_unix>) -> bool {
+        self.0.authorize(auth)
+    }
+
     fn root_dir(&self) -> Self::Handle {
         self.0.root_dir()
     }

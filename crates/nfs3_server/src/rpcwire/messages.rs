@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use anyhow::bail;
 use nfs3_types::rpc::{
-    accept_stat_data, accepted_reply, call_body, fragment_header, msg_body, opaque_auth,
+    accept_stat_data, accepted_reply, auth_stat, call_body, fragment_header, msg_body, opaque_auth,
     rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
@@ -135,6 +135,14 @@ impl IncomingRpcMessage {
         let rpc = rpc_msg {
             xid: self.xid,
             body: msg_body::REPLY(reply),
+        };
+        pack(&rpc, &Void).map(HandleResult::Reply)
+    }
+
+    pub fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<HandleResult> {
+        let rpc = rpc_msg {
+            xid: self.xid,
+            body: msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::auth_error(stat))),
         };
         pack(&rpc, &Void).map(HandleResult::Reply)
     }

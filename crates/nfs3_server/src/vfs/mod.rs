@@ -32,6 +32,7 @@ use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
     filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
 };
+use crate::nfs3_types::rpc::auth_unix;
 use crate::units::{GIBIBYTE, MEBIBYTE};
 use crate::vfs::adapters::ReadDirPlusToReadDir;
 
@@ -55,6 +56,13 @@ pub trait NfsReadFileSystem: Send + Sync {
 
     /// Returns the ID the of the root directory "/"
     fn root_dir(&self) -> Self::Handle;
+
+    /// Returns whether to serve a call with this `AUTH_UNIX` credential
+    /// (`None` for other flavors). Refused calls get `AUTH_TOOWEAK`.
+    fn authorize(&self, auth: Option<&auth_unix>) -> bool {
+        let _ = auth;
+        true
+    }
 
     /// Look up the id of a path in a directory
     ///

@@ -4,7 +4,7 @@ use std::time::Instant;
 use anyhow::anyhow;
 use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMessage};
 use nfs3_types::rpc::{
-    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_unix, call_body, fragment_header,
+    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
@@ -44,9 +44,17 @@ where
         return message.into_rpc_mismatch();
     }
 
-    if call.cred.flavor == auth_flavor::AUTH_UNIX {
+    let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
+    if unix {
         let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
         context.auth = auth;
+    }
+    if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
+        warn!(
+            "refusing a call from uid {} on {}",
+            context.auth.uid, context.client_addr
+        );
+        return message.into_auth_error(auth_stat::AUTH_TOOWEAK);
     }
 
     let transaction = lock_transaction(
