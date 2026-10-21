@@ -11,8 +11,19 @@ jobs:
       contents: write
     environment: copilot
     steps:
-    - name: Install nightly rustfmt
-      run: rustup component add --toolchain nightly rustfmt
+    - uses: actions/checkout@v7
+    - name: Load toolchain versions
+      shell: bash
+      run: cat .github/rust-toolchain.env >> "$GITHUB_ENV"
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTFMT_TOOLCHAIN }}
+        components: rustfmt
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
 
     - name: Cache Cargo dependencies
       uses: actions/cache@v6
