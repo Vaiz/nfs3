@@ -18,20 +18,20 @@ nfs3_types = { version = "0.5.3", path = "crates/nfs3_types" }
 nfs3_server = { version = "0.11.1", path = "crates/nfs3_server" }
 nfs3_client = { version = "0.9.1", path = "crates/nfs3_client" }
 
-anyhow = "1.0.98"
+anyhow = "1.0.103"
 criterion = { version = "0.8", features = ["html_reports", "async_tokio"] }
-chrono = "0.4"
 clap = { version = "4.5", default-features = false }
 ctrlc = { version = "3.5" }
 fastrand = "2.3"
 filetime = "0.2.25"
-intaglio = "1.10"
+intaglio = "1.13.3"
+jiff = { version = "0.2.28", default-features = false, features = ["std"] }
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 socket2 = "0.6"
 smol = "2.0"
 syn = "3.0.3"
-tokio = { version = "1.44.0", default-features = false }
+tokio = { version = "1.53.3", default-features = false }
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.20"
