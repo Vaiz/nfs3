@@ -25,21 +25,3 @@ The `nfs3_server` crate provides an asynchronous implementation of an NFSv3 serv
 ## NFS3 Client Lib
 
 The `nfs3_client` crate provides an asynchronous client for interacting with NFS3 servers. It supports various NFS operations and handles the underlying RPC communication. For examples and usage, refer to the [nfs3_client README](crates/nfs3_client/README.md).
-
-## MirrorFS Integration Tests
-
-Build the server explicitly before running the harness from the workspace root:
-
-```sh
-cargo build --locked -p cargo-nfs3-server
-NFS3_MIRROR_SERVER=target/debug/cargo-nfs3-server NFS3_MIRROR_PORT=0 \
-  cargo run --locked -p nfs3_tests --bin test_mirror_fs
-```
-
-`NFS3_MIRROR_SERVER` is required; use the `.exe` suffix on Windows and the
-appropriate target/profile path for cross-target or release builds. The harness
-never builds the server. `NFS3_MIRROR_PORT` defaults to 11111; 0 selects an available
-loopback port. Occupied ports fail without terminating their owners. Each server
-uses a temporary directory under this worktree's `target/mirror-tests/`, removed
-after its owned child server is stopped. Port selection and child binding are
-separate operations; a competing bind can still cause a reported startup failure.

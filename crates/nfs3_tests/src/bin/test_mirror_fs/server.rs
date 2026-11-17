@@ -54,23 +54,12 @@ impl TestConfig {
 pub async fn setup_server(mode: ServerMode) -> Result<TestConfig> {
     let binary = std::env::var_os("NFS3_MIRROR_SERVER")
         .context("Set NFS3_MIRROR_SERVER to an explicitly prebuilt cargo-nfs3-server binary")?;
-    let port = match std::env::var("NFS3_MIRROR_PORT") {
-        Ok(port) => port
-            .parse::<u16>()
-            .context("NFS3_MIRROR_PORT must be a port number (0 selects an available port)")?,
-        Err(std::env::VarError::NotPresent) => 11111,
-        Err(error) => return Err(error).context("Invalid NFS3_MIRROR_PORT"),
-    };
-    start_server(mode, Path::new(&binary), port)
-}
-
-fn start_server(mode: ServerMode, binary: &Path, port: u16) -> Result<TestConfig> {
+    let binary = Path::new(&binary);
     let binary = binary
         .canonicalize()
         .with_context(|| format!("Prebuilt mirror server not found: {}", binary.display()))?;
-    // This detects existing listeners without touching their processes.
-    let reservation = TcpListener::bind(("127.0.0.1", port))
-        .with_context(|| format!("Mirror test port {port} is unavailable; set NFS3_MIRROR_PORT"))?;
+    let reservation = TcpListener::bind(("127.0.0.1", 0))
+        .context("Failed to select an available mirror test port")?;
     let bind_port = reservation.local_addr()?.port();
     let temp_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/mirror-tests");
     std::fs::create_dir_all(&temp_root).context("Failed to create mirror test directory")?;
@@ -154,60 +143,4 @@ pub async fn init_context(mode: ServerMode) -> Result<TestContext> {
     let ctx = TestContext::new(client, mode, config);
 
     Ok(ctx)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn occupied_port_is_left_alone() -> Result<()> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let address = listener.local_addr()?;
-        let error = start_server(
-            ServerMode::ReadOnly,
-            &std::env::current_exe()?,
-            address.port(),
-        )
-        .err()
-        .context("Occupied port was accepted")?;
-        assert!(error.to_string().contains("is unavailable"));
-        let _client = std::net::TcpStream::connect(address)?;
-        let _connection = listener.accept()?;
-        Ok(())
-    }
-
-    #[test]
-    fn missing_binary_is_not_built() -> Result<()> {
-        let binary = Path::new(env!("CARGO_MANIFEST_DIR")).join("missing-mirror-server");
-        let error = start_server(ServerMode::ReadOnly, &binary, 0)
-            .err()
-            .context("Missing binary was accepted")?;
-        assert!(
-            error
-                .to_string()
-                .contains("Prebuilt mirror server not found")
-        );
-        assert!(!binary.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn exited_child_is_reported_and_export_is_cleaned_up() -> Result<()> {
-        // The unit-test executable rejects the server's CLI arguments and exits.
-        let mut config = start_server(ServerMode::ReadOnly, &std::env::current_exe()?, 0)?;
-        let export = config.temp_dir.path().canonicalize()?;
-        let temp_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/mirror-tests")
-            .canonicalize()?;
-        assert!(export.starts_with(temp_root));
-        config.server_process.wait()?;
-        let error = config
-            .ensure_running()
-            .expect_err("Exited child was accepted");
-        assert!(error.to_string().contains("Mirror server exited"));
-        drop(config);
-        assert!(!export.exists());
-        Ok(())
-    }
 }

@@ -47,7 +47,6 @@ jobs:
     - name: Test cargo-nfs3-server
       env:
         NFS3_MIRROR_SERVER: target/${{ matrix.target }}/debug/cargo-nfs3-server${{ runner.os == 'Windows' && '.exe' || '' }}
-        NFS3_MIRROR_PORT: "0"
       run: cargo run -p nfs3_tests --bin test_mirror_fs --locked --target ${{ matrix.target }}
 
   release_build:
@@ -87,7 +86,6 @@ jobs:
     - name: Test cargo-nfs3-server
       env:
         NFS3_MIRROR_SERVER: target/${{ matrix.target }}/release/cargo-nfs3-server${{ runner.os == 'Windows' && '.exe' || '' }}
-        NFS3_MIRROR_PORT: "0"
       run: cargo run --release -p nfs3_tests --bin test_mirror_fs --locked --target ${{ matrix.target }}
 
   msrv_build:
