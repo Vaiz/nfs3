@@ -2,7 +2,7 @@
 name: "Buffering Docs"
 description: "Research established crate implementations and authoritative Rust buffer, ownership, async I/O, and RPC/XDR documentation for the NFS3 redesign."
 model: "GPT-6 Luna (copilot)"
-tools: [read, search, web]
+tools: [read, search, web, rust/cargo-info, rust/cargo-search]
 agents: []
 user-invocable: false
 ---
