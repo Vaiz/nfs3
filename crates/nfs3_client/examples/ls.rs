@@ -1,7 +1,7 @@
 use std::env;
 use std::time::{Duration, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option};
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;
@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 (false, 0, UNIX_EPOCH)
             };
-            let mtime: DateTime<Utc> = mtime.into();
+            let mtime = Timestamp::try_from(mtime)?;
             if is_dir {
                 let dirname = format!("[{name}]");
                 println!("{dirname:<60} {:>10} {mtime}", " ");
