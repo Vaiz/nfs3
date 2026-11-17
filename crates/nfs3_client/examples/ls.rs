@@ -1,17 +1,13 @@
 use std::env;
 use std::time::{Duration, UNIX_EPOCH};
 
+use jiff::Timestamp;
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option};
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;
 use nfs3_client::nfs3_types::rpc::{auth_unix, opaque_auth};
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_client::tokio::TokioConnector;
-
-#[path = "support/mtime.rs"]
-mod mtime;
-
-use mtime::format_mtime;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -103,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 (false, 0, UNIX_EPOCH)
             };
-            let mtime = format_mtime(mtime)?;
+            let mtime = Timestamp::try_from(mtime)?;
             if is_dir {
                 let dirname = format!("[{name}]");
                 println!("{dirname:<60} {:>10} {mtime}", " ");
