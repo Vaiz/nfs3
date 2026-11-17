@@ -1,3 +1,4 @@
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -7,46 +8,6 @@ use tempfile::TempDir;
 use tokio::time::sleep;
 
 use super::context::{ServerMode, TestContext};
-
-/// Kill any existing server processes on the test port
-fn kill_existing_servers(port: u16) -> Result<()> {
-    #[cfg(windows)]
-    {
-        // On Windows, use netstat to find process using the port
-        let output = Command::new("cmd")
-            .args(["/C", &format!("netstat -ano | findstr :{}", port)])
-            .output()
-            .ok();
-
-        if let Some(output) = output {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            for line in output_str.lines() {
-                // Extract PID from the last column
-                if let Some(pid_str) = line.split_whitespace().last() {
-                    if let Ok(pid) = pid_str.parse::<u32>() {
-                        // Kill the process
-                        let _ = Command::new("taskkill")
-                            .args(["/F", "/PID", &pid.to_string()])
-                            .output();
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(unix)]
-    {
-        // On Unix, use lsof or ss to find process using the port
-        let _ = Command::new("sh")
-            .arg("-c")
-            .arg(format!("lsof -ti :{} | xargs -r kill -9", port))
-            .output();
-    }
-
-    // Give OS time to release the port
-    std::thread::sleep(Duration::from_millis(500));
-    Ok(())
-}
 
 /// Configuration for the test suite
 pub struct TestConfig {
@@ -59,56 +20,80 @@ pub struct TestConfig {
 
 impl Drop for TestConfig {
     fn drop(&mut self) {
-        let _ = self.server_process.kill();
-        let _ = self.server_process.wait();
-        // Clean up port after server shutdown
-        let _ = kill_existing_servers(self.bind_port);
+        match self.server_process.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => {}
+            Err(error) => tracing::warn!("Failed to check mirror server status: {error}"),
+        }
+        if let Err(error) = self.server_process.kill() {
+            tracing::warn!("Failed to stop mirror server: {error}");
+        }
+        if let Err(error) = self.server_process.wait() {
+            tracing::warn!("Failed to reap mirror server: {error}");
+        }
+    }
+}
+
+impl TestConfig {
+    fn ensure_running(&mut self) -> Result<()> {
+        if let Some(status) = self
+            .server_process
+            .try_wait()
+            .context("Failed to check mirror server status")?
+        {
+            bail!(
+                "Mirror server exited with {status} on port {}; check server diagnostics above",
+                self.bind_port
+            );
+        }
+        Ok(())
     }
 }
 
 /// Setup the NFS server with a temporary directory
 pub async fn setup_server(mode: ServerMode) -> Result<TestConfig> {
-    let temp_dir = TempDir::new().context("Failed to create temp directory")?;
-    let temp_path = temp_dir.path().to_string_lossy().to_string();
-    let bind_port = 11111;
-
-    let cargo_nfs3_server = if cfg!(windows) {
-        "target/debug/cargo-nfs3-server.exe"
-    } else {
-        "target/debug/cargo-nfs3-server"
+    let binary = std::env::var_os("NFS3_MIRROR_SERVER")
+        .context("Set NFS3_MIRROR_SERVER to an explicitly prebuilt cargo-nfs3-server binary")?;
+    let port = match std::env::var("NFS3_MIRROR_PORT") {
+        Ok(port) => port
+            .parse::<u16>()
+            .context("NFS3_MIRROR_PORT must be a port number (0 selects an available port)")?,
+        Err(std::env::VarError::NotPresent) => 11111,
+        Err(error) => return Err(error).context("Invalid NFS3_MIRROR_PORT"),
     };
+    start_server(mode, Path::new(&binary), port)
+}
 
-    if !Path::new(cargo_nfs3_server).exists() {
-        let status = Command::new("cargo")
-            .args(["build", "--package", "cargo-nfs3-server"])
-            .status()
-            .context("Failed to build cargo-nfs3-server")?;
+fn start_server(mode: ServerMode, binary: &Path, port: u16) -> Result<TestConfig> {
+    let binary = binary
+        .canonicalize()
+        .with_context(|| format!("Prebuilt mirror server not found: {}", binary.display()))?;
+    // This detects existing listeners without touching their processes.
+    let reservation = TcpListener::bind(("127.0.0.1", port))
+        .with_context(|| format!("Mirror test port {port} is unavailable; set NFS3_MIRROR_PORT"))?;
+    let bind_port = reservation.local_addr()?.port();
+    let temp_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/mirror-tests");
+    std::fs::create_dir_all(&temp_root).context("Failed to create mirror test directory")?;
+    let temp_dir = TempDir::new_in(&temp_root).context("Failed to create temp directory")?;
 
-        if !status.success() {
-            bail!("Failed to build cargo-nfs3-server");
-        }
-    }
-
-    let mut cmd = Command::new(cargo_nfs3_server);
+    let mut cmd = Command::new(binary);
     cmd.arg("--path")
-        .arg(&temp_path)
+        .arg(temp_dir.path())
         .arg("--bind-ip")
         .arg("127.0.0.1")
         .arg("--bind-port")
         .arg(bind_port.to_string())
         .arg("--log-level")
         .arg("warn")
-        .arg("--quiet")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
 
     if mode == ServerMode::ReadOnly {
         cmd.arg("--readonly");
     }
 
-    // Kill any existing server on this port before starting
-    let _ = kill_existing_servers(bind_port);
-
+    // The CLI cannot inherit a listener; a bind race is reported via child exit.
+    drop(reservation);
     let server_process = cmd.spawn().context("Failed to start cargo-nfs3-server")?;
 
     Ok(TestConfig {
@@ -121,23 +106,28 @@ pub async fn setup_server(mode: ServerMode) -> Result<TestConfig> {
 
 /// Connect NFS client to the server
 pub async fn connect_client(
-    port: u16,
+    config: &mut TestConfig,
 ) -> Result<nfs3_client::Nfs3Connection<nfs3_client::tokio::TokioIo<tokio::net::TcpStream>>> {
     for attempt in 1..=10 {
         sleep(Duration::from_millis(100 * attempt)).await;
+        config.ensure_running()?;
 
-        match nfs3_client::Nfs3ConnectionBuilder::new(
+        let connection = nfs3_client::Nfs3ConnectionBuilder::new(
             nfs3_client::tokio::TokioConnector,
             "127.0.0.1",
             "/",
         )
-        .nfs3_port(port)
-        .mount_port(port)
+        .nfs3_port(config.bind_port)
+        .mount_port(config.bind_port)
         .connect_from_privileged_port(false)
-        .mount()
-        .await
-        {
+        .mount();
+        let result = tokio::time::timeout(Duration::from_secs(5), connection)
+            .await
+            .context("Timed out connecting to mirror server")
+            .and_then(|result| result.map_err(anyhow::Error::from));
+        match result {
             Ok(client) => {
+                config.ensure_running()?;
                 return Ok(client);
             }
             Err(e) if attempt < 10 => {
@@ -158,11 +148,66 @@ pub async fn connect_client(
 
 /// Initialize a test context with server and client
 pub async fn init_context(mode: ServerMode) -> Result<TestContext> {
-    let config = setup_server(mode).await?;
-    sleep(Duration::from_millis(500)).await;
-    let client = connect_client(config.bind_port).await?;
+    let mut config = setup_server(mode).await?;
+    let client = connect_client(&mut config).await?;
 
     let ctx = TestContext::new(client, mode, config);
 
     Ok(ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occupied_port_is_left_alone() -> Result<()> {
+        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        let address = listener.local_addr()?;
+        let error = start_server(
+            ServerMode::ReadOnly,
+            &std::env::current_exe()?,
+            address.port(),
+        )
+        .err()
+        .context("Occupied port was accepted")?;
+        assert!(error.to_string().contains("is unavailable"));
+        let _client = std::net::TcpStream::connect(address)?;
+        let _connection = listener.accept()?;
+        Ok(())
+    }
+
+    #[test]
+    fn missing_binary_is_not_built() -> Result<()> {
+        let binary = Path::new(env!("CARGO_MANIFEST_DIR")).join("missing-mirror-server");
+        let error = start_server(ServerMode::ReadOnly, &binary, 0)
+            .err()
+            .context("Missing binary was accepted")?;
+        assert!(
+            error
+                .to_string()
+                .contains("Prebuilt mirror server not found")
+        );
+        assert!(!binary.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn exited_child_is_reported_and_export_is_cleaned_up() -> Result<()> {
+        // The unit-test executable rejects the server's CLI arguments and exits.
+        let mut config = start_server(ServerMode::ReadOnly, &std::env::current_exe()?, 0)?;
+        let export = config.temp_dir.path().canonicalize()?;
+        let temp_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/mirror-tests")
+            .canonicalize()?;
+        assert!(export.starts_with(temp_root));
+        config.server_process.wait()?;
+        let error = config
+            .ensure_running()
+            .expect_err("Exited child was accepted");
+        assert!(error.to_string().contains("Mirror server exited"));
+        drop(config);
+        assert!(!export.exists());
+        Ok(())
+    }
 }
