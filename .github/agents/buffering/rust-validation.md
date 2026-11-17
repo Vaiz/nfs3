@@ -1,16 +1,18 @@
-# Rust Execution Rules
+# Rust Execution
 
-For the implementation and verification agents only:
+Implement/Verify use actual `rust/*` MCP schemas for Cargo, never guessed names or
+silent shell substitutes. Honor deferred-loading requirements using the exposed
+loader; file search is not tool discovery. A missing loader with visible deferred
+schemas is an invocation blocker, not proof the Rust server failed. Report the
+exact current blocker once; retry only when its prerequisite changes.
 
-- Follow repository validation requirements using the configured Rust MCP tools
-  for Cargo operations. Do not silently substitute shell Cargo commands.
-- Read `.github/rust-toolchain.env` for pinned CI/formatting toolchains and the
-  workspace manifest/CI for MSRV. Pass the applicable toolchain through MCP.
-- Use `.github/workflows/rust.yml` for required checks and target coverage. Report
-  unavailable tools, unsupported targets, and pre-existing failures explicitly.
-- If timing measurements require `cargo bench` without an MCP equivalent, request
-  explicit authorization for that terminal exception. Benchmark test mode is not
-  timing evidence.
-- Do not install or update toolchains/system tools without user authorization.
-- Report security/license policy gaps; do not invent a `deny.toml` policy or weaken
-  repository gates as an incidental part of this redesign.
+Minimal probe: cargo-metadata, workspace manifest, `no_deps: true`, offline locking
+when supported. Distinguish dependency-resolution failure from tool/server failure.
+
+- Follow repository validation gates. Read `.github/rust-toolchain.env`, manifest
+  and `.github/workflows/rust.yml` for toolchains/MSRV/targets; pass through MCP.
+- Verify is check-only; no automatic fixes or dependency changes.
+- No toolchain/system-tool installation without approval. Cargo bench without an
+  MCP equivalent needs an explicit shell exception; test mode is not timing evidence.
+- Report unavailable targets/tools and security/license policy gaps; never invent
+  a deny policy or weaken gates. Preserve only evidence needed for current checks.

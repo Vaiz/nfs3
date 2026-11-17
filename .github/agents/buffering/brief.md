@@ -12,8 +12,8 @@
 
 ## Resume State
 
-Read only the checkpoint supplied with your task and the relevant linked artifacts.
-Check its scope and input revisions before reusing results; stale state is not
-authorization. Return a concise `Resume State` section with completed work, evidence,
-open issues, and the next action. The lead persists checkpoints; specialists do not
-edit them or load other agents' state unless the task specifically requires it.
+Follow `docs/buffering-redesign/state/README.md`. Read only your supplied checkpoint
+and necessary linked artifacts; verify inputs before reusing results. Return a
+concise `Resume State` with result, evidence, blockers, and next action. Only the
+lead writes checkpoints. Do not collect historical data without a current decision,
+reproducibility, or safe-resume need; replace stale state instead of appending logs.
