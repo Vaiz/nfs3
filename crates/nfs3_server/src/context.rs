@@ -68,7 +68,7 @@ where
             mount_signal: None,
             export_name: Arc::new(export_name.to_owned()),
             transaction_tracker: Arc::new(TransactionTracker::new(
-                std::time::Duration::from_secs(60),
+                std::time::Duration::from_mins(1),
                 256,
                 1024,
             )),

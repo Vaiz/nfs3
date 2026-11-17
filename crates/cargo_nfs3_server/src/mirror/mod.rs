@@ -36,7 +36,7 @@ impl Fs {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
         let cache = Arc::new(SymbolsCache::new(root.clone()));
-        let iterator_cache = Arc::new(IteratorCache::new(Duration::from_secs(60), 20));
+        let iterator_cache = Arc::new(IteratorCache::new(Duration::from_mins(1), 20));
         let cleaner =
             IteratorCacheCleaner::new(Arc::clone(&iterator_cache), Duration::from_secs(30));
         let cleaner_handle = cleaner.start();

@@ -230,7 +230,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     }
 
     fn new_transaction_tracker() -> Arc<TransactionTracker> {
-        const TRANSACTION_LIFETIME: Duration = Duration::from_secs(60);
+        const TRANSACTION_LIFETIME: Duration = Duration::from_mins(1);
         const MAX_ACTIVE_TRANSACTIONS: u16 = 256;
         const TRANSACTION_TRIM_THRESHOLD: usize = 2048;
 
