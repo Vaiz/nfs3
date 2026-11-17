@@ -1,10 +1,10 @@
 # Rust Execution
 
 Implement/Verify use actual `rust/*` MCP schemas for Cargo, never guessed names or
-silent shell substitutes. Honor deferred-loading requirements using the exposed
-loader; file search is not tool discovery. A missing loader with visible deferred
-schemas is an invocation blocker, not proof the Rust server failed. Report the
-exact current blocker once; retry only when its prerequisite changes.
+silent shell substitutes. Follow [repository tool-use policy](../../copilot-instructions.md#tool-use).
+Do not infer Rust MCP unavailability from a missing discovery tool alone. Distinguish
+session-enforced invocation restrictions from observed Rust call failures. Report
+the exact current blocker once; retry only when its prerequisite changes.
 
 Minimal probe: cargo-metadata, workspace manifest, `no_deps: true`, offline locking
 when supported. Distinguish dependency-resolution failure from tool/server failure.

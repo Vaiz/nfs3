@@ -761,6 +761,9 @@ dependencies = [
  "criterion",
  "nfs3_client",
  "nfs3_server",
+ "nfs3_types",
+ "rallocator",
+ "seismograph",
  "tempfile",
  "tokio",
  "tracing",
@@ -964,6 +967,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "rallocator"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf6bb274145beb01358ea1c933fbaaecaab4b01294ac2cb605fe00f004c5dbc8"
+dependencies = [
+ "libc",
+ "seismograph",
+ "seismograph_rallocator",
+]
+
+[[package]]
 name = "rayon"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1047,6 +1061,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "seismograph"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72e989b3769e67e611e84979b2119a26481e15c39046acb1946bde6b5e1e9b79"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "seismograph_rallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec245aa0d69083eb1b645119015fbd845c67918c13e90cbde24b293f7fa461b0"
+dependencies = [
+ "seismograph",
 ]
 
 [[package]]

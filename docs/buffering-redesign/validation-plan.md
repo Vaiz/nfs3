@@ -1,9 +1,9 @@
 # Validation Plan
 
-No baseline captured, Rust gates run or performance claims established. Verify
-previously accepted measurement feasibility for design review, not implementation
-or numeric policy. Changed inputs require fresh assessment. B0 authorization and
-tooling blocker are in [baseline](baseline.md); acceptance thresholds remain unset.
+The [B0.1 fixture capture and gate evidence](baseline.md#b01-active-verification-evidence)
+cover only opaque diagnostics, not a complete NFS baseline or performance claim.
+Changed inputs require fresh assessment. B0 authorization and outstanding gates
+are in [baseline](baseline.md); acceptance thresholds remain unset.
 
 ## Measurements
 

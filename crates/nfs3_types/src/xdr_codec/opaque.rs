@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::io::{Read, Write};
 use std::ops::Deref;
 
+#[cfg(feature = "opaque-diagnostics")]
+use crate::xdr_codec::opaque_diagnostics::{Site, initialized, record};
 use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
 use crate::xdr_codec::{Error, Pack, Unpack};
 
@@ -75,11 +77,19 @@ impl Pack for Opaque<'_> {
             .map_err(|_| Error::ObjectTooLarge(self.0.len()))?;
         bytes_written += len.pack(out)?;
 
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::EncodePayload, self.0.len(), false);
         out.write_all(&self.0).map_err(Error::Io)?;
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::EncodePayload, self.0.len(), true);
         bytes_written += self.0.len();
 
         let padding = zero_padding(self.0.len());
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::EncodePadding, padding.len(), false);
         out.write_all(padding).map_err(Error::Io)?;
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::EncodePadding, padding.len(), true);
         bytes_written += padding.len();
         Ok(bytes_written)
     }
@@ -91,13 +101,25 @@ impl Unpack for Opaque<'static> {
         let len = len as usize;
 
         let mut buf = vec![0u8; len];
+        #[cfg(feature = "opaque-diagnostics")]
+        initialized(Site::PayloadZeroFill, len);
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::DecodePayload, len, false);
         input.read_exact(&mut buf).map_err(Error::Io)?;
+        #[cfg(feature = "opaque-diagnostics")]
+        record(Site::DecodePayload, len, true);
         bytes_read += len;
 
         let len = get_padding(len);
         if len > 0 {
             let mut pad_buf = [0u8; 4];
+            #[cfg(feature = "opaque-diagnostics")]
+            initialized(Site::PaddingZeroFill, 4);
+            #[cfg(feature = "opaque-diagnostics")]
+            record(Site::DecodePadding, len, false);
             input.read_exact(&mut pad_buf[..len]).map_err(Error::Io)?;
+            #[cfg(feature = "opaque-diagnostics")]
+            record(Site::DecodePadding, len, true);
             bytes_read += len;
         }
 

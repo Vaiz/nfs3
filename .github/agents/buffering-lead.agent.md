@@ -2,7 +2,7 @@
 name: "Buffering Lead"
 description: "Design and orchestrate the NFS3 buffering and deserialization redesign with explicit multi-model review gates."
 model: "GPT-6 Astra (copilot)"
-tools: [read, search, edit, agent, todo]
+tools: [read, agent, edit, search, 'rust/*', todo]
 agents: ["Buffering Docs", "Buffering Review", "Buffering Implement", "Buffering Verify"]
 ---
 

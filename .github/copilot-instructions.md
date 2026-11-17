@@ -5,6 +5,14 @@ Rust NFS3 workspace: protocol types/codecs in `crates/nfs3_types`, derives in
 tests in `crates/nfs3_tests`. Follow existing patterns and document public APIs.
 Preserve unrelated worktree changes; keep edits scoped.
 
+## Tool Use
+
+Use directly callable tools whose schemas are already exposed. When the runtime marks
+a required tool as deferred, use its provided schema/resource loader first, then call
+the exposed tool; do not guess its arguments or add a repository-specific loader.
+Report a blocker only when the runtime provides no permitted way to expose or invoke
+the required tool.
+
 ## Rust Validation
 
 Use Rust MCP for Cargo operations, not shell substitutes. Discover actual schemas;
@@ -18,6 +26,8 @@ For code changes:
    cargo-fmt all; tests all features; build all targets/features; machete; deny.
 
 Maintain test coverage. Read-only verification uses fmt check and no auto-fixes.
+Keep example regression tests in the crate's `tests/` directory, not in example
+sources or example test targets.
 Report unsupported targets and policy gaps explicitly; do not invent compliance
 policy or install toolchains without authorization.
 

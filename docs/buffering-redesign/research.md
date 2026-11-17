@@ -75,6 +75,33 @@ allocator. Experimental integration and overhead remain unverified.
 - Platform requirements: Linux 4 KiB pages, Windows MSVC, macOS >=14.4,
   x86_64/aarch64; no WASM. Actual target/runtime support needs validation.
 
+### B0.1 recorder API handoff
+
+Docs checked versioned online manifests/APIs and pinned upstream tests, not only
+local registries. Pin `rallocator = "=0.4.0"` and `seismograph = "=0.5.0"` with
+default features disabled; no monitor/test-util features are needed. Both and the
+transitive seismograph_rallocator 0.5.0 declare MIT/Rust 1.95.
+
+- [`rallocator::rallocator!()` and event tests](https://github.com/microsoft/oxidizer/blob/6021c37b6b8e5459d3e487d75d1fb2d5834fc02b/crates/rallocator/tests/events.rs)
+  provide isolated global registration and direct `GlobalAlloc` fixture patterns.
+- [`Configuration`](https://docs.rs/crate/seismograph/0.5.0/source/src/recorder.rs):
+  set `allocations: Policy::all(false)` and a bounded
+  `EventBufferCapacity::new(64)` (minimum power-of-two capacity, per thread).
+  Stack-free policy does not eliminate fixed stack storage in each ring slot.
+- [`SnapshotOptions`](https://docs.rs/crate/seismograph/0.5.0/source/src/snapshot.rs):
+  `EventBufferDisposition::Stop` captures/disables/releases buffers; `Clear`
+  captures/clears/continues; default `Retain` does not drain. Decode `as_bytes()`
+  under synchronous thread-local `without_recording`.
+- [`Allocation`](https://docs.rs/crate/seismograph/0.5.0/source/src/recorder/alloc.rs)
+  exposes address, requested size/alignment, heap and thread fields.
+  `allocation_id` is an address-correlation key, not a unique lifetime.
+  Validate per-thread sequences and event-vector counts as well as total/lost
+  counters: ring-slot lock timeouts can omit entries beyond overwritten-prefix
+  loss accounting. No global cross-thread order or initial live set is guaranteed.
+
+Use a single-thread explicit allocate/free fixture and stopped capture first.
+These are source contracts, not executed results or exact process-peak evidence.
+
 ## Protocol
 
 - [RFC 5531 section 11](https://www.rfc-editor.org/rfc/rfc5531#section-11): records
@@ -84,3 +111,40 @@ allocator. Experimental integration and overhead remain unverified.
   lengths, zero padding and bounds on untrusted input.
 - [RFC 1813](https://www.rfc-editor.org/rfc/rfc1813): NFS counts/status/stable-write
   semantics; filename/path strings are wire-unbounded, handle <=64.
+
+## Dependency Gate Policy
+
+Docs checked official [license configuration](https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html)
+and [advisory configuration](https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html),
+plus cargo-deny source at
+[`4b1f2002a11077f25437c2983f0a1a5439a886f4`](https://github.com/EmbarkStudios/cargo-deny/tree/4b1f2002a11077f25437c2983f0a1a5439a886f4/src).
+Default license allowlist and advisory ignores are empty. SPDX OR needs an allowed
+branch; AND needs every term. Crate-specific license exceptions and advisory
+ignores are policy choices, not mechanical repairs or remediation.
+
+The reported base-graph license failures cannot be cleared merely by removing
+B0 dependencies. The owner has now approved the [exact policy/remediation scope](baseline.md#outstanding-gates);
+no advisory ignores or exceptions. Direct advisory-only Rust MCP check on the clean
+prerequisite worktree scanned successfully with the optional `disable_fetch`
+argument omitted; all five records are current scanner findings, not guessed IDs.
+Online advisory/release verification is recorded below.
+
+## Approved Advisory Remediation Evidence
+
+Docs verified the five IDs against official RustSec records and upstream releases.
+These establish dependency advisories, not local exploitability.
+
+| Dependency | Pinned advisory and minimal route |
+| --- | --- |
+| anyhow | [RUSTSEC-2026-0190](https://github.com/RustSec/advisory-db/blob/81f061183406286f0fe1707ce6f1905914c8e380/crates/anyhow/RUSTSEC-2026-0190.md), [1.0.103 release](https://github.com/dtolnay/anyhow/releases/tag/1.0.103). MIT OR Apache-2.0; MSRV 1.68. |
+| chrono | [RUSTSEC-2026-0543](https://github.com/RustSec/advisory-db/blob/233155b4025b854c68a4b199c0e32d7fd53291a2/crates/chrono/RUSTSEC-2026-0543.md): all versions unmaintained, no patched version. Only client `ls` example uses it. |
+| crossbeam-epoch | [RUSTSEC-2026-0204](https://github.com/RustSec/advisory-db/blob/463f03a9c0ce5519ecc99bf257204ccfa167a8ed/crates/crossbeam-epoch/RUSTSEC-2026-0204.md), [0.9.20 release](https://github.com/crossbeam-rs/crossbeam/releases/tag/crossbeam-epoch-0.9.20). Compatible with deque's ^0.9.17; MIT OR Apache-2.0, MSRV 1.61. |
+| intaglio | [RUSTSEC-2026-0078](https://github.com/RustSec/advisory-db/blob/a9993361b06388325618aa11ec691faaac5f9a3e/crates/intaglio/RUSTSEC-2026-0078.md), [1.13.3 release](https://github.com/artichoke/intaglio/releases/tag/v1.13.3). MIT; MSRV 1.85. |
+| tokio | [RUSTSEC-2026-0386](https://github.com/RustSec/advisory-db/blob/84d943a6deeb8cc6c6f632531aaf4f1c62275239/crates/tokio/RUSTSEC-2026-0386.md): fixed >=1.51.6,<1.52.0 OR >=1.53.3. Choose direct floor 1.53.3 rather than ^1.51.6, which also admits vulnerable 1.52.x. [Selected manifest](https://github.com/tokio-rs/tokio/blob/a85c3f5baa298a6b554fd3700daf0342289881af/tokio/Cargo.toml): MIT, MSRV 1.71, existing features retained; macros requires tokio-macros ~2.7.0. |
+
+For the example-only chrono replacement, [Jiff 0.2.28 pinned source/manifest](https://github.com/BurntSushi/jiff/tree/66f6ec2d0b75112deadf7e067dbf2ef114d41c50)
+supports `Timestamp::try_from(SystemTime)`, `default-features=false`,
+`features=["std"]`, Unlicense OR MIT, MSRV 1.70.
+Its default `Timestamp` display uses `Z`; the [approved example scope](baseline.md#outstanding-gates)
+accepts that format directly. No custom formatter, timezone database or broader
+time migration is needed. This is source evidence, not cross-target validation.

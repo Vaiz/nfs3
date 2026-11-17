@@ -12,6 +12,9 @@ pub(crate) mod traits;
 pub(crate) mod util;
 pub(crate) mod void;
 
+#[cfg(feature = "opaque-diagnostics")]
+pub mod opaque_diagnostics;
+
 pub use nfs3_macros::XdrCodec;
 
 pub use self::error::Error;

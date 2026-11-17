@@ -11,6 +11,10 @@ description = "Type definitions and utilities for working with NFSv3"
 readme = "README.md"
 keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 
+[features]
+# Synchronous, thread-local opaque codec diagnostics; absent from default builds.
+opaque-diagnostics = []
+
 [dependencies]
 nfs3_macros.workspace = true
 

@@ -3,7 +3,7 @@ name: "Buffering Implement"
 description: "Implement an approved NFS3 buffer and deserializer redesign stage with focused tests and API migration."
 model: "GPT-6.1 Sol (copilot)"
 tools: [execute, read, agent, edit, search, 'rust/*']
-agents: []
+agents: [Buffering Docs]
 user-invocable: true
 ---
 

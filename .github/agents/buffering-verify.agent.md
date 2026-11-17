@@ -3,7 +3,7 @@ name: "Buffering Verify"
 description: "Independently validate NFS3 buffering correctness, memory bounds, copy counts, and performance against a pre-change baseline."
 model: "GPT-6.1 Terra (copilot)"
 tools: [execute, read, agent, search, 'rust/*']
-agents: []
+agents: [Buffering Docs]
 user-invocable: false
 ---
 

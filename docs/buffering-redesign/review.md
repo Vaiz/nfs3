@@ -21,3 +21,22 @@ hooks absent by default, measurement-only allocator, comparable compiler/allocat
 harness lanes, honest unsupported-case reporting. No architecture/code/performance
 pass. User agreement remains required for numeric resource/performance policy,
 pool retention and transaction outcome/cache choices.
+
+## B0.1 Patch Review
+
+Actual codec hooks, feature isolation, counter semantics and unsafe allocator
+fixture are acceptable at code level; full B0.1 acceptance remains blocked by
+repository/measurement gates. This is separate from architecture findings above.
+
+- The MSRV and coupled duration-spelling prerequisite is independently checked,
+  code-accepted and [merged with passing CI](progress.md). B0 source reconciliation
+  and its own required gates remain separate.
+- **B0-G3:** [deny attribution](baseline.md#outstanding-gates) is supplied:
+  advisories affect base dependencies; new MIT dependencies also fail absent
+  license allow-policy. Review must confirm the breakdown; no policy waiver.
+- MSRV, non-host CI targets, remaining CI/wire/full-workload gates remain open.
+  Implement's broad test/build results are not independent Verify results.
+
+Optional, not acceptance blockers: assert the observed last one-byte allocation
+pair in the fixture; investigate thread-local initialization/destructor portability.
+No performance or exact memory acceptance follows from this patch review.

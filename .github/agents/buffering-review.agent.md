@@ -2,8 +2,8 @@
 name: "Buffering Review"
 description: "Independently review NFS3 buffering designs and implementations for correctness, resource bounds, and measured improvements."
 model: "Claude Opus 5.5 (copilot)"
-tools: [read, search]
-agents: []
+tools: [read, search, agent]
+agents: [Buffering Docs]
 user-invocable: false
 ---
 
