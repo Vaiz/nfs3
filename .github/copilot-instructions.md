@@ -3,7 +3,10 @@
 Rust NFS3 workspace: protocol types/codecs in `crates/nfs3_types`, derives in
 `crates/nfs3_macros`, async client/server in their crates, integration/performance
 tests in `crates/nfs3_tests`. Follow existing patterns and document public APIs.
-Preserve unrelated worktree changes; keep edits scoped.
+Preserve unrelated worktree changes; keep edits scoped. Prefer the simplest change;
+do not preserve incidental behavior (e.g. example output) unless asked.
+Create extra worktrees under `.worktrees/` (git-ignored), not sibling directories,
+so tool access stays inside the trusted repository and avoids approval prompts.
 
 ## Tool Use
 

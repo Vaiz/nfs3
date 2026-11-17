@@ -9,12 +9,12 @@
 - Draw on established crate implementations, not just novel abstractions.
 - Distinguish source evidence, measurements, and hypotheses. Missing evidence is
   an explicit gap, not a passing result.
-- Route documentation/API research through **Buffering Docs**; other agents must
-  delegate those questions rather than research documentation themselves. Docs
-  must use authoritative online documentation and revision-pinned upstream
-  source/tests, not stop at Cargo registry searches. Reuse valid existing evidence;
-  report inaccessible sources as gaps. Local repository inspection is still each
-  worker's responsibility.
+- Route open external design/API research through **Buffering Docs**; it uses
+  authoritative docs and revision-pinned upstream source/tests, not just registry
+  searches. Versions, licenses, advisories and MSRV come from local tools
+  (`cargo-deny`, `cargo-info`, `cargo-tree`, `Cargo.lock`) without Docs. Reuse
+  valid existing evidence; report inaccessible sources as gaps. Local repository
+  inspection is each worker's responsibility.
 
 ## Resume State
 

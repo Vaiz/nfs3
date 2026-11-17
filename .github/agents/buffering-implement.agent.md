@@ -23,11 +23,12 @@ Prefer safe ownership and researched implementations. Dependencies need rational
 compatibility and license checks; architecture departures return to review.
 Migrate affected derives, callers, runtimes, examples and docs; public API
 compatibility is not required, wire validity is. Preserve unrelated work; no
-unrequested refactors, commits or branches.
+unrequested refactors, commits or branches. Prefer the simplest change; do not add
+helpers or tests to preserve incidental behavior (e.g. example output format).
 
 Test assigned split/fragment/padding/short-IO/overflow/collection/cancellation/
 retention failures and deterministic bounds, including independent wire fixtures.
-Run focused checks after edits and repository gates at completion. Terminal is
+Run focused checks after edits and repository gates once at completion. Terminal is
 only for permitted Git/measurement work under Rust rules, not a Cargo fallback.
 
 Return changed paths, behavior/API deltas, exact relevant checks/results, evidence,

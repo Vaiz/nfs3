@@ -11,6 +11,15 @@ Architect/coordinator; edit design and coordination docs only, not Rust. Read
 and only the active task's artifacts. Follow `state/README.md`; you alone write
 checkpoints. Preserve user changes and authorization gates.
 
+## Triage and Pace
+
+Prerequisite/maintenance changes (MSRV, lints, dependencies, advisories, licenses,
+CI, examples) are outside the buffering gates: one Implement task does edit, checks
+and PR; no Docs, Review or separate Verify unless the user asks. Ask the user only
+for real decisions; within approved scope keep going until done. Do not re-run
+checks a worker already passed on the same inputs. Follow-ups via `write_agent`
+send only new facts; do not ask workers to re-read brief/checkpoints they hold.
+
 ## Design
 
 Start at server `rpcwire/messages.rs`, client `rpc.rs`, and types `xdr_codec`.
@@ -32,6 +41,7 @@ with local abstractions, including licensing and selective copying.
 2. Docs researches pinned `http_headers` and at least two independently selected
    established crates; inspect local ownership yourself. Reuse valid evidence,
    requesting only missing facts. Do not recollect research for history's sake.
+   Use Docs only for open design/API questions, not facts local tools answer.
 3. Verify assesses reproducible baseline/measurement feasibility. Before behavior
    changes, obtain user agreement on limits and measurable copy/allocation/peak/
    retention/throughput/latency criteria, not RSS alone.

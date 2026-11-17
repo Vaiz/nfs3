@@ -18,7 +18,9 @@ Tool restrictions are capability boundaries, not a security sandbox.
 Workflow: research -> design -> measurement assessment -> review -> user approval
 -> baseline -> bounded implementation -> independent verification -> review.
 Missing instrumentation gets a baseline-only stage; architecture changes return
-to review. Never run multiple writers or benchmarks concurrently.
+to review. Never run multiple writers or benchmarks concurrently. Small
+prerequisites (MSRV, deps, lints, CI) skip this workflow: one Implement task, or a
+plain session.
 
 All agents read the [brief](buffering/brief.md); Implement/Verify also read
 [Rust rules](buffering/rust-validation.md). The lead owns

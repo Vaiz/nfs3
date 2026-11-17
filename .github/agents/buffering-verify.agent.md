@@ -33,7 +33,8 @@ peers and cancellation/drop/retry. No deliberate OOM. Verify agreed resource bou
 wire fixtures/independent interoperability, runtimes/targets and repository gates.
 Start with existing perf bench, types tests and RPC tests; report coverage gaps.
 
-Return relevant exact checks/results, comparison evidence and PASS/FAIL/BLOCKED
+Run each gate once per input revision; do not repeat checks already passed on the
+same inputs. Return relevant exact checks/results, comparison evidence and PASS/FAIL/BLOCKED
 for assigned scope. Include fresh Git status, stage diff versus recorded baseline,
 untracked source paths/content and separate pre-existing changes; exclude secrets
 and unrelated files. Lead persists evidence, not you. Preserve active baseline
