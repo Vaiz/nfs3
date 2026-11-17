@@ -46,21 +46,6 @@ The following Rust-specific tools are available through the MCP server and shoul
 - **`Rust-cargo-search`**: Search for crates on crates.io
 - **`Rust-cargo-info`**: Get information about specific crates
 
-## Project Structure
-
-```
-nfs3/
-├── crates/
-│   ├── cargo_nfs3_server/     # Lightweight NFSv3 server tool
-│   ├── nfs3_client/          # Async NFS3 client implementation
-│   ├── nfs3_server/          # Async NFS3 server implementation
-│   ├── nfs3_types/           # Types and utilities for NFS operations
-│   ├── nfs3_macros/          # Procedural macros
-│   └── nfs3_tests/           # Integration tests
-├── .github/workflows/        # CI/CD workflows
-└── scripts/                  # Build and utility scripts
-```
-
 ## AI Agent Guidelines
 
 ### 1. Always Use Rust MCP Tools
