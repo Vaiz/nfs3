@@ -40,5 +40,7 @@
   both compilers. [MSRV evidence](baseline.md#host-msrv-validation).
   User authorized committing/pushing baseline work and opening a PR for
   cross-platform CI. Product fixes/redesign remain unauthorized.
+- Published: [PR #175](https://github.com/Vaiz/nfs3/pull/175), baseline commit
+  `fcfde061574cb2e3a610de667f4eb17c18104598`; CI results pending.
 
 Keep this as a current status summary, not a stage or session history.
