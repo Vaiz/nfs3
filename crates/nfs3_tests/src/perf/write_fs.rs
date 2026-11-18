@@ -76,6 +76,8 @@ impl NfsFileSystem for WriteFs {
         _data: &[u8],
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
+        #[cfg(feature = "rpc-diagnostics")]
+        nfs3_client::nfs3_types::rpc_diagnostics::consumed(_data);
         Ok((
             file_attr(FILE_HANDLE.as_u64(), self.file_size),
             stable_how::FILE_SYNC,

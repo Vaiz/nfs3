@@ -10,6 +10,10 @@ license.workspace = true
 publish = false # this crate contains only tests
 
 [features]
+rpc-diagnostics = [
+    "nfs3_client/rpc-diagnostics",
+    "nfs3_server/rpc-diagnostics",
+]
 allocator-diagnostics = [
     "dep:nfs3_types",
     "nfs3_types/opaque-diagnostics",
@@ -41,6 +45,15 @@ harness = false
 name = "opaque_allocator_baseline"
 path = "src/bin/opaque_allocator_baseline.rs"
 required-features = ["allocator-diagnostics"]
+
+[[bin]]
+name = "rpc_allocator_baseline"
+path = "src/bin/rpc_allocator_baseline.rs"
+required-features = ["allocator-diagnostics", "rpc-diagnostics"]
+
+[[bin]]
+name = "rpc_timing"
+path = "src/bin/rpc_timing.rs"
 
 [lints.clippy]
 collapsible_if = "allow"

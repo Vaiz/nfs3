@@ -48,6 +48,11 @@ Note that this example uses *writable* instance of `MemFs`.
 Usage
 =====
 
+The opt-in `rpc-diagnostics` feature forwards the logical baseline ledger in
+`nfs3_types::rpc_diagnostics`. Socket reads count only selected outcomes, not
+initiated or cancelled losing select futures. Growth counters are capacity
+observations and old-logical-length relocation upper bounds, not actual copies.
+
 You simply need to implement the `vfs::NfsReadFileSystem` and (optionaly) `vfs::NfsFileSystem`
 traits. See memfs.rs for an example and bin/main.rs for how to actually start
 a service. The interface generally not difficult to implement; demanding mainly

@@ -6,6 +6,8 @@ use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMe
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
+#[cfg(feature = "rpc-diagnostics")]
+use nfs3_types::rpc_diagnostics::{Guard, Site, record};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncWriteExt, DuplexStream};
@@ -150,9 +152,17 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     assert!(buf.len() < (1 << 31));
     let fragment_header = fragment_header::new(buf.len() as u32, true);
     let header_buf = fragment_header.into_xdr_buf();
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerSendMarker, header_buf.len(), false);
     socket.write_all(&header_buf).await?;
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerSendMarker, header_buf.len(), true);
     trace!("Writing fragment length: {}", buf.len());
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerSendBody, buf.len(), false);
     socket.write_all(&buf).await?;
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerSendBody, buf.len(), true);
     Ok(())
 }
 
@@ -213,6 +223,8 @@ where
             let context = self.context.clone();
             let send = self.reply_send_channel.clone();
             tokio::spawn(async move {
+                #[cfg(feature = "rpc-diagnostics")]
+                let handler_guard = Guard::start(2);
                 let result = handle_rpc_message(context, message).await;
 
                 match result {
@@ -227,6 +239,8 @@ where
                         let _ = send.send(Err(anyhow!("Error handling RPC message")));
                     }
                 }
+                #[cfg(feature = "rpc-diagnostics")]
+                handler_guard.normal_end();
             });
         }
 

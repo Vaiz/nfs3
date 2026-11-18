@@ -2,38 +2,43 @@
 
 - Scope: B0 baseline-only instrumentation with rallocator/Rust 1.95 and B1-B4
   document corrections authorized. No buffering behavior/prototypes or numeric policy.
-- Prerequisite: [PR #171](https://github.com/Vaiz/nfs3/pull/171), `rust-msrv-1.95`
-  -> `main`, is merged at `3ac587712affd8d7170d481f590dad496aca7934`.
-  All 11 PR-head CI checks passed, including MSRV 1.95 and all four target
-  debug/release lanes. Scope is only MSRV and three equivalent duration spellings.
-  Head commit `6737e624ce89a16272fe04f91346b4d837380e0e`;
-  worktree `/home/vaiz/repos/my/nfs3-rust-msrv-1.95` is clean.
-  User merged; the assistant did not merge or enable auto-merge.
-  Primary B0.1 source is preserved, but dirty `bufs` does not contain the merge.
-- Active B0.1 source: detached `/home/vaiz/repos/my/nfs3-b0-baseline` at merged main,
-  six tracked modifications and three untracked approved files. Host gates pass
-  except deny; independent focused capture passed. Primary docs are canonical.
-- Active prerequisite: user approved a separate cargo-deny policy/advisory fix PR
-  with the [exact allowlist](baseline.md#outstanding-gates), no advisory ignores.
-  `fix-cargo-deny` in `/home/vaiz/repos/my/nfs3-cargo-deny` is implemented with
-  passing host gates, including deny; [PR #173](https://github.com/Vaiz/nfs3/pull/173)
-  is open at `f7ee3746d7988481ce6051ace37b4789933866c7`.
-  Final five-file scope and clean worktree verified: default Jiff timestamp
-  display, no custom formatter/tests or example test target.
-  Current-head CI snapshot: nine passed including MSRV, two macOS checks pending,
-  no failures. No merge or auto-merge.
-- Design: [D3.3](design.md), condensed; not independently accepted.
-- Research: [pinned evidence](research.md) available; no measured NFS results.
-- Review: [B1-B4](review.md) remain proof/acceptance obligations after two rounds.
-- Baseline: [B0.1 focused verification](baseline.md#b01-active-verification-evidence)
-  passed independently; MSRV-induced Clippy causality and deny attribution are
-  established. Coupled duration fixes are included in the separate prerequisite PR.
-- Prerequisites: Docs supplied an [online-source API handoff](research.md#b01-recorder-api-handoff).
-  Prerequisite strict Clippy and deny pass. B0 still needs the prerequisite merged
-  and adopted to clear its [dependency gate](baseline.md#outstanding-gates). CI does not validate
-  the additional B0 allocator dependencies or full baseline workloads.
-- Next: user merges PR #173 after CI; then refresh refs and reconcile B0 onto it.
-  No automatic stash/reset/rebase of primary or changes to B0 evidence inputs.
-  Baseline-only authorization does not authorize buffering behavior changes.
+- Prerequisites: [PR #171](https://github.com/Vaiz/nfs3/pull/171),
+  [PR #173](https://github.com/Vaiz/nfs3/pull/173) and safe mirror harness
+  [PR #174](https://github.com/Vaiz/nfs3/pull/174) are merged. Current base is
+  `origin/main` `00ea3aa2f2d4027bb9ead8da2ee71d647e88f40e`.
+- Active source: current session branch `vaiz-redesigned-dollop`, rebased cleanly
+  onto that main revision at `d1f731b07c7e7b664b3a6108231d3ce3d10a92a3`.
+  The user approved proceeding without branch rename. No push or merge performed.
+  Historical external worktrees are not inputs to modify or access.
+- Completed slice: B0.2 scoped opaque retention; [independent capture](baseline.md#b02-independent-capture)
+  and actual-patch review accepted the bounded result.
+  Source changes are limited to the measurement executable and its new untracked
+  integration test. [Current evidence](baseline.md#b02-independent-capture) records
+  1,380,352 requested-byte peak, four final drops and zero final live output bytes.
+  Host gates passed. Safe mirror execution passed 48 cases per debug/release profile,
+  with owned-child/temp cleanup confirmed.
+- Completed: B0.3 end-to-end metadata/READ/WRITE ledger, independently captured
+  and actual-patch accepted; [current evidence](baseline.md#b03-independent-rpc-capture).
+- Completed: B0.4 event-visible cohort independently reconstructed and actual-patch
+  accepted; [current measurements](baseline.md#b04-independent-allocation-capture).
+- Completed: B0.5 bounded framing/directory/slow-peer/concurrency/loopback coverage,
+  independently verified and actual-source accepted; [evidence](baseline.md#b05-independent-wire-capture).
+- Completed: B0.6 normal-allocator timing and whole-feature-lane comparisons,
+  independently captured and actual-source accepted;
+  [measurements and limitations](baseline.md#b06-independent-timing-capture).
+  Full B0 is not complete; no process-wide memory or performance claim.
+- Design: [D3.3](design.md), not independently accepted. Existing
+  [research](research.md) remains available; [review obligations](review.md) remain open.
+- Separate harness prerequisite landed; dedicated baseline feature-off and allocator
+  MSRV CI coverage remain absent. The merged workflow fixes debug/release harness
+  binary selection, not these baseline-specific lanes.
+  Remaining: uncovered workloads, exact process-wide/copy metrics, recorder
+  overhead, non-host execution and independent peer interoperability.
+  Host Rust 1.97 debug/release gates pass. Rust 1.95 default/all-feature builds,
+  default tests and all-feature debug/release tests pass. Authorized optional-runtime
+  doctest guards are fixed and checked in default/Tokio/Smol configurations on
+  both compilers. [MSRV evidence](baseline.md#host-msrv-validation).
+  User authorized committing/pushing baseline work and opening a PR for
+  cross-platform CI. Product fixes/redesign remain unauthorized.
 
 Keep this as a current status summary, not a stage or session history.

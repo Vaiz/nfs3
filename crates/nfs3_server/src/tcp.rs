@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
+#[cfg(feature = "rpc-diagnostics")]
+use nfs3_types::rpc_diagnostics::{self as diagnostics, Guard, Site, completed, record};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -52,27 +54,46 @@ where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
     T: NfsFileSystem + 'static,
 {
+    #[cfg(feature = "rpc-diagnostics")]
+    let socket_guard = Guard::start(0);
     let (mut message_handler, mut socksend, mut msgrecvchan) =
         SocketMessageHandler::new(context.clone());
 
     tokio::spawn(async move {
+        #[cfg(feature = "rpc-diagnostics")]
+        let reader_guard = Guard::start(1);
         loop {
             if let Err(e) = message_handler.read().await {
                 debug!("Message loop broken due to {e}");
                 break;
             }
         }
+        #[cfg(feature = "rpc-diagnostics")]
+        reader_guard.normal_end();
     });
     let mut buf = vec![0u8; 128 * KIBIBYTE as usize].into_boxed_slice();
+    #[cfg(feature = "rpc-diagnostics")]
+    completed(Site::ServerScratch, buf.len());
     loop {
         tokio::select! {
             result = socket.read(&mut buf) => {
+                #[cfg(feature = "rpc-diagnostics")]
+                diagnostics::selected(&result);
                 match result {
                     Ok(0) => {
+                        #[cfg(feature = "rpc-diagnostics")]
+                        socket_guard.normal_end();
                         return Ok(());
                     }
                     Ok(n) => {
-                        let _ = socksend.write_all(&buf[..n]).await;
+                        #[cfg(feature = "rpc-diagnostics")]
+                        record(Site::Forward, n, false);
+                        let result = socksend.write_all(&buf[..n]).await;
+                        #[cfg(feature = "rpc-diagnostics")]
+                        if result.is_ok() {
+                            record(Site::Forward, n, true);
+                        }
+                        let _ = result;
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
                     Err(e) => {

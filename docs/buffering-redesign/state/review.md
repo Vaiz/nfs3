@@ -1,18 +1,15 @@
 # Buffering Review State
 
-- Task: DENY-PR actual policy/dependency/example patch review.
+- Task: B0.6 actual-source timing and independent capture acceptance.
 - Status: completed
-- Inputs: branch `fix-cargo-deny`, worktree `/home/vaiz/repos/my/nfs3-cargo-deny`,
-  base `3ac587712affd8d7170d481f590dad496aca7934`; [Verify evidence](verify.md),
-  [Implement](implement.md), [pinned Docs](../research.md#approved-advisory-remediation-evidence).
-- Scope: prerequisite policy/manifests/lock and dev-only Jiff replacement;
-  exact approved policy and targeted remediation.
-  No architecture/allocator review or unrelated dependency changes.
-- Result: ACCEPT for inspected code/policy; no blockers. Exact license policy,
-  remediation floors/lock graph are correct. Independent deny/Clippy/fmt checks
-  pass; broad checks inherited from Implement. Final user-approved default Jiff
-  display and helper/test removal were directly checked by lead; examples contain
-  no tests or test targets. No production API change.
-- Blockers: remaining PR CI/user merge; current results are in progress.md.
-- Next: user merges after CI; this acceptance does not cover B0 or buffering
-  behavior changes.
+- Inputs: [B0.6 contract](../baseline.md#b06-normal-allocator-timing),
+  current rpc_baseline observer/request/validation code.
+- Scope: read-only actual timing module/binary/tests, observer callbacks and
+  registration; independent raw capture and reproduced build identity.
+- Result: ACCEPT bounded diagnostic source and 110-process capture content.
+  Final artifact hashing/JSON/source checks delegated to read-only CLI validation
+  after Review (Review lacked execution tools); all content/identity checks passed.
+  Required noise and full-payload WRITE scan caveats recorded in baseline.md.
+- Blockers: no product changes authorized; external platform/peer gates remain open.
+- Next: resolve external gates with user authorization; no full B0 or architecture
+  approval follows from this bounded timing acceptance.

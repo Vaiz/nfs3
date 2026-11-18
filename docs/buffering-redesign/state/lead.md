@@ -1,30 +1,26 @@
 # Buffering Lead State
 
-- Task: DENY-PR approved prerequisite remediation; B0.1 preserved.
-- Status: blocked
-- Inputs: [B0 contract](../baseline.md); recorded base
-  `cadfaf4cb0931fab41b4364e4ff52bb5d4aed142`; Implement reports unchanged HEAD.
-- Result: owner approved separate cargo-deny prerequisite PR with exact license
-  allowlist and no advisory ignores. Read-only security assessment identified
-  remediation surfaces, not confirmed application exploitability. Fresh scanner
-  output and Docs' pinned official sources verify all five advisory records;
-  selected fixes and exact example formatter APIs are in research.md.
-  B0.1 reconciled in detached `/home/vaiz/repos/my/nfs3-b0-baseline` at
-  merged main `3ac587712affd8d7170d481f590dad496aca7934`: six tracked changes,
-  three untracked approved sources, no duplicate prerequisite edits. Implement
-  host checks and independent focused Verify passed. Original dirty bufs/source
-  fingerprints preserved; canonical docs remain in primary. Documentation is
-  routed through Docs under the [shared brief](../../../.github/agents/buffering/brief.md).
-  Docs returned the bounded online-source [API handoff](../research.md#b01-recorder-api-handoff).
-- Blockers: prerequisite PR CI/user merge and adoption into B0; full baseline
-  capture and B0-specific target validation;
-  [architecture obligations](../review.md) remain open for later behavior stages.
-- Authorization: [exact policy and remediation scope](../baseline.md#outstanding-gates)
-  is approved. No advisory ignores or unrelated upgrades; no merge authorization.
-- Next: simplified PR #173 is published and verified; current head/CI are in
-  progress.md. Await user merge, then refresh refs and reconcile preserved B0
-  inputs onto the prerequisite. No merge authorization.
-  Preserve both existing worktrees; no concurrent writers/benchmarks.
-  Continue through verification/review; stop only for completion or a concrete
-  question requiring user decision, not a routine checkpoint.
-  Baseline-only authorization does not permit behavior changes.
+- Task: authorized baseline commit, push and PR for cross-platform CI.
+- Status: in_progress
+- Inputs: [current revision/source](../progress.md), [canonical B0 contract and
+  evidence](../baseline.md), current dirty/untracked B0.2-B0.6 source.
+- Result: B0.2-B0.6 independently verified and actual-source accepted. Final host
+  debug/release gates pass. Unchanged TCP retry passed; firewall cause unproven.
+  Current timing capture JSON/hash/source identity verified and persisted.
+  Rust 1.95 default/all-feature all-target builds and all-feature debug/release
+  tests pass; default workspace tests including doctests now pass after approved
+  optional-runtime README guards. Both enabled examples checked on both compilers.
+- Authorization: baseline-only instrumentation, approved README guards and existing
+  dependency policy. User approved committing baseline work, pushing this branch
+  and opening a PR for CI. No product fixes/redesign or further installations.
+  Preserve unrelated source; never access the main checkout.
+- Blockers: host MSRV and doctest repair complete. No broader product fixes authorized.
+  Non-host/baseline CI and independent released-peer resources remain unestablished.
+  Exact full-memory/copy and recorder-overhead gaps are explicit, not passing.
+  Zero-verifier READDIR defect remains unrepaired; architecture/numeric gates open.
+- Next: inspect scope, commit current baseline changes with required coauthor,
+  push current branch and open PR; inspect cross-platform CI results.
+  Independent NFS peer also remains needed.
+  Preserve measurement artifacts; obtain separate authorization for product work.
+  Do not pause at routine
+  stage boundaries. Only lead writes checkpoints.

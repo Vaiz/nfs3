@@ -14,6 +14,7 @@ keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
 [features]
 # Synchronous, thread-local opaque codec diagnostics; absent from default builds.
 opaque-diagnostics = []
+rpc-diagnostics = ["opaque-diagnostics"]
 
 [dependencies]
 nfs3_macros.workspace = true

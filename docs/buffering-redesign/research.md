@@ -102,6 +102,16 @@ transitive seismograph_rallocator 0.5.0 declare MIT/Rust 1.95.
 Use a single-thread explicit allocate/free fixture and stopped capture first.
 These are source contracts, not executed results or exact process-peak evidence.
 
+### RPC checkpoint constraint
+
+For B0.4, repeated Retain snapshot lifecycle, nested suppression and exact recorder
+slot/metadata bytes are not independently established. The bounded contract avoids
+these dependencies: allocation markers identify checkpoints in one complete
+single-thread trace, followed by one Stop snapshot; observer tracking/reporting
+runs afterward. Marker/runtime/transcript/validation costs remain in the measured
+event-visible cohort. Neither this sequence nor loss-free events establish the
+process's initial heap or actual realloc overlap/count.
+
 ## Protocol
 
 - [RFC 5531 section 11](https://www.rfc-editor.org/rfc/rfc5531#section-11): records

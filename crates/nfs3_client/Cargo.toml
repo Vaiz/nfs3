@@ -14,6 +14,7 @@ readme = "README.md"
 [features]
 tokio = ["dep:tokio"]
 smol = ["dep:smol", "dep:socket2"]
+rpc-diagnostics = ["nfs3_types/rpc-diagnostics"]
 
 [dependencies]
 nfs3_types.workspace = true

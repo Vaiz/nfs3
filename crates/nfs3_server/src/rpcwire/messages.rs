@@ -5,6 +5,8 @@ use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, auth_stat, call_body, fragment_header, msg_body, opaque_auth,
     rejected_reply, reply_body, rpc_msg,
 };
+#[cfg(feature = "rpc-diagnostics")]
+use nfs3_types::rpc_diagnostics::{self as diagnostics, Site, completed, record};
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -40,12 +42,31 @@ pub struct IncompleteRpcMessage(Vec<u8>);
 impl IncompleteRpcMessage {
     async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
         let mut header_buf = [0_u8; 4];
-        input.read_exact(&mut header_buf).await?;
+        #[cfg(feature = "rpc-diagnostics")]
+        completed(Site::ServerMarkerZero, 4);
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ServerMarker, 4, false);
+        let result = input.read_exact(&mut header_buf).await;
+        #[cfg(feature = "rpc-diagnostics")]
+        diagnostics::marker_result(&result);
+        result?;
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ServerMarker, 4, true);
         let header: fragment_header = header_buf.into();
         let prev_length = self.0.len();
         let fragment_length = header.fragment_length() as usize;
+        #[cfg(feature = "rpc-diagnostics")]
+        let old_capacity = self.0.capacity();
         self.0.resize(prev_length + fragment_length, 0);
+        #[cfg(feature = "rpc-diagnostics")]
+        {
+            diagnostics::growth(prev_length, old_capacity, self.0.capacity());
+            completed(Site::ServerZero, fragment_length);
+            record(Site::ServerBody, fragment_length, false);
+        }
         input.read_exact(&mut self.0[prev_length..]).await?;
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ServerBody, fragment_length, true);
 
         Ok(header.eof())
     }
@@ -174,7 +195,75 @@ where
         .expect("Failed to calculate size");
 
     let mut cursor = Cursor::new(Vec::with_capacity(size));
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerEncode, size, false);
     rpc.pack(&mut cursor)?;
     message.pack(&mut cursor)?;
+    #[cfg(feature = "rpc-diagnostics")]
+    record(Site::ServerEncode, cursor.get_ref().len(), true);
     Ok(CompleteRpcMessage(cursor.into_inner()))
+}
+
+#[cfg(all(test, feature = "rpc-diagnostics"))]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn fragmented_growth_and_capacity_preserving_resize() {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                let _ = diagnostics::take();
+                let mut message = IncompleteRpcMessage(Vec::with_capacity(16));
+                let mut input = &[0, 0, 0, 4, 1, 2, 3, 4, 0x80, 0, 0, 4, 5, 6, 7, 8][..];
+                assert!(!message.recv(&mut input).await.expect("first fragment"));
+                assert!(message.recv(&mut input).await.expect("last fragment"));
+                assert_eq!(message.0, [1, 2, 3, 4, 5, 6, 7, 8]);
+                let ledger = diagnostics::take();
+                assert_eq!(ledger.growth.observations, 2);
+                assert_eq!(ledger.growth.capacity_increases, 0);
+                assert_eq!(ledger.growth.old_logical_upper_bound, 0);
+                assert_eq!(ledger.counts[Site::ServerZero as usize].completed_bytes, 8);
+
+                let mut message = IncompleteRpcMessage::default();
+                let mut first = &[0, 0, 0, 8, 1, 2, 3, 4, 5, 6, 7, 8][..];
+                assert!(!message.recv(&mut first).await.expect("first fragment"));
+                // This known small Vec has capacity eight, so a second fragment
+                // exercises a capacity increase with nonempty old logical data.
+                assert_eq!(message.0.capacity(), 8);
+                let mut second = &[0x80, 0, 0, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17][..];
+                assert!(message.recv(&mut second).await.expect("last fragment"));
+                assert_eq!(message.0, (1..=17).collect::<Vec<_>>());
+                let ledger = diagnostics::take();
+                assert_eq!(ledger.growth.observations, 2);
+                assert_eq!(ledger.growth.capacity_increases, 2);
+                assert_eq!(ledger.growth.old_logical_upper_bound, 8);
+                assert_eq!(ledger.counts[Site::ServerBody as usize].completed_bytes, 17);
+            });
+    }
+
+    #[test]
+    fn partial_marker_and_body_are_not_completed() {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                let _ = diagnostics::take();
+                let mut message = IncompleteRpcMessage::default();
+                assert!(message.recv(&mut &[0x80, 0][..]).await.is_err());
+                let ledger = diagnostics::take();
+                assert_eq!(ledger.marker_eof, 1);
+                assert_eq!(
+                    ledger.counts[Site::ServerMarker as usize].attempted_bytes,
+                    4
+                );
+                assert_eq!(ledger.counts[Site::ServerMarker as usize].completions, 0);
+                assert!(message.recv(&mut &[0x80, 0, 0, 4, 1, 2][..]).await.is_err());
+                let ledger = diagnostics::take();
+                assert_eq!(ledger.counts[Site::ServerMarker as usize].completions, 1);
+                assert_eq!(ledger.counts[Site::ServerBody as usize].attempted_bytes, 4);
+                assert_eq!(ledger.counts[Site::ServerBody as usize].completions, 0);
+            });
+    }
 }

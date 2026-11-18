@@ -36,6 +36,17 @@ Implementation anchors: server `tcp`, `rpcwire/messages`, handlers and transacti
 tracker; client `rpc`/`io`; types `xdr_codec`; macros `lib.rs`. Existing VFS 1 MiB
 preferences are observations, not new policy.
 
+For the [B0.3 RPC lane](baseline.md#b03-rpc-copy-and-growth-ledger), the local trace is:
+client packs marker/RPC/args into one Vec; server forwards 128 KiB socket scratch
+through its 256 KiB duplex, then resizes a record Vec per RPC fragment. Dispatch
+moves that record into a spawned handler; opaque WRITE decoding separately allocates
+payload retained across the borrowed VFS write. READ adopts the backend Vec into
+Opaque, packs it into a reply Vec, queues and sends it; client zero-fills a record
+Vec then decodes a separate owned output. Test ReadFs explicitly copies with to_vec;
+WriteFs consumes a borrow without storage copy. Record Vec capacity changes bound
+possible logical-payload relocation but do not reveal actual allocator copying.
+Existing generic handlers do not expose exact final backing-allocation release.
+
 ## Storage Choice
 
 [Pinned research](research.md) supports these proposals, not measured NFS results.
@@ -215,7 +226,8 @@ Preserve stable/COMMIT/exclusive CREATE semantics; no crash-persistent guarantee
 
 ## Stages and Gates
 
-1. Authorized B0: validate hooks and capture independent unchanged-behavior baseline.
+1. Authorized B0: validate hooks and capture independent unchanged-behavior baseline;
+   next bounded lane is [scoped opaque retention](baseline.md#b02-scoped-opaque-retention).
 2. Separately authorize provider/IO/type prototypes; prove unsafe contracts and
    compare alternatives before choosing policy and measured acceptance thresholds.
 3. Approved provider/payload APIs, then cursor/lists/checked codecs and all macro

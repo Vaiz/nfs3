@@ -6,6 +6,8 @@ use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, call_body, fragment_header, msg_body, opaque_auth, reply_body,
     rpc_msg,
 };
+#[cfg(feature = "rpc-diagnostics")]
+use nfs3_types::rpc_diagnostics::{Site, completed, record};
 use nfs3_types::xdr_codec::{Pack, Unpack};
 
 use crate::RpcError;
@@ -103,13 +105,21 @@ where
             true,
         );
         let mut buf = Vec::with_capacity(total_len + 4);
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientEncode, total_len + 4, false);
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
         if buf.len() - 4 != total_len {
             return Err(RpcError::WrongLength);
         }
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientEncode, buf.len(), true);
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientSend, buf.len(), false);
         io.async_write_all(&buf).await?;
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientSend, buf.len(), true);
         Ok(())
     }
 
@@ -118,7 +128,13 @@ where
         T: Unpack,
     {
         let mut buf = [0u8; 4];
+        #[cfg(feature = "rpc-diagnostics")]
+        completed(Site::ClientMarkerZero, 4);
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientMarker, 4, false);
         io.async_read_exact(&mut buf).await?;
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientMarker, 4, true);
         let fragment_header: fragment_header = buf.into();
         if !fragment_header.eof() {
             return Err(RpcError::FragmentedReply);
@@ -126,7 +142,13 @@ where
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
+        #[cfg(feature = "rpc-diagnostics")]
+        completed(Site::ClientZero, buf.len());
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientBody, buf.len(), false);
         io.async_read_exact(&mut buf).await?;
+        #[cfg(feature = "rpc-diagnostics")]
+        record(Site::ClientBody, buf.len(), true);
 
         let mut cursor = std::io::Cursor::new(buf);
         let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;

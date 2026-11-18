@@ -21,6 +21,7 @@ doctest = false
 __test_reexports = [] # should not be used outside nfs3_tests crate
 fs_util = ["dep:filetime"]
 memfs = []
+rpc-diagnostics = ["nfs3_types/rpc-diagnostics"]
 
 [dependencies]
 nfs3_types.workspace = true

@@ -1,7 +1,12 @@
 mod just_client;
 pub mod perf;
+#[cfg(all(feature = "allocator-diagnostics", feature = "rpc-diagnostics"))]
+pub mod rpc_allocation_tracker;
+pub mod rpc_baseline;
 pub mod rpc_tests;
+pub mod rpc_timing;
 mod server;
+pub mod wire_workloads;
 
 use std::ops::{Deref, DerefMut};
 

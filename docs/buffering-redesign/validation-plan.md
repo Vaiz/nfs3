@@ -63,8 +63,9 @@ all-feature tests; all-target/all-feature build; machete; deny.
 
 Require locked CI debug/release and selected MSRV coverage for Linux x86_64/aarch64,
 Windows x86_64 and macOS aarch64; Tokio/smol/examples/generated codecs/callers.
-Build test_mirror_fs through MCP before CI-equivalent invocation (CI uses debug
-binary even in release job). WASM support is unestablished. Missing tools, targets,
+Build test_mirror_fs and the matching server through MCP before CI-equivalent
+invocation; select the debug/release server explicitly with NFS3_MIRROR_SERVER.
+WASM support is unestablished. Missing tools, targets,
 policy or measurements block their gates, never count as passes.
 
 After each stage Verify supplies status, baseline-relative patch and untracked

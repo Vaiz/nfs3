@@ -55,7 +55,13 @@ impl NfsReadFileSystem for ReadFs {
         let start = (offset as usize).min(self.data.len());
         let end = (start + count as usize).min(self.data.len());
         let eof = end >= self.data.len();
-        Ok((self.data[start..end].to_vec(), eof))
+        let data = self.data[start..end].to_vec();
+        #[cfg(feature = "rpc-diagnostics")]
+        nfs3_client::nfs3_types::rpc_diagnostics::completed(
+            nfs3_client::nfs3_types::rpc_diagnostics::Site::ReadCopy,
+            data.len(),
+        );
+        Ok((data, eof))
     }
 
     async fn readdirplus(

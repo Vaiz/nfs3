@@ -1,18 +1,18 @@
 # Buffering Docs State
 
-- Task: DENY-PR verify five reported advisories and minimal patched versions.
+- Task: B0.4 pinned recorder checkpoint semantics.
 - Status: completed
-- Inputs: [B0 contract](../baseline.md), [pinned allocator evidence](../research.md#rallocator);
+- Inputs: [existing recorder evidence](../research.md#b01-recorder-api-handoff);
   Oxidizer `6021c37b6b8e5459d3e487d75d1fb2d5834fc02b`, rallocator 0.4.0,
-  seismograph 0.5.0. Source worktree is interrupted/unverified.
-- Scope: read-only official RustSec advisory pages/database and upstream release
-  source/manifests for the five IDs in baseline.md. Establish real affected/patched
-  ranges, MSRV 1.95 compatibility and whether chrono has a patched route. No
-  edits, registry-only lookup, invented APIs/advisories or broad upgrade inventory.
-- Result: all five official IDs and fix ranges verified; [pinned remediation
-  evidence](../research.md#approved-advisory-remediation-evidence) persisted.
-  Chrono has no patch; Jiff 0.2.28 std-only supports narrow example replacement.
-- Blockers: none for the research scope; implementation/output-equivalence and
-  lockfile/platform checks remain required.
-- Next: Implement uses Tokio 1.53.3 and direct Jiff Timestamp conversion/display.
-  User no longer requires Chrono formatting compatibility; no further research.
+  seismograph 0.5.0. No new crate selection or dependency change.
+- Scope: read-only authoritative source for repeated Retain snapshots followed by
+  Stop, synchronous suppression of snapshot/decode/observer allocations and frees,
+  cumulative sequence/loss validation, initialization and event-visible size limits.
+- Result: existing API evidence supports bounded recording/Stop, but repeated Retain
+  lifecycle tests, nested suppression and exact slot/metadata bytes were not
+  independently verified. These gaps are explicit in research.md.
+- Blockers: none for the chosen B0.4 single-Stop allocation-marker design, which
+  avoids those unverified APIs. Initial process heap and actual realloc count/
+  overlap remain unobservable; no exact claims.
+- Next: reuse established single-Stop path; no further external research needed
+  unless implementation finds a new dependency on the unverified semantics.
