@@ -1,5 +1,4 @@
 // Tests for XDR utility functions and edge cases
-#![allow(clippy::unwrap_used)]
 
 use std::borrow::Cow;
 use std::io::Cursor;

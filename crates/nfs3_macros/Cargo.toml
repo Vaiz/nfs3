@@ -11,6 +11,7 @@ description = "A Rust library providing a derive macro for XDR codec implementat
 readme = "README.md"
 exclude = ["tests/*"]
 keywords = ["xdr", "rfc1014"]
+categories = ["encoding"]
 
 [lib]
 proc-macro = true

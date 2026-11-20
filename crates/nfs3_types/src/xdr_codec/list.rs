@@ -40,13 +40,13 @@ where
         len
     }
 
-    fn pack(&self, output: &mut impl Write) -> crate::xdr_codec::Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let mut len = 0;
         for item in &self.0 {
-            len += true.pack(output)?;
-            len += item.pack(output)?;
+            len += true.pack(out)?;
+            len += item.pack(out)?;
         }
-        len += false.pack(output)?;
+        len += false.pack(out)?;
         Ok(len)
     }
 }

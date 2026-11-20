@@ -25,7 +25,7 @@ pub struct TestContext {
 }
 
 impl TestContext {
-    pub fn new(
+    pub const fn new(
         client: nfs3_client::Nfs3Connection<IO>,
         _mode: ServerMode,
         config: TestConfig,

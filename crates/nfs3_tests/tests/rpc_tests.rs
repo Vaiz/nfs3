@@ -39,7 +39,7 @@ fn check_reply_header(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<()> {
                 bail!("RPC call denied with status: {denied:?}");
             }
         },
-        _ => bail!("Expected REPLY message, got: {:?}", msg.body),
+        msg_body::CALL(_) => bail!("Expected REPLY message, got: {:?}", msg.body),
     }
 }
 
@@ -63,7 +63,7 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
                 bail!("RPC call denied with status: {denied:?}");
             }
         },
-        _ => bail!("Expected REPLY message, got: {:?}", msg.body),
+        msg_body::CALL(_) => bail!("Expected REPLY message, got: {:?}", msg.body),
     }
 }
 

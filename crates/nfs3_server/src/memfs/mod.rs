@@ -157,7 +157,10 @@ impl File {
         (bytes[start..end].to_vec(), eof)
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The offset is bounded by the buffer length above the cast"
+    )]
     fn write(&mut self, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
         if offset > self.content.len() as u64 {
             return Err(nfsstat3::NFS3ERR_INVAL);
@@ -518,8 +521,8 @@ impl Fs {
             let from_dir = self
                 .get_mut(from_dirid)
                 .ok_or(nfsstat3::NFS3ERR_SERVERFAULT)?;
-            from_dir.as_dir_mut()?.content.remove(&from_id);
-        }
+            from_dir.as_dir_mut()?.content.remove(&from_id)
+        };
 
         // Add to new parent directory
         {
@@ -679,7 +682,7 @@ impl MemFs {
             }
         }
         let content: Vec<_> = iter.copied().collect();
-        Ok(MemFsIterator::new(self.fs.clone(), content))
+        Ok(MemFsIterator::new(Arc::clone(&self.fs), content))
     }
 }
 
@@ -763,7 +766,9 @@ impl NfsFileSystem for MemFs {
         let mut fs = self.fs.write().expect("lock is poisoned");
 
         let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry.as_file_mut().map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+        let file = entry
+            .as_file_mut()
+            .map_err(|_status| nfsstat3::NFS3ERR_INVAL)?;
         let attr = file.write(offset, data)?;
         Ok((attr, nfs::stable_how::FILE_SYNC))
     }

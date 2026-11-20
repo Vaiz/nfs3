@@ -12,7 +12,7 @@ impl Pack for Vec<u32> {
         let mut bytes_written = 0;
 
         bytes_written += u32::try_from(self.len())
-            .map_err(|_| Error::ObjectTooLarge(self.len()))?
+            .map_err(|_overflow| Error::ObjectTooLarge(self.len()))?
             .pack(out)?;
 
         for item in self {

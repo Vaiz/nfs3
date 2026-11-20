@@ -8,7 +8,7 @@ use nfs3_tests::TestContext;
 use tracing::info;
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     const DIR: &str = "dir_10000";
     const SIZE: usize = 10000;
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
@@ -17,24 +17,24 @@ async fn main() {
     let mut client = TestContext::setup_with_config(config, false, LOG_LEVEL);
 
     let start_time = std::time::Instant::now();
-    let requests_count = test_dir(&mut client, "dir_10000").await.unwrap();
+    let requests_count = test_dir(&mut client, DIR).await?;
     let elapsed_time = start_time.elapsed();
 
     println!("Elapsed time: {elapsed_time:?}");
     println!("Requests count: {requests_count}");
     println!(
         "Requests per second: {}",
-        requests_count as f64 / elapsed_time.as_secs_f64()
+        f64::from(requests_count) / elapsed_time.as_secs_f64()
     );
 
-    client.shutdown().await.unwrap();
+    client.shutdown().await
 }
 
 fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
     let mut config = nfs3_server::memfs::MemFsConfig::default();
 
-    config.add_file("/a.txt", "hello world\n".as_bytes());
-    config.add_file("/b.txt", "Greetings\n".as_bytes());
+    config.add_file("/a.txt", b"hello world\n");
+    config.add_file("/b.txt", b"Greetings\n");
 
     config.add_dir(&format!("/{dirname}"));
     for i in 0..size {
@@ -54,12 +54,12 @@ fn get_file_name(i: usize) -> String {
 async fn test_dir<IO: AsyncRead + AsyncWrite>(
     client: &mut TestContext<IO>,
     dir: &str,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<u32> {
     let root_dir = client.root_dir().clone();
     let dir = lookup(client, root_dir.clone(), dir).await?;
 
     // going lower than 256 bytes will cause NFS3ERR_TOOSMALL
-    let mut request_count = 1u64; // lookup
+    let mut request_count = 1; // lookup
     for count in [256 * 1024, 128 * 1024, 16 * 1024, 4 * 1024, 1024, 384] {
         request_count += readdir(client, dir.clone(), count).await?;
         request_count += readdir_plus(client, dir.clone(), count, count).await?;
@@ -96,7 +96,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
     client: &mut TestContext<IO>,
     dir: nfs_fh3,
     count: u32,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<u32> {
     info!("readdir count: {count}");
 
     let mut request_count = 0;
@@ -144,7 +144,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
     dir: nfs_fh3,
     dircount: u32,
     maxcount: u32,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<u32> {
     info!("readdir_plus dircount: {dircount} maxcount: {maxcount}");
 
     let mut request_count = 0;

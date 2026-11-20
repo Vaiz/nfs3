@@ -161,7 +161,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                 "IP Address must be of form ip:port",
             )
         })?;
-        let port = port.parse::<u16>().map_err(|_| {
+        let port = port.parse::<u16>().map_err(|_parse_error| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
                 "Port not in range 0..=65535",
@@ -176,7 +176,8 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result = Self::bind_internal(&ip, port, arcfs.clone(), generation_number).await;
+                let result =
+                    Self::bind_internal(&ip, port, Arc::clone(&arcfs), generation_number).await;
 
                 match result {
                     Err(_) => {
@@ -285,7 +286,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Loops forever and never returns handling all incoming connections.
     async fn handle_forever(&self) -> io::Result<()> {
         let cleaner_future = Cleaner::new(
-            self.transaction_tracker.clone(),
+            Arc::clone(&self.transaction_tracker),
             Duration::from_secs(10),
             Arc::clone(&self.stop_notify),
         )
@@ -301,10 +302,10 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                     .expect("failed to get peer address")
                     .to_string(),
                 auth: nfs3_types::rpc::auth_unix::default(),
-                vfs: self.arcfs.clone(),
+                vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
-                export_name: self.export_name.clone(),
-                transaction_tracker: self.transaction_tracker.clone(),
+                export_name: Arc::clone(&self.export_name),
+                transaction_tracker: Arc::clone(&self.transaction_tracker),
                 file_handle_converter: self.file_handle_converter,
             };
             info!("Accepting connection from {}", context.client_addr);

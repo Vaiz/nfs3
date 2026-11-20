@@ -1,7 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use nfs3_client::nfs3_types::nfs3::*;
+use nfs3_client::nfs3_types::nfs3::{
+    COMMIT3args, CREATE3args, LINK3args, LINK3res, MKDIR3args, REMOVE3args, RENAME3args,
+    RMDIR3args, SETATTR3args, SYMLINK3args, SYMLINK3res, WRITE3args, createhow3, createverf3,
+    diropargs3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, sattr3, sattrguard3, set_mode3,
+    set_size3, stable_how, symlinkdata3,
+};
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::JustClientExt;
 
@@ -33,13 +38,14 @@ use crate::fs_util::assert_attributes_match;
 pub async fn write_to_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     const WRITE_TEST_FILE: &str = "write_test.txt";
     const INITIAL_CONTENT: &str = "initial content";
+    const NEW_CONTENT: &[u8] = b"new content";
 
     let file_path = subdir.join(WRITE_TEST_FILE);
     fs::write(&file_path, INITIAL_CONTENT).expect("failed to write test file");
 
     let file_fh = ctx.just_lookup(&subdir_fh, WRITE_TEST_FILE).await.unwrap();
 
-    const NEW_CONTENT: &[u8] = b"new content";
+    let count = u32::try_from(NEW_CONTENT.len()).expect("test data size fits in u32");
 
     // Truncate file first to match expected size
     let _setattr_res = ctx
@@ -61,7 +67,7 @@ pub async fn write_to_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
         .write(&WRITE3args {
             file: file_fh,
             offset: 0,
-            count: NEW_CONTENT.len() as u32,
+            count,
             stable: stable_how::UNSTABLE,
             data: Opaque::borrowed(NEW_CONTENT),
         })
@@ -69,11 +75,7 @@ pub async fn write_to_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
         .expect("write call failed");
 
     let resok = write_res.unwrap();
-    assert_eq!(
-        resok.count,
-        NEW_CONTENT.len() as u32,
-        "Write count mismatch"
-    );
+    assert_eq!(resok.count, count, "Write count mismatch");
 
     let fs_content = fs::read_to_string(&file_path).expect("failed to read file from filesystem");
     assert_eq!(fs_content, "new content", "File content should be updated");
@@ -89,6 +91,7 @@ pub async fn write_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
     const WRITE_DATA: &[u8] = b"ABCDE";
     const WRITE_OFFSET: u64 = 5;
 
+    let count = u32::try_from(WRITE_DATA.len()).expect("test data size fits in u32");
     let file_path = subdir.join(OFFSET_FILE);
     fs::write(&file_path, INITIAL_CONTENT).expect("failed to write test file");
 
@@ -99,7 +102,7 @@ pub async fn write_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
         .write(&WRITE3args {
             file: file_fh,
             offset: WRITE_OFFSET,
-            count: WRITE_DATA.len() as u32,
+            count,
             stable: stable_how::UNSTABLE,
             data: Opaque::borrowed(WRITE_DATA),
         })
@@ -107,7 +110,7 @@ pub async fn write_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
         .expect("write call failed");
 
     let resok = write_res.unwrap();
-    assert_eq!(resok.count, WRITE_DATA.len() as u32, "Write count mismatch");
+    assert_eq!(resok.count, count, "Write count mismatch");
 
     let fs_content = fs::read_to_string(&file_path).expect("failed to read file from filesystem");
     assert_eq!(
@@ -398,10 +401,10 @@ pub async fn create_hard_link(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
             } else if let LINK3res::Err((nfsstat3::NFS3ERR_NOTSUPP, _)) = link_result {
                 // Not supported - this is OK
             } else {
-                panic!("Link failed on readwrite filesystem: {:?}", link_result);
+                panic!("Link failed on readwrite filesystem: {link_result:?}");
             }
         }
-        Err(e) => panic!("Link operation failed: {}", e),
+        Err(e) => panic!("Link operation failed: {e}"),
     }
 }
 
@@ -446,13 +449,10 @@ pub async fn create_symlink(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: n
             } else if let SYMLINK3res::Err((nfsstat3::NFS3ERR_IO, _)) = symlink_result {
                 // I/O error (e.g., Windows without symlink support) - this is OK
             } else {
-                panic!(
-                    "Symlink failed on readwrite filesystem: {:?}",
-                    symlink_result
-                );
+                panic!("Symlink failed on readwrite filesystem: {symlink_result:?}");
             }
         }
-        Err(e) => panic!("Symlink operation failed: {}", e),
+        Err(e) => panic!("Symlink operation failed: {e}"),
     }
 }
 

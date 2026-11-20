@@ -1,4 +1,7 @@
-#![allow(clippy::unwrap_used, clippy::significant_drop_tightening)] // for the sake of the example
+#![expect(
+    clippy::unwrap_used,
+    reason = "For the sake of the example, assume the in-memory path index is consistent"
+)]
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -181,7 +184,7 @@ impl FSMap {
 
         let meta = tokio::fs::symlink_metadata(&path)
             .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
         let meta = metadata_to_fattr3(id, &meta);
         if !fattr3_differ(&meta, &entry.fsmeta) {
             return Ok(RefreshResult::Noop);
@@ -230,7 +233,7 @@ impl FSMap {
             while let Some(entry) = listing
                 .next_entry()
                 .await
-                .map_err(|_| nfsstat3::NFS3ERR_IO)?
+                .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?
             {
                 let sym = self.intern.intern(entry.file_name()).unwrap();
                 cur_path.push(sym);
@@ -318,11 +321,12 @@ impl MirrorFs {
                 }
                 tokio::fs::create_dir(&path)
                     .await
-                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
             }
             CreateFSObject::File(setattr) => {
                 debug!("create {:?}", path);
-                let file = std::fs::File::create(&path).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                let file =
+                    std::fs::File::create(&path).map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
                 let _ = file_setattr(&file, setattr).await;
             }
             CreateFSObject::Exclusive => {
@@ -331,7 +335,7 @@ impl MirrorFs {
                     .write(true)
                     .create_new(true)
                     .open(&path)
-                    .map_err(|_| nfsstat3::NFS3ERR_EXIST)?;
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_EXIST)?;
             }
             CreateFSObject::Symlink((_, target)) => {
                 debug!("symlink {:?} {:?}", path, target);
@@ -342,7 +346,7 @@ impl MirrorFs {
                 #[cfg(unix)]
                 tokio::fs::symlink(target.as_os_str(), &path)
                     .await
-                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
 
                 #[cfg(not(unix))]
                 return Err(nfsstat3::NFS3ERR_IO);
@@ -354,7 +358,9 @@ impl MirrorFs {
         let _ = fsmap.refresh_entry(dirid).await;
         let sym = fsmap.intern.intern(objectname_osstr).unwrap();
         name.push(sym);
-        let meta = path.symlink_metadata().map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        let meta = path
+            .symlink_metadata()
+            .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
         let fileid = fsmap.create_entry(&name, &meta);
 
         // update the children list
@@ -430,7 +436,10 @@ impl NfsReadFileSystem for MirrorFs {
         Ok(ent.fsmeta.clone())
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The requested byte count is a u32"
+    )]
     async fn read(
         &self,
         id: &Self::Handle,
@@ -464,11 +473,11 @@ impl NfsReadFileSystem for MirrorFs {
     async fn readdirplus(
         &self,
         dirid: &Self::Handle,
-        start_after: cookie3,
+        cookie: cookie3,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         let dirid = dirid.as_u64();
         let fsmap = Arc::clone(&self.fsmap);
-        let iter = MirrorFsIterator::new(fsmap, dirid, start_after).await?;
+        let iter = MirrorFsIterator::new(fsmap, dirid, cookie).await?;
         Ok(iter)
     }
 
@@ -546,9 +555,9 @@ impl NfsFileSystem for MirrorFs {
         &self,
         dirid: &Self::Handle,
         filename: &filename3<'_>,
-        setattr: sattr3,
+        attr: sattr3,
     ) -> Result<(Self::Handle, fattr3), nfsstat3> {
-        self.create_fs_object(dirid.as_u64(), filename, &CreateFSObject::File(setattr))
+        self.create_fs_object(dirid.as_u64(), filename, &CreateFSObject::File(attr))
             .await
             .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
@@ -576,11 +585,11 @@ impl NfsFileSystem for MirrorFs {
             if meta.is_dir() {
                 tokio::fs::remove_dir(&path)
                     .await
-                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
             } else {
                 tokio::fs::remove_file(&path)
                     .await
-                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
             }
 
             let mut sympath = ent.name.clone();
@@ -641,7 +650,7 @@ impl NfsFileSystem for MirrorFs {
         debug!("Rename {:?} to {:?}", from_path, to_path);
         tokio::fs::rename(&from_path, &to_path)
             .await
-            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
 
         let mut from_sympath = from_dirent.name.clone();
         let mut to_sympath = to_dirent.name.clone();
@@ -732,7 +741,6 @@ struct MirrorFsIterator {
 }
 
 impl MirrorFsIterator {
-    #[allow(clippy::significant_drop_tightening)] // doesn't really matter in this case
     async fn new(
         fsmap: Arc<tokio::sync::RwLock<FSMap>>,
         dirid: fileid3,

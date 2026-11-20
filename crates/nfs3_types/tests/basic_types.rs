@@ -1,5 +1,4 @@
 // Basic XDR codec tests for fundamental data types and structures
-#![allow(clippy::unwrap_used)]
 
 use std::borrow::Cow;
 use std::io::Cursor;

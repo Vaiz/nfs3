@@ -43,7 +43,7 @@ impl TransactionTracker {
                 let mut client_lock = client_transactions.lock().expect("lock is poisoned");
                 client_lock.add_transaction(xid, now)?;
                 return Ok(TransactionLock::new(
-                    client_transactions.clone(),
+                    Arc::clone(client_transactions),
                     xid,
                     self.retention_period,
                 ));
@@ -63,7 +63,7 @@ impl TransactionTracker {
         client_lock.add_transaction(xid, now)?;
 
         Ok(TransactionLock::new(
-            val.clone(),
+            Arc::clone(val),
             xid,
             self.retention_period,
         ))
@@ -172,7 +172,10 @@ impl ClientTransactions {
         }
     }
     // Finds a transaction by its xid taking into account that the list is sorted
-    #[allow(clippy::option_if_let_else)]
+    #[expect(
+        clippy::option_if_let_else,
+        reason = "Keep the early return for an empty transaction list visible"
+    )]
     fn find_transaction(&self, xid: u32) -> Result<usize, usize> {
         use std::cmp::Ordering;
         if let Some(last_tx) = self.transactions.back() {
@@ -243,7 +246,10 @@ impl ClientTransactions {
     }
 
     // Remove the oldest transactions until we are below the trim limit
-    #[allow(clippy::unwrap_used)]
+    #[expect(
+        clippy::unwrap_used,
+        reason = "The loop condition ensures the queue is nonempty"
+    )]
     fn trim_if_needed(&mut self) {
         while self.transactions.len() > self.trim_limit {
             if matches!(
@@ -322,8 +328,6 @@ impl Cleaner {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::significant_drop_tightening)]
-
     use super::*;
 
     #[test]
@@ -424,8 +428,8 @@ mod tests {
         let now = Instant::now();
         let mut client_transactions = ClientTransactions::new(now, 2, 1000);
 
-        assert!(client_transactions.add_transaction(1, now).is_ok());
-        assert!(client_transactions.add_transaction(2, now).is_ok());
+        client_transactions.add_transaction(1, now).unwrap();
+        client_transactions.add_transaction(2, now).unwrap();
         assert_eq!(
             client_transactions.add_transaction(3, now).unwrap_err(),
             TransactionError::TooManyRequests
@@ -437,7 +441,7 @@ mod tests {
         let now = Instant::now();
         let mut client_transactions = ClientTransactions::new(now, 100, 1000);
 
-        assert!(client_transactions.add_transaction(1, now).is_ok());
+        client_transactions.add_transaction(1, now).unwrap();
         assert_eq!(
             client_transactions.add_transaction(1, now).unwrap_err(),
             TransactionError::AlreadyExists
@@ -449,18 +453,18 @@ mod tests {
         let now = Instant::now();
         let mut client_transactions = ClientTransactions::new(now, 1, 2);
 
-        assert!(client_transactions.add_transaction(1, now).is_ok());
+        client_transactions.add_transaction(1, now).unwrap();
         client_transactions.complete_transaction(1, now);
 
-        assert!(client_transactions.add_transaction(2, now).is_ok());
+        client_transactions.add_transaction(2, now).unwrap();
         client_transactions.complete_transaction(2, now);
         assert_eq!(collect_xids(&client_transactions)[..], [1, 2]);
 
-        assert!(client_transactions.add_transaction(3, now).is_ok());
+        client_transactions.add_transaction(3, now).unwrap();
         assert_eq!(collect_xids(&client_transactions)[..], [2, 3]);
         client_transactions.complete_transaction(3, now);
 
-        assert!(client_transactions.add_transaction(4, now).is_ok());
+        client_transactions.add_transaction(4, now).unwrap();
         assert_eq!(collect_xids(&client_transactions)[..], [3, 4]);
     }
 
@@ -485,7 +489,7 @@ mod tests {
             assert_eq!(client.transactions[0].xid, 1);
             assert_eq!(client.last_active, now);
             assert_eq!(client.transactions[0].state, TransactionState::InProgress);
-        }
+        };
 
         drop(transaction);
 
@@ -520,14 +524,14 @@ mod tests {
             let client = tracker_lock.get("client1").unwrap();
             let client = client.lock().unwrap();
             assert_eq!(client.transactions.len(), 2);
-        }
+        };
 
         tracker.cleanup(now + Duration::new(3, 0));
 
         {
             let tracker_lock = tracker.transactions.read().unwrap();
             assert_eq!(tracker_lock.len(), 1);
-        }
+        };
 
         drop(transaction1);
         let now = Instant::now(); // drop updates the time
@@ -540,7 +544,7 @@ mod tests {
             let client = tracker_lock.get("client1").unwrap();
             let client = client.lock().unwrap();
             assert_eq!(client.transactions.len(), 1);
-        }
+        };
         drop(transaction2);
         let now = Instant::now(); // drop updates the time
 

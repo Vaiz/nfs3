@@ -30,8 +30,8 @@ async fn test_10000() {
 fn get_config(dirname: &str, size: usize) -> nfs3_server::memfs::MemFsConfig {
     let mut config = nfs3_server::memfs::MemFsConfig::default();
 
-    config.add_file("/a.txt", "hello world\n".as_bytes());
-    config.add_file("/b.txt", "Greetings\n".as_bytes());
+    config.add_file("/a.txt", b"hello world\n");
+    config.add_file("/b.txt", b"Greetings\n");
 
     config.add_dir(&format!("/{dirname}"));
     for i in 0..size {

@@ -72,7 +72,7 @@ impl Pack for Opaque<'_> {
             .0
             .len()
             .try_into()
-            .map_err(|_| Error::ObjectTooLarge(self.0.len()))?;
+            .map_err(|_overflow| Error::ObjectTooLarge(self.0.len()))?;
         bytes_written += len.pack(out)?;
 
         out.write_all(&self.0).map_err(Error::Io)?;

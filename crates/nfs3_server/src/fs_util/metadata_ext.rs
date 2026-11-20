@@ -1,8 +1,8 @@
-use std::fs::{File, Permissions};
+use std::fs::File;
+#[cfg(unix)]
+use std::fs::Permissions;
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-#[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 
 use nfs3_types::nfs3::ftype3;
@@ -57,7 +57,11 @@ impl NfsMetadataExt<'_> {
 }
 
 #[cfg(windows)]
-#[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    reason = "Keep the same signatures on Windows and Unix"
+)]
 impl NfsMetadataExt<'_> {
     pub fn mode(&self) -> u32 {
         // Assume full `rwxrwxrwx` permissions if not read-only

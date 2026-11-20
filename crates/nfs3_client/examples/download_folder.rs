@@ -73,7 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[allow(clippy::or_fun_call)]
+#[expect(
+    clippy::or_fun_call,
+    reason = "The fallback path is a cheap string slice"
+)]
 async fn download_folder(
     connection: &mut nfs3_client::Nfs3Connection<impl AsyncRead + AsyncWrite>,
     folder_fh: nfs3::nfs_fh3,

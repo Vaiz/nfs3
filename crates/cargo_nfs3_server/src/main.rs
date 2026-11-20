@@ -14,7 +14,6 @@ mod string_ext;
 mod threshold_logger;
 
 /// CLI tool for the `nfs3_server`
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug)]
 #[command(name = "cargo-nfs3-server")]
 #[command(about = "A simple NFSv3 server implementation")]

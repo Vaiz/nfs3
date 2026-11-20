@@ -44,7 +44,10 @@ impl BoundedEntryPlusList {
         }
     }
 
-    #[allow(clippy::result_large_err)]
+    #[expect(
+        clippy::result_large_err,
+        reason = "Returns the rejected entry without boxing it"
+    )]
     pub fn try_push(&mut self, entry: entryplus3<'static>) -> Result<(), entryplus3<'static>> {
         // dircount - the maximum number of bytes of directory information returned. This number
         // should not include the size of the attributes and file handle portions of the result.
@@ -77,9 +80,9 @@ mod tests {
     #[test]
     fn test_dircount() {
         let mut list = BoundedEntryPlusList::new(70, 1000);
-        assert!(list.try_push(make_entry("test")).is_ok());
+        list.try_push(make_entry("test")).unwrap();
         assert_eq!(list.accumulated_dircount, 28);
-        assert!(list.try_push(make_entry("test2")).is_ok());
+        list.try_push(make_entry("test2")).unwrap();
         assert_eq!(list.accumulated_dircount, 60);
         assert!(list.try_push(make_entry("test3")).is_err());
         assert_eq!(list.accumulated_dircount, 60);
@@ -92,9 +95,9 @@ mod tests {
     #[test]
     fn test_maxcount() {
         let mut list = BoundedEntryPlusList::new(1000, 100);
-        assert!(list.try_push(make_entry("test")).is_ok());
+        list.try_push(make_entry("test")).unwrap();
         assert_eq!(list.accumulated_dircount, 28);
-        assert!(list.try_push(make_entry("test2")).is_ok());
+        list.try_push(make_entry("test2")).unwrap();
         assert_eq!(list.accumulated_dircount, 60);
         assert!(list.try_push(make_entry("test3")).is_err());
         assert_eq!(list.accumulated_dircount, 60);

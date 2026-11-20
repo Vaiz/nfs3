@@ -12,7 +12,7 @@ pub trait JustClient {
 }
 
 /// Extension trait providing simplified NFS3 client operations for testing purposes
-#[expect(async_fn_in_trait)]
+#[expect(async_fn_in_trait, reason = "Test clients do not need Send futures")]
 pub trait JustClientExt: JustClient {
     /// Lookup a file on the NFS server and return its filehandle
     async fn just_lookup(&mut self, dir: &nfs_fh3, filename: &str) -> Result<nfs_fh3, nfsstat3> {
@@ -86,7 +86,8 @@ pub trait JustClientExt: JustClient {
                 .write(&WRITE3args {
                     file: file_handle.clone(),
                     offset: 0,
-                    count: content.len() as u32,
+                    count: u32::try_from(content.len())
+                        .map_err(|_overflow| nfsstat3::NFS3ERR_INVAL)?,
                     stable: stable_how::UNSTABLE,
                     data: Opaque::owned(content.to_vec()),
                 })
@@ -148,7 +149,7 @@ pub trait JustClientExt: JustClient {
                     if ok.eof || ok.count == 0 {
                         break;
                     }
-                    offset += ok.count as u64;
+                    offset += u64::from(ok.count);
                 }
                 Nfs3Result::Err((status, _)) => return Err(status),
             }
@@ -183,7 +184,7 @@ pub trait JustClientExt: JustClient {
                         break;
                     }
 
-                    let last = entries.last().unwrap();
+                    let last = entries.last().expect("checked that the page is not empty");
                     cookie = last.cookie;
                     cookieverf = ok.cookieverf;
                 }

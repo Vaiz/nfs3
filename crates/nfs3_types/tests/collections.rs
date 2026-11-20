@@ -1,5 +1,4 @@
 // Tests for XDR collection types (Vec, List, BoundedList)
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 
@@ -53,9 +52,9 @@ fn list_serialization() {
 fn bounded_list_basic() {
     // (4+4)*3 + 4 = 28 bytes
     let mut bounded_list = BoundedList::<u32>::new(28);
-    assert!(bounded_list.try_push(0x1234).is_ok());
-    assert!(bounded_list.try_push(0x5678).is_ok());
-    assert!(bounded_list.try_push(0x9abc).is_ok());
+    bounded_list.try_push(0x1234).unwrap();
+    bounded_list.try_push(0x5678).unwrap();
+    bounded_list.try_push(0x9abc).unwrap();
     assert!(bounded_list.try_push(0xdef0).is_err());
 
     let list = bounded_list.into_inner();
@@ -65,17 +64,17 @@ fn bounded_list_basic() {
 #[test]
 fn bounded_list_exact_boundary() {
     let mut bounded_list = BoundedList::<u32>::new(27);
-    assert!(bounded_list.try_push(0x1234).is_ok());
-    assert!(bounded_list.try_push(0x5678).is_ok());
+    bounded_list.try_push(0x1234).unwrap();
+    bounded_list.try_push(0x5678).unwrap();
     assert!(bounded_list.try_push(0x9abc).is_err());
 
     let list = bounded_list.into_inner();
     assert_eq!(list.0, vec![0x1234, 0x5678]);
 
     let mut bounded_list = BoundedList::<u32>::new(29);
-    assert!(bounded_list.try_push(0x1234).is_ok());
-    assert!(bounded_list.try_push(0x5678).is_ok());
-    assert!(bounded_list.try_push(0x9abc).is_ok());
+    bounded_list.try_push(0x1234).unwrap();
+    bounded_list.try_push(0x5678).unwrap();
+    bounded_list.try_push(0x9abc).unwrap();
     assert!(bounded_list.try_push(0xdef0).is_err());
 
     let list = bounded_list.into_inner();
@@ -146,7 +145,7 @@ fn bounded_list_edge_cases() {
     // Test with exactly one item size
     // Each item needs 4 bytes indicator + 4 bytes data, plus 4 bytes end marker = 12 bytes total
     let mut bounded_list = BoundedList::<u32>::new(12);
-    assert!(bounded_list.try_push(0x1234).is_ok());
+    bounded_list.try_push(0x1234).unwrap();
     assert!(bounded_list.try_push(0x5678).is_err());
 
     let list = bounded_list.into_inner();

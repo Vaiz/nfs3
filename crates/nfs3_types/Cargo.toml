@@ -10,6 +10,7 @@ license.workspace = true
 description = "Type definitions and utilities for working with NFSv3"
 readme = "README.md"
 keywords = ["xdr", "rfc1014", "nfs", "nfs3", "rfc1813"]
+categories = ["encoding", "network-programming"]
 
 [dependencies]
 nfs3_macros.workspace = true

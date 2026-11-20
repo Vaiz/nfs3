@@ -1,7 +1,8 @@
 #![allow(
     non_camel_case_types,
     clippy::large_enum_variant,
-    clippy::upper_case_acronyms
+    clippy::upper_case_acronyms,
+    reason = "Keep the RFC names and store XDR union arms inline"
 )]
 
 //! This module contains the definitions of the Port Mapper protocol as defined in RFC 1057.
@@ -52,7 +53,6 @@ pub enum PMAP_PROG {
 impl std::convert::TryFrom<u32> for PMAP_PROG {
     type Error = crate::xdr_codec::Error;
 
-    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::PMAPPROC_NULL),

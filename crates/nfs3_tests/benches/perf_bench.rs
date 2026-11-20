@@ -2,6 +2,10 @@
     clippy::await_holding_refcell_ref,
     reason = "criterion doesn't support closures with lifetime"
 )]
+#![expect(
+    clippy::unwrap_used,
+    reason = "The benchmark must stop on failed setup or NFS operations"
+)]
 
 use std::cell::RefCell;
 
@@ -43,6 +47,10 @@ fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx 
 }
 
 /// Resolve the single file handle through the server's handle converter.
+#[expect(
+    clippy::future_not_send,
+    reason = "Criterion drives this benchmark future on the calling thread"
+)]
 async fn get_file_handle(ctx: &PerfCtx) -> nfs_fh3 {
     ctx.client
         .borrow_mut()
@@ -126,6 +134,7 @@ fn bench_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("perf_read");
 
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let count = u32::try_from(size).expect("benchmark read size fits in u32");
         let (ctx, fh) = rt.block_on(async {
             let ctx = setup_perf(ReadFs::new(size));
             let fh = get_file_handle(&ctx).await;
@@ -133,7 +142,7 @@ fn bench_read(c: &mut Criterion) {
         });
 
         group.throughput(Throughput::Bytes(size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &count, |b, &count| {
             b.to_async(&rt).iter(|| async {
                 let ok = ctx
                     .client
@@ -141,13 +150,13 @@ fn bench_read(c: &mut Criterion) {
                     .read(&READ3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: sz as u32,
+                        count,
                     })
                     .await
                     .unwrap()
                     .unwrap();
 
-                debug_assert_eq!(ok.count as usize, sz);
+                debug_assert_eq!(ok.count, count);
             });
         });
     }
@@ -160,6 +169,7 @@ fn bench_write(c: &mut Criterion) {
     let mut group = c.benchmark_group("perf_write");
 
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let count = u32::try_from(size).expect("benchmark write size fits in u32");
         let payload = vec![0xBB_u8; size];
 
         let (ctx, fh) = rt.block_on(async {
@@ -169,7 +179,7 @@ fn bench_write(c: &mut Criterion) {
         });
 
         group.throughput(Throughput::Bytes(size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &count, |b, &count| {
             b.to_async(&rt).iter(|| async {
                 let ok = ctx
                     .client
@@ -177,14 +187,14 @@ fn bench_write(c: &mut Criterion) {
                     .write(&WRITE3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: sz as u32,
+                        count,
                         stable: stable_how::UNSTABLE,
                         data: Opaque::borrowed(&payload),
                     })
                     .await
                     .unwrap()
                     .unwrap();
-                debug_assert_eq!(ok.count as usize, sz);
+                debug_assert_eq!(ok.count, count);
             });
         });
     }

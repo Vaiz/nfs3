@@ -1,7 +1,8 @@
 #![allow(
     non_camel_case_types,
     clippy::large_enum_variant,
-    clippy::upper_case_acronyms
+    clippy::upper_case_acronyms,
+    reason = "Keep the RFC names and store XDR union arms inline"
 )]
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
@@ -231,29 +232,29 @@ impl Pack for accept_stat_data {
         }
     }
 
-    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
-            Self::SUCCESS => accept_stat::SUCCESS.pack(w)?,
-            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(w)?,
+            Self::SUCCESS => accept_stat::SUCCESS.pack(out)?,
+            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out)?,
             Self::PROG_MISMATCH { low, high } => {
-                accept_stat::PROG_MISMATCH.pack(w)? + low.pack(w)? + high.pack(w)?
+                accept_stat::PROG_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
             }
-            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(w)?,
-            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(w)?,
-            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(w)?,
+            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out)?,
+            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out)?,
+            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out)?,
         };
         Ok(len)
     }
 }
 
 impl Unpack for accept_stat_data {
-    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (accept_stat, len) = accept_stat::unpack(r)?;
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
+        let (accept_stat, len) = accept_stat::unpack(input)?;
         let (body, body_len) = match accept_stat {
             accept_stat::SUCCESS => (Self::SUCCESS, 0),
             accept_stat::PROG_MISMATCH => {
-                let (low, low_len) = u32::unpack(r)?;
-                let (high, high_len) = u32::unpack(r)?;
+                let (low, low_len) = u32::unpack(input)?;
+                let (high, high_len) = u32::unpack(input)?;
                 (Self::PROG_MISMATCH { low, high }, low_len + high_len)
             }
             accept_stat::PROG_UNAVAIL => (Self::PROG_UNAVAIL, 0),
@@ -290,28 +291,30 @@ impl Pack for rejected_reply {
         }
     }
 
-    fn pack(&self, w: &mut impl Write) -> crate::xdr_codec::Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::RPC_MISMATCH { low, high } => {
-                reject_stat::RPC_MISMATCH.pack(w)? + low.pack(w)? + high.pack(w)?
+                reject_stat::RPC_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
             }
-            Self::AUTH_ERROR(auth_stat) => reject_stat::AUTH_ERROR.pack(w)? + auth_stat.pack(w)?,
+            Self::AUTH_ERROR(auth_stat) => {
+                reject_stat::AUTH_ERROR.pack(out)? + auth_stat.pack(out)?
+            }
         };
         Ok(len)
     }
 }
 
 impl Unpack for rejected_reply {
-    fn unpack(r: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (reject_stat, len) = reject_stat::unpack(r)?;
+    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
+        let (reject_stat, len) = reject_stat::unpack(input)?;
         let (body, body_len) = match reject_stat {
             reject_stat::RPC_MISMATCH => {
-                let (low, low_len) = u32::unpack(r)?;
-                let (high, high_len) = u32::unpack(r)?;
+                let (low, low_len) = u32::unpack(input)?;
+                let (high, high_len) = u32::unpack(input)?;
                 (Self::RPC_MISMATCH { low, high }, low_len + high_len)
             }
             reject_stat::AUTH_ERROR => {
-                let (auth_stat, auth_stat_len) = auth_stat::unpack(r)?;
+                let (auth_stat, auth_stat_len) = auth_stat::unpack(input)?;
                 (Self::AUTH_ERROR(auth_stat), auth_stat_len)
             }
         };

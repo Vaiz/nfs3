@@ -11,7 +11,10 @@ use nfs3_types::xdr_codec::Opaque;
 ///
 /// [1]: crate::vfs::NfsReadFileSystem
 /// [2]: crate::vfs::NfsFileSystem
-#[expect(clippy::len_without_is_empty)]
+#[expect(
+    clippy::len_without_is_empty,
+    reason = "Empty handles can be checked with as_bytes"
+)]
 pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
     /// The length of the handle in bytes
     fn len(&self) -> usize;
@@ -101,7 +104,10 @@ pub struct FileHandleConverter {
 }
 
 impl FileHandleConverter {
-    #[allow(clippy::cast_possible_truncation)] // it's ok to truncate the generation number
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "It's OK to truncate the generation number to its low 64 bits"
+    )]
     pub(crate) fn new() -> Self {
         let generation_number = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -152,7 +158,7 @@ impl FileHandleConverter {
             let id_gen = u64::from_le_bytes(
                 id.data[0..8]
                     .try_into()
-                    .map_err(|_| nfsstat3::NFS3ERR_BADHANDLE)?,
+                    .map_err(|_length_error| nfsstat3::NFS3ERR_BADHANDLE)?,
             );
             if id_gen < self.generation_number {
                 Err(nfsstat3::NFS3ERR_STALE)
@@ -175,8 +181,6 @@ impl FileHandleConverter {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::unwrap_used)]
-
     use super::*;
 
     #[test]

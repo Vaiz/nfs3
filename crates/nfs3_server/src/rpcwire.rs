@@ -140,7 +140,10 @@ fn lock_transaction(
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The assertion bounds the length to the RPC fragment size"
+)]
 pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
     buf: CompleteRpcMessage,

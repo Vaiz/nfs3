@@ -18,7 +18,6 @@ pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
     pub(crate) file_handle_converter: FileHandleConverter,
 }
 
-#[allow(clippy::missing_fields_in_debug)]
 impl<T> fmt::Debug for RPCContext<T>
 where
     T: crate::vfs::NfsFileSystem,
@@ -31,7 +30,7 @@ where
             .field("mount_signal", &self.mount_signal)
             .field("export_name", &self.export_name)
             .field("transaction_tracker", &self.transaction_tracker)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

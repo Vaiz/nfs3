@@ -16,6 +16,7 @@ pub struct ReadFs {
 }
 
 impl ReadFs {
+    #[must_use]
     pub fn new(size: usize) -> Self {
         Self {
             data: vec![0xAA; size],
@@ -52,8 +53,10 @@ impl NfsReadFileSystem for ReadFs {
         offset: u64,
         count: u32,
     ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let start = (offset as usize).min(self.data.len());
-        let end = (start + count as usize).min(self.data.len());
+        let start = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(self.data.len());
+        let end = start.saturating_add(count as usize).min(self.data.len());
         let eof = end >= self.data.len();
         Ok((self.data[start..end].to_vec(), eof))
     }
