@@ -106,7 +106,7 @@ pub struct FileHandleConverter {
 impl FileHandleConverter {
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "The generation number uses the low 64 bits"
+        reason = "It's OK to truncate the generation number to its low 64 bits"
     )]
     pub(crate) fn new() -> Self {
         let generation_number = std::time::SystemTime::now()

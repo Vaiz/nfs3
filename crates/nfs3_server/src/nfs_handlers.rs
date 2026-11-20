@@ -2,6 +2,7 @@
     clippy::unwrap_used,
     reason = "The directory handlers return errors before unwrapping their iterators"
 )]
+// FIXME: Remove this suppression after refactoring the directory handlers.
 
 #[cfg_attr(
     not(test),

@@ -684,7 +684,7 @@ impl AsRef<[u8]> for filename3<'_> {
 
 #[allow(
     clippy::missing_const_for_fn,
-    reason = "Keep the existing non-const API"
+    reason = "Making these methods const breaks existing code"
 )]
 impl filename3<'_> {
     #[must_use]

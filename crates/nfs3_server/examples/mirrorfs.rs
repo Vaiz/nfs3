@@ -1,6 +1,6 @@
 #![expect(
     clippy::unwrap_used,
-    reason = "The example assumes its in-memory path index is consistent"
+    reason = "For the sake of the example, assume the in-memory path index is consistent"
 )]
 
 use std::collections::HashMap;
