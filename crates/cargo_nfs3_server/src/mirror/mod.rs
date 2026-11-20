@@ -112,13 +112,13 @@ impl Fs {
             // Check if it's a directory
             let metadata = tokio::fs::symlink_metadata(&dir_path)
                 .await
-                .map_err(|_| nfsstat3::NFS3ERR_NOENT)?;
+                .map_err(|_io_error| nfsstat3::NFS3ERR_NOENT)?;
             if !metadata.is_dir() {
                 return Err(nfsstat3::NFS3ERR_NOTDIR);
             }
             let read_dir = tokio::fs::read_dir(&dir_path)
                 .await
-                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
             let base = self.iterator_cache.generate_base_cookie();
             Ok((read_dir, base))
         } else if let Some(cached_info) = self.iterator_cache.pop_state(dirid, cookie) {
@@ -200,7 +200,10 @@ impl NfsReadFileSystem for Fs {
     }
 }
 
-#[expect(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Used directly with Result::map_err"
+)]
 fn map_io_error(err: std::io::Error) -> nfsstat3 {
     use std::io::ErrorKind;
     match err.kind() {
@@ -426,11 +429,9 @@ impl NfsFileSystem for Fs {
         let target_path = symlink.0.as_os_str();
 
         #[cfg(unix)]
-        {
-            tokio::fs::symlink(target_path, &link_path)
-                .await
-                .map_err(map_io_error)?;
-        }
+        tokio::fs::symlink(target_path, &link_path)
+            .await
+            .map_err(map_io_error)?;
 
         #[cfg(windows)]
         {

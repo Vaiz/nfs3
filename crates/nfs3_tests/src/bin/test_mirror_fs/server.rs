@@ -14,7 +14,10 @@ pub struct TestConfig {
     pub temp_dir: TempDir,
     pub server_process: Child,
     pub bind_port: u16,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Retain the server mode as part of the test configuration"
+    )]
     pub mode: ServerMode,
 }
 
@@ -51,7 +54,7 @@ impl TestConfig {
 }
 
 /// Setup the NFS server with a temporary directory
-pub async fn setup_server(mode: ServerMode) -> Result<TestConfig> {
+pub fn setup_server(mode: ServerMode) -> Result<TestConfig> {
     let binary = std::env::var_os("NFS3_MIRROR_SERVER")
         .context("Set NFS3_MIRROR_SERVER to an explicitly prebuilt cargo-nfs3-server binary")?;
     let binary = Path::new(&binary);
@@ -123,11 +126,7 @@ pub async fn connect_client(
                 tracing::debug!("Connection attempt {} failed: {}", attempt, e);
             }
             Err(e) => {
-                bail!(
-                    "Failed to connect NFS client after {} attempts: {}",
-                    attempt,
-                    e
-                );
+                bail!("Failed to connect NFS client after {attempt} attempts: {e}");
             }
         }
     }
@@ -137,7 +136,7 @@ pub async fn connect_client(
 
 /// Initialize a test context with server and client
 pub async fn init_context(mode: ServerMode) -> Result<TestContext> {
-    let mut config = setup_server(mode).await?;
+    let mut config = setup_server(mode)?;
     let client = connect_client(&mut config).await?;
 
     let ctx = TestContext::new(client, mode, config);

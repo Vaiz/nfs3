@@ -70,18 +70,18 @@ where
     async fn readdir(
         &self,
         dirid: &Self::Handle,
-        cookie3: u64,
+        cookie: u64,
     ) -> Result<impl ReadDirIterator, nfsstat3> {
-        self.0.readdir(dirid, cookie3).await
+        self.0.readdir(dirid, cookie).await
     }
 
     async fn readdirplus(
         &self,
         dirid: &Self::Handle,
-        cookie3: u64,
+        cookie: u64,
     ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
         self.0
-            .readdirplus(dirid, cookie3)
+            .readdirplus(dirid, cookie)
             .await
             .map(ReadOnlyIterator)
     }

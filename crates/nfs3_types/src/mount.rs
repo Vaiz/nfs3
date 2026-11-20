@@ -1,7 +1,8 @@
 #![allow(
     non_camel_case_types,
     clippy::large_enum_variant,
-    clippy::upper_case_acronyms
+    clippy::upper_case_acronyms,
+    reason = "Keep the RFC names and store XDR union arms inline"
 )]
 
 //! This module contains the definitions of the MOUNT3 protocol as defined in RFC 1813.
@@ -96,14 +97,14 @@ impl Pack for mountres3<'_> {
         }
     }
 
-    fn pack(&self, output: &mut impl Write) -> crate::xdr_codec::Result<usize> {
+    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
         let len = match self {
             Self::Ok(ok) => {
-                let mut len = mountstat3::MNT3_OK.pack(output)?;
-                len += ok.pack(output)?;
+                let mut len = mountstat3::MNT3_OK.pack(out)?;
+                len += ok.pack(out)?;
                 len
             }
-            Self::Err(err) => err.pack(output)?,
+            Self::Err(err) => err.pack(out)?,
         };
         Ok(len)
     }
@@ -153,7 +154,6 @@ pub enum MOUNT_PROGRAM {
 impl std::convert::TryFrom<u32> for MOUNT_PROGRAM {
     type Error = crate::xdr_codec::Error;
 
-    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::MOUNTPROC3_NULL),

@@ -21,10 +21,12 @@ pub struct TestContext<IO> {
 }
 
 impl TestContext<TokioIo<DuplexStream>> {
+    #[must_use]
     pub fn setup() -> Self {
         Self::setup_with_config(Self::config(), false, tracing::Level::DEBUG)
     }
 
+    #[must_use]
     pub fn setup_ro() -> Self {
         Self::setup_with_config(Self::config(), true, tracing::Level::DEBUG)
     }
@@ -32,14 +34,20 @@ impl TestContext<TokioIo<DuplexStream>> {
     fn config() -> MemFsConfig {
         let mut config = MemFsConfig::default();
 
-        config.add_file("/a.txt", "hello world\n".as_bytes());
-        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_file("/a.txt", b"hello world\n");
+        config.add_file("/b.txt", b"Greetings to xet data\n");
         config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+        config.add_file("/another_dir/thisworks.txt", b"i hope\n");
 
         config
     }
 
+    /// Starts a test server with the given filesystem configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if filesystem or server setup fails.
+    #[must_use]
     pub fn setup_with_config(
         fs_config: MemFsConfig,
         readonly: bool,
@@ -48,15 +56,15 @@ impl TestContext<TokioIo<DuplexStream>> {
         init_logging(log_level);
 
         let (server, client) = duplex(1024 * 1024);
-        let memfs = MemFs::new(fs_config).unwrap();
+        let memfs = MemFs::new(fs_config).expect("initialize the test filesystem");
         let (root_dir, server_handle) = if readonly {
             let memfs = ReadOnlyAdapter::new(memfs);
-            let server = Server::new(server, memfs).unwrap();
+            let server = Server::new(server, memfs).expect("initialize the read-only test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)
         } else {
-            let server = Server::new(server, memfs).unwrap();
+            let server = Server::new(server, memfs).expect("initialize the read-write test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)
@@ -77,7 +85,7 @@ impl<IO> TestContext<IO>
 where
     IO: nfs3_client::io::AsyncRead + nfs3_client::io::AsyncWrite + Send,
 {
-    pub fn root_dir(&self) -> &nfs_fh3 {
+    pub const fn root_dir(&self) -> &nfs_fh3 {
         &self.root_dir
     }
 
@@ -85,7 +93,7 @@ where
         let Self {
             server_handle,
             client,
-            root_dir: _,
+            ..
         } = self;
 
         drop(client);

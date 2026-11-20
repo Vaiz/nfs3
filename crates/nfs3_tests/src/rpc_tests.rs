@@ -18,23 +18,30 @@ pub struct RpcTestContext {
 impl RpcTestContext {
     const EOF_FLAG: u32 = 0x8000_0000;
 
+    #[must_use]
     pub fn setup() -> Self {
         let mut config = MemFsConfig::default();
 
-        config.add_file("/a.txt", "hello world\n".as_bytes());
-        config.add_file("/b.txt", "Greetings to xet data\n".as_bytes());
+        config.add_file("/a.txt", b"hello world\n");
+        config.add_file("/b.txt", b"Greetings to xet data\n");
         config.add_dir("/another_dir");
-        config.add_file("/another_dir/thisworks.txt", "i hope\n".as_bytes());
+        config.add_file("/another_dir/thisworks.txt", b"i hope\n");
 
         Self::setup_with_config(config, tracing::Level::DEBUG)
     }
 
+    /// Starts a test server with the given filesystem configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if filesystem or server setup fails.
+    #[must_use]
     pub fn setup_with_config(fs_config: MemFsConfig, log_level: tracing::Level) -> Self {
         init_logging(log_level);
 
-        let memfs = MemFs::new(fs_config).unwrap();
+        let memfs = MemFs::new(fs_config).expect("initialize the test filesystem");
         let (server, client) = tokio::io::duplex(1024 * 1024);
-        let server = Server::new(server, memfs).unwrap();
+        let server = Server::new(server, memfs).expect("initialize the RPC test server");
         let root_dir = server.root_dir();
         let server_handle = tokio::task::spawn(server.run());
 
@@ -44,7 +51,8 @@ impl RpcTestContext {
             root_dir,
         }
     }
-    pub fn root_dir(&self) -> &nfs_fh3 {
+    #[must_use]
+    pub const fn root_dir(&self) -> &nfs_fh3 {
         &self.root_dir
     }
 
@@ -52,7 +60,7 @@ impl RpcTestContext {
         let Self {
             server_handle,
             client_stream,
-            root_dir: _,
+            ..
         } = self;
 
         drop(client_stream);
@@ -62,7 +70,7 @@ impl RpcTestContext {
 
     pub async fn send_call<T>(&mut self, msg: &rpc_msg<'_, '_>, args: &T) -> anyhow::Result<()>
     where
-        T: Pack,
+        T: Pack + Sync,
     {
         let total_len = msg.packed_size() + args.packed_size();
         if !total_len.is_multiple_of(4) {
@@ -70,7 +78,7 @@ impl RpcTestContext {
         }
 
         let mut buf = Vec::with_capacity(total_len + 4);
-        let fragment_header = total_len as u32 | Self::EOF_FLAG;
+        let fragment_header = u32::try_from(total_len)? | Self::EOF_FLAG;
         fragment_header.pack(&mut buf)?;
         msg.pack(&mut buf)?;
         args.pack(&mut buf)?;
@@ -91,9 +99,10 @@ impl RpcTestContext {
         let mut buf = [0u8; 4];
         self.client_stream.read_exact(&mut buf).await?;
         let fragment_header: fragment_header = buf.into();
-        if !fragment_header.eof() {
-            panic!("Fragment header does not have EOF flag");
-        }
+        anyhow::ensure!(
+            fragment_header.eof(),
+            "Fragment header does not have EOF flag"
+        );
 
         let total_len = fragment_header.fragment_length();
         let mut buf = vec![0u8; total_len as usize];
@@ -108,14 +117,14 @@ impl RpcTestContext {
             msg_body::CALL(_) => bail!("Unexpected call"),
         };
 
-        if let accept_stat_data::SUCCESS = reply.reply_data {
+        if matches!(reply.reply_data, accept_stat_data::SUCCESS) {
         } else {
             return Ok((resp_msg, None));
         }
 
         let (final_value, _) = T::unpack(&mut cursor)?;
-        if cursor.position() as usize != total_len as usize {
-            let pos = cursor.position() as usize;
+        let pos = cursor.position();
+        if pos != u64::from(total_len) {
             bail!("Cursor position does not match total length: {pos} != {total_len}");
         }
         Ok((resp_msg, Some(final_value)))

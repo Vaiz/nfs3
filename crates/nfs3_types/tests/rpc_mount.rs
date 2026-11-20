@@ -1,5 +1,4 @@
 // Tests for RPC and Mount protocol types
-#![allow(clippy::unwrap_used)]
 
 use std::borrow::Cow;
 use std::io::Cursor;

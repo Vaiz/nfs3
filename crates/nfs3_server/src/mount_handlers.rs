@@ -11,7 +11,13 @@ use crate::rpcwire::handle;
 use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::vfs::NfsFileSystem;
 
-#[allow(clippy::enum_glob_use)]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::enum_glob_use,
+        reason = "The dispatch table lists the mount procedure variants"
+    )
+)]
 pub async fn handle_mount<T>(
     context: RPCContext<T>,
     message: IncomingRpcMessage,

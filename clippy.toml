@@ -1,0 +1,3 @@
+allow-unwrap-in-tests = true
+# Our derive crate uses syn 3; several upstream proc macros still use syn 2.
+allowed-duplicate-crates = ["syn"]

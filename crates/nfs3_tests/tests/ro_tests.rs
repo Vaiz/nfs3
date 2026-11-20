@@ -90,11 +90,7 @@ async fn test_setattr() -> Result<(), anyhow::Error> {
     let mut client = TestContext::setup_ro();
     let root = client.root_dir().clone();
 
-    let LOOKUP3resok {
-        object,
-        obj_attributes: _,
-        dir_attributes: _,
-    } = client
+    let LOOKUP3resok { object, .. } = client
         .lookup(&LOOKUP3args {
             what: diropargs3 {
                 dir: root.clone(),
@@ -238,7 +234,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
         .write(&WRITE3args {
             file: file_handle.clone(),
             offset: 0,
-            count: COUNT as u32,
+            count: u32::try_from(COUNT)?,
             stable: stable_how::DATA_SYNC,
             data: Opaque::owned(vec![0u8; COUNT]),
         })
@@ -336,7 +332,7 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
                 dir: root.clone(),
                 name: b"new_dir".as_slice().into(),
             },
-            attributes: Default::default(),
+            attributes: sattr3::default(),
         })
         .await?;
 

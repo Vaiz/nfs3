@@ -10,6 +10,8 @@ license.workspace = true
 publish = true
 description = "Provides an implementation of NFS3 client"
 readme = "README.md"
+keywords = ["nfs", "nfs3"]
+categories = ["network-programming", "filesystem"]
 
 [features]
 tokio = ["dep:tokio"]

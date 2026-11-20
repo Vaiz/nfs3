@@ -57,7 +57,11 @@ impl NfsMetadataExt<'_> {
 }
 
 #[cfg(windows)]
-#[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    reason = "Keep the same signatures on Windows and Unix"
+)]
 impl NfsMetadataExt<'_> {
     pub fn mode(&self) -> u32 {
         // Assume full `rwxrwxrwx` permissions if not read-only

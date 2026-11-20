@@ -26,6 +26,5 @@ criterion = { workspace = true }
 name = "perf_bench"
 harness = false
 
-[lints.clippy]
-collapsible_if = "allow"
-collapsible_match = "allow"
+[lints]
+workspace = true

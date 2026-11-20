@@ -177,6 +177,7 @@ async fn test_read_file() -> Result<(), anyhow::Error> {
 #[tokio::test]
 async fn test_write() -> Result<(), anyhow::Error> {
     const COUNT: usize = 1024;
+    let count = u32::try_from(COUNT)?;
 
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
@@ -197,7 +198,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
         .write(&WRITE3args {
             file: file_handle.clone(),
             offset: 0,
-            count: COUNT as u32,
+            count,
             stable: stable_how::DATA_SYNC,
             data: Opaque::owned(vec![0u8; COUNT]),
         })
@@ -205,7 +206,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
         .unwrap();
 
     tracing::info!("{write:?}");
-    assert_eq!(write.count, COUNT as u32);
+    assert_eq!(write.count, count);
     // MemFs always commits synchronously regardless of the requested stable level.
     assert_eq!(write.committed, stable_how::FILE_SYNC);
 
@@ -214,7 +215,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
         .read(&READ3args {
             file: file_handle.clone(),
             offset: 0,
-            count: COUNT as u32,
+            count,
         })
         .await?
         .unwrap();
@@ -330,7 +331,7 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
                 dir: root.clone(),
                 name: b"new_dir".as_slice().into(),
             },
-            attributes: Default::default(),
+            attributes: sattr3::default(),
         })
         .await?
         .unwrap();
@@ -496,7 +497,7 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
                 dir: root.clone(),
                 name: b"test_dir".as_slice().into(),
             },
-            attributes: Default::default(),
+            attributes: sattr3::default(),
         })
         .await?
         .unwrap();
@@ -727,6 +728,7 @@ async fn test_commit() -> Result<(), anyhow::Error> {
 #[tokio::test]
 async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
     const DATA: &[u8] = b"unstable write data";
+    let count = u32::try_from(DATA.len())?;
 
     let mut client = TestContext::setup();
     let root = client.root_dir().clone();
@@ -748,14 +750,14 @@ async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
         .write(&WRITE3args {
             file: file_handle.clone(),
             offset: 0,
-            count: DATA.len() as u32,
+            count,
             stable: stable_how::UNSTABLE,
             data: Opaque::borrowed(DATA),
         })
         .await?
         .unwrap();
 
-    assert_eq!(write.count, DATA.len() as u32);
+    assert_eq!(write.count, count);
     assert_eq!(write.committed, stable_how::FILE_SYNC); // MemFs ignores the requested stable level and always commits synchronously.
 
     // COMMIT should succeed regardless.
@@ -782,7 +784,7 @@ async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
         .read(&READ3args {
             file: file_handle.clone(),
             offset: 0,
-            count: DATA.len() as u32,
+            count,
         })
         .await?
         .unwrap();

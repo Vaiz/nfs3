@@ -18,6 +18,7 @@ pub struct ListFs {
 
 impl ListFs {
     /// Create a `ListFs` with `count` pre-generated directory entries.
+    #[must_use]
     pub fn new(count: usize) -> Self {
         let entries: Vec<_> = (0..count)
             .map(|i| {
@@ -76,7 +77,7 @@ impl NfsReadFileSystem for ListFs {
         let start = if cookie == 0 {
             0
         } else {
-            cookie as usize // cookie = 1-based index
+            usize::try_from(cookie).map_err(|_overflow| nfsstat3::NFS3ERR_BAD_COOKIE)?
         };
         Ok(PrebuiltDirIter {
             entries: &self.entries,

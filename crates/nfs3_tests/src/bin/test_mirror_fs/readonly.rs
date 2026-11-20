@@ -3,7 +3,15 @@ use std::fs;
 use std::os::unix::fs as unix_fs;
 use std::path::PathBuf;
 
-use nfs3_client::nfs3_types::nfs3::*;
+use nfs3_client::nfs3_types::nfs3::{
+    ACCESS3_MODIFY, ACCESS3_READ, ACCESS3args, COMMIT3args, COMMIT3res, CREATE3args, CREATE3res,
+    GETATTR3args, LINK3args, LOOKUP3args, LOOKUP3res, MKDIR3args, MKDIR3res, MKNOD3args,
+    Nfs3Option, READ3args, READDIR3args, READDIRPLUS3args, READLINK3args, REMOVE3args, REMOVE3res,
+    RENAME3args, RENAME3res, RMDIR3args, RMDIR3res, SETATTR3args, SETATTR3res, SYMLINK3args,
+    SYMLINK3res, WRITE3args, WRITE3res, cookieverf3, createhow3, devicedata3, diropargs3, ftype3,
+    mknoddata3, nfs_fh3, nfspath3, nfsstat3, sattr3, set_atime, set_mtime, specdata3, stable_how,
+    symlinkdata3,
+};
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::JustClientExt;
 
@@ -327,16 +335,14 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 
 pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     const BINARY_TEST_FILE: &str = "binary_test.bin";
-    const BINARY_DATA_SIZE: usize = 256;
-
-    let binary_data: Vec<u8> = (0..BINARY_DATA_SIZE).map(|i| i as u8).collect();
+    let binary_data: Vec<u8> = (u8::MIN..=u8::MAX).collect();
     let file_path = subdir.join(BINARY_TEST_FILE);
     fs::write(&file_path, &binary_data).expect("failed to write binary file");
     assert_files_equal(
         subdir.as_path(),
         &subdir_fh,
         BINARY_TEST_FILE,
-        BINARY_DATA_SIZE as u64,
+        binary_data.len() as u64,
         ctx,
     )
     .await;
@@ -344,8 +350,8 @@ pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
 
 pub async fn readdir_multiple_files(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     for i in 1..=5 {
-        let file_path = subdir.join(format!("file{}.txt", i));
-        fs::write(file_path, format!("content {}", i)).expect("failed to write test file");
+        let file_path = subdir.join(format!("file{i}.txt"));
+        fs::write(file_path, format!("content {i}")).expect("failed to write test file");
     }
 
     let readdir_resok = ctx
@@ -404,8 +410,8 @@ pub async fn readdir_empty_directory(ctx: &mut TestContext, subdir: PathBuf, sub
 
 pub async fn readdir_many_files(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     for i in 1..=50 {
-        let file_path = subdir.join(format!("many_{:03}.txt", i));
-        fs::write(file_path, format!("content {}", i)).expect("failed to write test file");
+        let file_path = subdir.join(format!("many_{i:03}.txt"));
+        fs::write(file_path, format!("content {i}")).expect("failed to write test file");
     }
 
     let readdir_resok = ctx
@@ -434,8 +440,8 @@ pub async fn readdir_many_files(ctx: &mut TestContext, subdir: PathBuf, subdir_f
 pub async fn readdirplus_basic(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
     // Create files in the provided subdirectory
     for i in 1..=3 {
-        let file_path = subdir.join(format!("plus_file{}.txt", i));
-        fs::write(file_path, format!("content {}", i)).expect("failed to write test file");
+        let file_path = subdir.join(format!("plus_file{i}.txt"));
+        fs::write(file_path, format!("content {i}")).expect("failed to write test file");
     }
 
     // Now do READDIRPLUS on the subdirectory
@@ -587,12 +593,12 @@ pub async fn special_characters_filename(
         let file_path = subdir.join(filename);
 
         fs::write(&file_path, &content)
-            .unwrap_or_else(|e| panic!("failed to write file '{}': {}", filename, e));
+            .unwrap_or_else(|e| panic!("failed to write file '{filename}': {e}"));
 
         let _file_fh = ctx
             .just_lookup(&subdir_fh, filename)
             .await
-            .unwrap_or_else(|e| panic!("failed to lookup file '{}': {}", filename, e));
+            .unwrap_or_else(|e| panic!("failed to lookup file '{filename}': {e}"));
 
         assert_files_equal(
             subdir.as_path(),
@@ -717,8 +723,8 @@ pub async fn setattr_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subd
             // Expected error - readonly filesystem
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for setattr on readonly filesystem, got: {:?}",
-            setattr_result
+            "Expected NFS3ERR_ROFS error for setattr on readonly filesystem, got: \
+             {setattr_result:?}"
         ),
     }
 }
@@ -749,8 +755,7 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
             // Expected error - readonly filesystem
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for write on readonly filesystem, got: {:?}",
-            write_result
+            "Expected NFS3ERR_ROFS error for write on readonly filesystem, got: {write_result:?}"
         ),
     }
 }
@@ -775,8 +780,7 @@ pub async fn create_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subd
             // Expected error - readonly filesystem
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for create on readonly filesystem, got: {:?}",
-            create_result
+            "Expected NFS3ERR_ROFS error for create on readonly filesystem, got: {create_result:?}"
         ),
     }
 }
@@ -801,8 +805,7 @@ pub async fn mkdir_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdi
             // Expected error - readonly filesystem
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for mkdir on readonly filesystem, got: {:?}",
-            mkdir_result
+            "Expected NFS3ERR_ROFS error for mkdir on readonly filesystem, got: {mkdir_result:?}"
         ),
     }
 }
@@ -827,14 +830,12 @@ pub async fn symlink_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, sub
         .expect("symlink call failed");
 
     match symlink_result {
-        SYMLINK3res::Err((nfsstat3::NFS3ERR_ROFS, _))
-        | SYMLINK3res::Err((nfsstat3::NFS3ERR_NOTSUPP, _)) => {
+        SYMLINK3res::Err((nfsstat3::NFS3ERR_ROFS | nfsstat3::NFS3ERR_NOTSUPP, _)) => {
             // Expected error - readonly filesystem
         }
         _ => panic!(
             "Expected NFS3ERR_ROFS or NFS3ERR_NOTSUPP error for symlink on readonly filesystem, \
-             got: {:?}",
-            symlink_result
+             got: {symlink_result:?}"
         ),
     }
 }
@@ -895,8 +896,7 @@ pub async fn remove_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
             );
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for remove on readonly filesystem, got: {:?}",
-            remove_result
+            "Expected NFS3ERR_ROFS error for remove on readonly filesystem, got: {remove_result:?}"
         ),
     }
 }
@@ -927,8 +927,7 @@ pub async fn rmdir_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
             );
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for rmdir on readonly filesystem, got: {:?}",
-            rmdir_result
+            "Expected NFS3ERR_ROFS error for rmdir on readonly filesystem, got: {rmdir_result:?}"
         ),
     }
 }
@@ -965,8 +964,7 @@ pub async fn rename_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdi
             );
         }
         _ => panic!(
-            "Expected NFS3ERR_ROFS error for rename on readonly filesystem, got: {:?}",
-            rename_result
+            "Expected NFS3ERR_ROFS error for rename on readonly filesystem, got: {rename_result:?}"
         ),
     }
 }

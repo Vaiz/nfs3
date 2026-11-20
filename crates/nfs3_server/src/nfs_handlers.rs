@@ -1,6 +1,15 @@
-#![allow(clippy::unwrap_used)] // FIXME: will fix this after some refactoring
+#![expect(
+    clippy::unwrap_used,
+    reason = "The directory handlers return errors before unwrapping their iterators"
+)]
 
-#[allow(clippy::wildcard_imports)]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::wildcard_imports,
+        reason = "This module handles the full set of NFSv3 procedures"
+    )
+)]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
 use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, Unpack, Void};
@@ -13,7 +22,13 @@ use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 
-#[allow(clippy::enum_glob_use)]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::enum_glob_use,
+        reason = "The dispatch table lists the NFSv3 procedure variants"
+    )
+)]
 pub async fn handle_nfs<T>(
     context: RPCContext<T>,
     message: IncomingRpcMessage,
@@ -405,7 +420,6 @@ where
     })
 }
 
-#[allow(clippy::too_many_lines)]
 async fn nfsproc3_readdir<T>(
     context: RPCContext<T>,
     xid: u32,
@@ -617,7 +631,6 @@ where
     }
 }
 
-#[allow(clippy::collapsible_if, clippy::too_many_lines)]
 async fn nfsproc3_create<T>(context: RPCContext<T>, xid: u32, args: CREATE3args<'_>) -> CREATE3res
 where
     T: NfsFileSystem,

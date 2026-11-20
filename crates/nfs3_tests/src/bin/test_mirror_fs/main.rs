@@ -1,7 +1,12 @@
-//! Integration tests for cargo-nfs3-server MirrorFS implementation
+//! Integration tests for cargo-nfs3-server `MirrorFS` implementation
 //!
 //! This binary starts a cargo-nfs3-server instance and executes comprehensive
 //! tests for both readonly and readwrite modes.
+
+#![expect(
+    clippy::unwrap_used,
+    reason = "Failed assertions and fixture setup should abort this test binary"
+)]
 
 use std::io::Write;
 use std::path::PathBuf;

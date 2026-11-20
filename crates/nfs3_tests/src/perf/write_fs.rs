@@ -14,7 +14,8 @@ pub struct WriteFs {
 }
 
 impl WriteFs {
-    pub fn new(file_size: u64) -> Self {
+    #[must_use]
+    pub const fn new(file_size: u64) -> Self {
         Self { file_size }
     }
 }

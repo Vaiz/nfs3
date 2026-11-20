@@ -1,5 +1,4 @@
 // Tests for NFS3-specific types and serialization
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

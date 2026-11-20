@@ -1,7 +1,8 @@
 #![allow(
     non_camel_case_types,
     clippy::large_enum_variant,
-    clippy::upper_case_acronyms
+    clippy::upper_case_acronyms,
+    reason = "Keep the RFC names and store XDR union arms inline"
 )]
 
 //! This module contains the definitions of the `NFSv3` protocol as defined in RFC 1813.
@@ -383,7 +384,10 @@ pub struct PATHCONF3resfail {
 }
 
 #[derive(Debug, XdrCodec)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "The XDR response has four independent boolean fields"
+)]
 pub struct PATHCONF3resok {
     pub obj_attributes: post_op_attr,
     pub linkmax: u32,
@@ -678,7 +682,10 @@ impl AsRef<[u8]> for filename3<'_> {
     }
 }
 
-#[allow(clippy::missing_const_for_fn)] // it breaks code
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "Keep the existing non-const API"
+)]
 impl filename3<'_> {
     #[must_use]
     pub fn clone_to_owned(&self) -> filename3<'static> {
@@ -1079,7 +1086,6 @@ pub enum NFS_PROGRAM {
 impl std::convert::TryFrom<u32> for NFS_PROGRAM {
     type Error = crate::xdr_codec::Error;
 
-    #[allow(clippy::cast_possible_wrap)]
     fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::NFSPROC3_NULL),

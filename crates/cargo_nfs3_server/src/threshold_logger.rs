@@ -110,7 +110,10 @@ const fn billion_bounds(size: usize) -> Range<usize> {
 /// Output is at most 7 characters (e.g., "9999999", "999.99K", "100.0M").
 /// Prioritizes precision: plain numbers up to 7 chars, then uses units.
 /// Omits decimal places when value divides evenly without precision loss.
-#[allow(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "The compact display rounds large counters"
+)]
 fn format_number(n: usize) -> String {
     match n {
         0..=999_999 => n.to_string(),

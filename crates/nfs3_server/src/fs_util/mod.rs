@@ -50,7 +50,11 @@ const fn mode_unmask(mode: u32) -> u32 {
     (mode | 0x80) & 0x1FF
 }
 
-#[allow(clippy::option_if_let_else, clippy::needless_pass_by_value)]
+#[expect(
+    clippy::option_if_let_else,
+    clippy::needless_pass_by_value,
+    reason = "The match consumes the metadata result and handles both cases explicitly"
+)]
 fn to_nfstime3(time: std::io::Result<std::time::SystemTime>) -> nfstime3 {
     match time {
         Ok(time) => time.try_into().unwrap_or_default(),
@@ -129,7 +133,7 @@ pub async fn path_setattr(path: &Path, setattr: &sattr3) -> Result<(), nfsstat3>
 }
 
 /// Set attributes of a file
-#[allow(clippy::unused_async)] // keeping it async for API compatibility
+#[expect(clippy::unused_async, reason = "Keep the existing async API")]
 pub async fn file_setattr(file: &std::fs::File, setattr: &sattr3) -> Result<(), nfsstat3> {
     if let set_mode3::Some(mode) = setattr.mode {
         debug!(" -- set permissions {:?}", mode);

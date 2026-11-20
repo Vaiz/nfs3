@@ -10,6 +10,8 @@ license.workspace = true
 publish = true
 description = "Simple and easy-to-deploy NFSv3 server"
 readme = "README.md"
+keywords = ["nfs", "nfs3"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 nfs3_server = { workspace = true, features = ["memfs", "fs_util"] }

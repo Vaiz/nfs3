@@ -2,6 +2,10 @@
     clippy::await_holding_refcell_ref,
     reason = "criterion doesn't support closures with lifetime"
 )]
+#![expect(
+    clippy::unwrap_used,
+    reason = "The benchmark must stop on failed setup or NFS operations"
+)]
 
 use std::cell::RefCell;
 
@@ -43,6 +47,10 @@ fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx 
 }
 
 /// Resolve the single file handle through the server's handle converter.
+#[expect(
+    clippy::future_not_send,
+    reason = "Criterion drives this benchmark future on the calling thread"
+)]
 async fn get_file_handle(ctx: &PerfCtx) -> nfs_fh3 {
     ctx.client
         .borrow_mut()
@@ -141,7 +149,7 @@ fn bench_read(c: &mut Criterion) {
                     .read(&READ3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: sz as u32,
+                        count: u32::try_from(sz).expect("benchmark read size fits in u32"),
                     })
                     .await
                     .unwrap()
@@ -177,7 +185,7 @@ fn bench_write(c: &mut Criterion) {
                     .write(&WRITE3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: sz as u32,
+                        count: u32::try_from(sz).expect("benchmark write size fits in u32"),
                         stable: stable_how::UNSTABLE,
                         data: Opaque::borrowed(&payload),
                     })

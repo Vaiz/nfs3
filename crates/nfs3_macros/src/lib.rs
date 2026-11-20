@@ -421,8 +421,12 @@ fn generate_enum_impl(name: &Ident, generics: &syn::Generics, data: &DataEnum) -
     }
 }
 
+/// Derives the XDR codec traits for a struct or enum.
+///
+/// # Panics
+///
+/// Panics if applied to a union.
 #[proc_macro_derive(XdrCodec, attributes(xdr))]
-#[allow(clippy::missing_panics_doc)]
 pub fn derive_xdr_codec(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
