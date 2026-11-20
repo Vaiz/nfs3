@@ -1,8 +1,8 @@
-use std::fs::{File, Permissions};
+use std::fs::File;
+#[cfg(unix)]
+use std::fs::Permissions;
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-#[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 
 use nfs3_types::nfs3::ftype3;

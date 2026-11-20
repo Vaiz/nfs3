@@ -1,5 +1,3 @@
-#![cfg_attr(target_os = "windows", allow(unused_imports))]
-
 pub(crate) mod metadata_ext;
 
 use std::fs::Metadata;
