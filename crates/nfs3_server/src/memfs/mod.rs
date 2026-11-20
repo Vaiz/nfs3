@@ -748,6 +748,55 @@ impl NfsReadFileSystem for MemFs {
     }
 }
 
+impl crate::vfs::NfsOwnedRead for MemFs {
+    async fn read_owned(
+        &self,
+        mut request: crate::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<crate::vfs::OwnedReadResult, nfsstat3> {
+        let fs = self.fs.read().expect("lock is poisoned");
+        let file = fs
+            .get(request.handle)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?
+            .as_file()?;
+        let start = usize::try_from(request.offset)
+            .unwrap_or(usize::MAX)
+            .min(file.content.len());
+        let count = request.buffer().len().min(file.content.len() - start);
+        request.buffer()[..count].copy_from_slice(&file.content[start..start + count]);
+        request.complete(count, start + count == file.content.len())
+    }
+}
+
+impl crate::vfs::NfsOwnedIo for MemFs {
+    async fn write_owned(
+        &self,
+        request: crate::vfs::OwnedWrite<FileHandleU64>,
+    ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
+        let mut fs = self.fs.write().expect("lock is poisoned");
+        let file = fs
+            .get_mut(request.handle)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?
+            .as_file_mut()
+            .map_err(|_| nfsstat3::NFS3ERR_INVAL)?;
+        let start = usize::try_from(request.offset).map_err(|_| nfsstat3::NFS3ERR_FBIG)?;
+        if start > file.content.len() {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+        let end = start
+            .checked_add(request.data.len())
+            .ok_or(nfsstat3::NFS3ERR_FBIG)?;
+        if end > file.content.len() {
+            file.resize(end as u64);
+        }
+        let mut offset = start;
+        for chunk in request.data.chunks() {
+            file.content[offset..offset + chunk.len()].copy_from_slice(chunk);
+            offset += chunk.len();
+        }
+        Ok((file.attr.clone(), nfs::stable_how::FILE_SYNC))
+    }
+}
+
 impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");

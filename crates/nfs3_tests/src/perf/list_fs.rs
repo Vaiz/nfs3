@@ -37,6 +37,24 @@ impl ListFs {
     }
 }
 
+impl nfs3_server::vfs::NfsOwnedRead for ListFs {
+    async fn read_owned(
+        &self,
+        _request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_INVAL)
+    }
+}
+
+impl nfs3_server::vfs::NfsOwnedIo for ListFs {
+    async fn write_owned(
+        &self,
+        _request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
+    ) -> Result<(fattr3, stable_how), nfsstat3> {
+        Err(nfsstat3::NFS3ERR_ROFS)
+    }
+}
+
 impl NfsReadFileSystem for ListFs {
     type Handle = FileHandleU64;
 

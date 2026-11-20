@@ -96,14 +96,14 @@ macro_rules! fh_to_id {
     };
 }
 
-async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
+pub async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {
     Void
 }
 
-async fn nfsproc3_getattr<T>(
+pub async fn nfsproc3_getattr<T>(
     context: RPCContext<T>,
     xid: u32,
     getattr3args: GETATTR3args,
@@ -126,7 +126,7 @@ where
     }
 }
 
-async fn nfsproc3_lookup<T>(
+pub async fn nfsproc3_lookup<T>(
     context: RPCContext<T>,
     xid: u32,
     lookup3args: LOOKUP3args<'_>,
@@ -186,7 +186,7 @@ where
     }
 }
 
-async fn nfsproc3_fsinfo<T>(context: RPCContext<T>, xid: u32, args: FSINFO3args) -> FSINFO3res
+pub async fn nfsproc3_fsinfo<T>(context: RPCContext<T>, xid: u32, args: FSINFO3args) -> FSINFO3res
 where
     T: NfsFileSystem,
 {
@@ -209,7 +209,7 @@ where
     }
 }
 
-async fn nfsproc3_access<T>(context: RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
+pub async fn nfsproc3_access<T>(context: RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
 where
     T: NfsFileSystem,
 {
@@ -229,7 +229,11 @@ where
     })
 }
 
-async fn nfsproc3_pathconf<T>(context: RPCContext<T>, xid: u32, args: PATHCONF3args) -> PATHCONF3res
+pub async fn nfsproc3_pathconf<T>(
+    context: RPCContext<T>,
+    xid: u32,
+    args: PATHCONF3args,
+) -> PATHCONF3res
 where
     T: NfsFileSystem,
 {
@@ -252,7 +256,7 @@ where
     PATHCONF3res::Ok(res)
 }
 
-async fn nfsproc3_fsstat<T>(context: RPCContext<T>, xid: u32, args: FSSTAT3args) -> FSSTAT3res
+pub async fn nfsproc3_fsstat<T>(context: RPCContext<T>, xid: u32, args: FSSTAT3args) -> FSSTAT3res
 where
     T: NfsFileSystem,
 {
@@ -274,7 +278,7 @@ where
     FSSTAT3res::Ok(fsstat)
 }
 
-async fn nfsproc3_readdirplus<T>(
+pub async fn nfsproc3_readdirplus<T>(
     context: RPCContext<T>,
     xid: u32,
     args: READDIRPLUS3args,
@@ -376,10 +380,25 @@ where
 
     // this is a wrapper around a writer that also just counts the number of bytes
     // written
-    let mut entries_result = BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed);
+    let mut entries_result = match context.directory_limits {
+        Some(limits) => BoundedEntryPlusList::with_entry_limit(
+            args.dircount as usize,
+            max_bytes_allowed,
+            limits.max_entries,
+        ),
+        None => BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed),
+    };
+    let mut host_entries = 0;
+    let mut host_metadata = 0;
     loop {
         match iter.next().await {
             NextResult::Ok(dir_entry_plus) => {
+                if context.directory_limits.is_some_and(|limits| {
+                    !limits.admit_name(&dir_entry_plus.name, &mut host_entries, &mut host_metadata)
+                }) {
+                    eof = false;
+                    break;
+                }
                 let entry = dir_entry_plus.into_entry(&context.file_handle_converter);
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
@@ -421,7 +440,7 @@ where
     })
 }
 
-async fn nfsproc3_readdir<T>(
+pub async fn nfsproc3_readdir<T>(
     context: RPCContext<T>,
     xid: u32,
     readdir3args: READDIR3args,
@@ -487,11 +506,27 @@ where
     }
 
     let mut iter = iter.unwrap();
-    let mut entries = BoundedList::new(max_bytes_allowed);
+    let mut entries = context.directory_limits.map_or_else(
+        || BoundedList::new(max_bytes_allowed),
+        |limits| {
+            BoundedList::with_entry_limit(
+                max_bytes_allowed,
+                limits.max_entries.min(max_bytes_allowed / 24),
+            )
+        },
+    );
+    let mut host_entries = 0;
+    let mut host_metadata = 0;
     let eof;
     loop {
         match iter.next().await {
             NextResult::Ok(entry) => {
+                if context.directory_limits.is_some_and(|limits| {
+                    !limits.admit_name(&entry.name, &mut host_entries, &mut host_metadata)
+                }) {
+                    eof = false;
+                    break;
+                }
                 let result = entries.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
@@ -591,7 +626,7 @@ where
     }
 }
 
-async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args) -> COMMIT3res
+pub async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args) -> COMMIT3res
 where
     T: NfsFileSystem,
 {
@@ -632,7 +667,11 @@ where
     }
 }
 
-async fn nfsproc3_create<T>(context: RPCContext<T>, xid: u32, args: CREATE3args<'_>) -> CREATE3res
+pub async fn nfsproc3_create<T>(
+    context: RPCContext<T>,
+    xid: u32,
+    args: CREATE3args<'_>,
+) -> CREATE3res
 where
     T: NfsFileSystem,
 {
@@ -706,7 +745,11 @@ where
     }
 }
 
-async fn nfsproc3_setattr<T>(context: RPCContext<T>, xid: u32, args: SETATTR3args) -> SETATTR3res
+pub async fn nfsproc3_setattr<T>(
+    context: RPCContext<T>,
+    xid: u32,
+    args: SETATTR3args,
+) -> SETATTR3res
 where
     T: NfsFileSystem,
 {
@@ -768,7 +811,11 @@ where
     }
 }
 
-async fn nfsproc3_remove<T>(context: RPCContext<T>, xid: u32, args: REMOVE3args<'_>) -> REMOVE3res
+pub async fn nfsproc3_remove<T>(
+    context: RPCContext<T>,
+    xid: u32,
+    args: REMOVE3args<'_>,
+) -> REMOVE3res
 where
     T: NfsFileSystem,
 {
@@ -807,7 +854,7 @@ where
     }
 }
 
-async fn nfsproc3_rename<T>(
+pub async fn nfsproc3_rename<T>(
     context: RPCContext<T>,
     xid: u32,
     args: RENAME3args<'_, '_>,
@@ -874,7 +921,7 @@ where
         }
     }
 }
-async fn nfsproc3_mkdir<T>(context: RPCContext<T>, xid: u32, args: MKDIR3args<'_>) -> MKDIR3res
+pub async fn nfsproc3_mkdir<T>(context: RPCContext<T>, xid: u32, args: MKDIR3args<'_>) -> MKDIR3res
 where
     T: NfsFileSystem,
 {
@@ -913,7 +960,7 @@ where
     }
 }
 
-async fn nfsproc3_symlink<T>(
+pub async fn nfsproc3_symlink<T>(
     context: RPCContext<T>,
     xid: u32,
     args: SYMLINK3args<'_>,
@@ -972,7 +1019,7 @@ where
     }
 }
 
-async fn nfsproc3_readlink<T>(
+pub async fn nfsproc3_readlink<T>(
     context: RPCContext<T>,
     xid: u32,
     args: READLINK3args,
@@ -985,6 +1032,18 @@ where
 
     match context.vfs.readlink(&id).await {
         Ok(data) => {
+            if context.reply_metadata_limit.is_some_and(|max| {
+                let capacity = match &data.0.0 {
+                    std::borrow::Cow::Owned(v) => v.capacity(),
+                    std::borrow::Cow::Borrowed(v) => v.len(),
+                };
+                capacity > max
+            }) {
+                return READLINK3res::Err((
+                    nfsstat3::NFS3ERR_SERVERFAULT,
+                    READLINK3resfail { symlink_attributes },
+                ));
+            }
             debug!("readlink success {xid} --> {data:?}");
             READLINK3res::Ok(READLINK3resok {
                 symlink_attributes,
@@ -1002,7 +1061,7 @@ fn nfs_option_from_result<T: Pack + Unpack, E>(result: Result<T, E>) -> Nfs3Opti
     result.map_or(Nfs3Option::None, Nfs3Option::Some)
 }
 
-async fn get_wcc_attr<T>(
+pub async fn get_wcc_attr<T>(
     context: &RPCContext<T>,
     object_id: &T::Handle,
 ) -> Result<wcc_attr, nfsstat3>

@@ -58,14 +58,14 @@ where
     }
 }
 
-async fn mountproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
+pub async fn mountproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {
     Void
 }
 
-async fn mountproc3_mnt<T>(
+pub async fn mountproc3_mnt<T>(
     context: RPCContext<T>,
     xid: u32,
     path: dirpath<'_>,
@@ -142,7 +142,11 @@ where
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> exports<'static, 'static>
+pub async fn mountproc3_export<T>(
+    context: RPCContext<T>,
+    _: u32,
+    _: Void,
+) -> exports<'static, 'static>
 where
     T: crate::vfs::NfsFileSystem,
 {
@@ -153,7 +157,7 @@ where
     }])
 }
 
-async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void
+pub async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {

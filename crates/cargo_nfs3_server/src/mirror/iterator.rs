@@ -10,6 +10,7 @@ use nfs3_server::vfs::{
 use tokio::fs::ReadDir;
 use tracing::debug;
 
+use super::iterator_cache::HeldEntry;
 use super::{IteratorCache, SymbolsCache};
 use crate::string_ext::FromOsString;
 
@@ -21,6 +22,7 @@ pub struct MirrorFsIterator {
     read_dir: Option<ReadDir>,
     /// Cookie starts as base (with unique counter) and gets incremented for each entry
     cookie: u64,
+    held: Option<HeldEntry>,
     /// Direct reference to the iterator cache for Drop implementation
     iterator_cache: Arc<IteratorCache>,
 }
@@ -33,6 +35,7 @@ impl MirrorFsIterator {
         dirid: FileHandleU64,
         read_dir: Option<ReadDir>,
         cookie: u64,
+        held: Option<HeldEntry>,
     ) -> Self {
         Self {
             root_path,
@@ -40,12 +43,19 @@ impl MirrorFsIterator {
             dirid,
             read_dir,
             cookie,
+            held,
             iterator_cache,
         }
     }
 
     /// Common logic for getting the next directory entry and creating a handle
     async fn next_entry_common(&mut self) -> NextResult<(FileHandleU64, std::ffi::OsString, u64)> {
+        if let Some(entry) = &self.held {
+            if self.cookie == entry.before {
+                self.cookie = entry.cookie;
+                return NextResult::Ok((entry.handle, entry.name.clone(), entry.cookie));
+            }
+        }
         let Some(read_dir) = self.read_dir.as_mut() else {
             return NextResult::Eof;
         };
@@ -62,7 +72,14 @@ impl MirrorFsIterator {
                     Err(e) => return NextResult::Err(e),
                 };
 
+                let before = self.cookie;
                 self.cookie += 1;
+                self.held = Some(HeldEntry {
+                    before,
+                    cookie: self.cookie,
+                    handle,
+                    name: name.clone(),
+                });
 
                 NextResult::Ok((handle, name, self.cookie))
             }
@@ -78,8 +95,13 @@ impl MirrorFsIterator {
 impl Drop for MirrorFsIterator {
     fn drop(&mut self) {
         if let Some(read_dir) = self.read_dir.take() {
-            self.iterator_cache
-                .cache_state(self.dirid, self.cookie, read_dir, Instant::now());
+            self.iterator_cache.cache_state(
+                self.dirid,
+                self.cookie,
+                read_dir,
+                self.held.take(),
+                Instant::now(),
+            );
             debug!(
                 "Cached iterator state for dir_id: {} at cookie: {:#018x}",
                 self.dirid.as_u64(),

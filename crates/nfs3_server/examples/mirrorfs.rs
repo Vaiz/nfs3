@@ -383,6 +383,38 @@ impl MirrorFs {
     }
 }
 
+impl nfs3_server::vfs::NfsOwnedRead for MirrorFs {
+    async fn read_owned(
+        &self,
+        request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(request.handle.as_u64())?.name)
+        };
+        nfs3_server::fs_util::read_owned_file(request, path).await
+    }
+}
+
+impl nfs3_server::vfs::NfsOwnedIo for MirrorFs {
+    async fn write_owned(
+        &self,
+        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
+    ) -> Result<(fattr3, stable_how), nfsstat3> {
+        let id = request.handle.as_u64();
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(id)?.name)
+        };
+        let (metadata, stable) = nfs3_server::fs_util::write_owned_file(request, path).await?;
+        let attr = metadata_to_fattr3(id, &metadata);
+        if let Ok(entry) = self.fsmap.write().await.find_entry_mut(id) {
+            entry.fsmeta = attr.clone();
+        }
+        Ok((attr, stable))
+    }
+}
+
 impl NfsReadFileSystem for MirrorFs {
     type Handle = FileHandleU64;
 
@@ -729,8 +761,12 @@ impl NfsFileSystem for MirrorFs {
         .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
-        Ok(())
+    async fn commit(&self, id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(id.as_u64())?.name)
+        };
+        nfs3_server::fs_util::commit_file(path).await
     }
 }
 

@@ -12,6 +12,7 @@ mod rpcwire;
 #[cfg_attr(docsrs, doc(cfg(feature = "fs_util")))]
 pub mod fs_util;
 
+pub mod bounded;
 pub mod tcp;
 mod transaction_tracker;
 pub(crate) mod units;

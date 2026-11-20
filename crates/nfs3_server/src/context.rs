@@ -16,6 +16,8 @@ pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
     pub export_name: Arc<String>,
     pub transaction_tracker: Arc<TransactionTracker>,
     pub(crate) file_handle_converter: FileHandleConverter,
+    pub(crate) directory_limits: Option<crate::bounded::DirectoryLimits>,
+    pub(crate) reply_metadata_limit: Option<usize>,
 }
 
 impl<T> fmt::Debug for RPCContext<T>
@@ -48,6 +50,8 @@ where
             export_name: Arc::clone(&self.export_name),
             transaction_tracker: Arc::clone(&self.transaction_tracker),
             file_handle_converter: self.file_handle_converter,
+            directory_limits: self.directory_limits,
+            reply_metadata_limit: self.reply_metadata_limit,
         }
     }
 }
@@ -72,6 +76,8 @@ where
                 1024,
             )),
             file_handle_converter: FileHandleConverter::new(),
+            directory_limits: None,
+            reply_metadata_limit: None,
         }
     }
     #[must_use]

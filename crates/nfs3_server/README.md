@@ -54,6 +54,100 @@ a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.
 
+Opt-in bounded listener
+======================
+
+`bounded::BoundedListener::bind(address, vfs, export, limits)` requires
+`vfs::NfsOwnedIo`; `bind_ro` wraps an `NfsOwnedRead` backend. Supply every
+`ServerLimits`, codec, framing and directory limit explicitly: there are no
+default profiles. `validate` checks the startup envelope and fixed maximum
+READ/WRITE reply codec work and worst-case directory metadata/reservation work
+before binding, without allocating transfer-sized backing.
+`minimum_control_bytes` exposes the derived control floor, not a profile.
+`accept` returns an optional connection task handle; dropping that handle
+detaches it. `run` accepts until error/shutdown. `drain` stops admissions and
+readers and waits for admitted work and bounded reply sends; shutdown does not
+cancel their replies. `run` returns `Interrupted` on shutdown, even without a
+new socket.
+Legacy `tcp::NFSTcpListener` remains available for comparison.
+This API is opt-in; existing listeners and CLI invocations do not switch
+automatically. Correctness checks do not establish a copy, memory or performance
+target pass.
+
+The bounded listener serves the same implemented NFS/mount/portmap procedures
+through shared metadata handlers. IO uses the runtime-neutral
+`nfs3_types::async_io` framing core, not a server-to-client dependency.
+There is one operation/reply at a time per connection, with independent
+connections progressing concurrently. It reads only the first four-byte
+marker before failfast operation/domain admission. No body read or mutation
+occurs on admission exhaustion. Connection exhaustion closes immediately.
+Unread pipelined input can cause a TCP reset and discard even an earlier reply.
+
+The per-operation reservation is the **sum** of maximum request backing,
+maximum READ backing, builder work, decode work/metadata, encode work/metadata,
+directory host expansion and control entitlement. Directory expansion includes
+the minimum wire-entry count, actual host entry layout, geometric vector work
+and conservative old/new overlap; names and handles have a separate allowance.
+`operation_envelope` exposes this checked sum. No operation requests another
+global grant after admission. Allocations grow incrementally, not to an
+advertised fragment length. Spent backing tickets release to the domain, not
+back into the reservation; immutable origins remain charged until their final
+owner drops. Unused entitlement and the operation slot survive through actual
+work and reply send/drop.
+
+This bounds managed backing capacity and requested codec/control allocation
+work, **not total process memory**. Runtime/task/allocator overhead, persistent
+filesystem data, custom backend allocations and backend-created directory
+iterators/name capacity before transfer are separate domains. Selected names
+are capacity-checked before server vector growth. Backends must honor the
+documented `FileHandle` size contract. `AUTH_SYS` has a separate RFC-bounded
+machine/group decode allowance included in control, not an unrestricted second
+record decode budget. READLINK output is checked before server ownership/copy.
+
+`OwnedRead` supplies charged initialized writable storage before backend work.
+`complete(count, eof)` consumes it into a checked prefix; a backend cannot
+substitute an uncharged Vec. `OwnedWrite` supplies an owned segmented Payload,
+handle, offset and requested stability. Both privately retain the work lease.
+Custom backends must move the **whole request** into actual blocking jobs and
+keep it for all actual work, including error paths; spawning unrelated borrowed
+work violates this contract. No blanket legacy Vec/slice copying adapter exists.
+`MemFs` fills supplied READ storage and iterates WRITE chunks. The mirror backends
+implement the capability using `fs_util` standard-file blocking jobs. Those jobs
+use `sync_data`/`sync_all` for `DATA_SYNC`/`FILE_SYNC`, and COMMIT flushes the file.
+OS synchronization is not a claim about storage hardware crash guarantees.
+
+RPC/auth/arguments are decoded and the record exactly finished/dropped before
+the first backend await. WRITE retains only selected origins. Local WRITE
+policy checks ROFS, then count mismatch/transfer limit, then handle/preattrs.
+READ and directory counts are clamped; FSINFO and PATHCONF advertise the
+configured supported transfers and name limit. Directory exhaustion preserves
+the last included cookie with eof=false, or returns TOOSMALL if none fits.
+Existing cookie-verifier behavior is unchanged.
+Well-formed over-limit name arguments return procedure-specific NFS NAMETOOLONG
+failures, without backend calls. The configured name/host/page limits must fit
+the backend's existing filenames, not just newly created names: an over-limit
+first directory entry produces TOOSMALL and retrying cannot advance it. The
+mirror cache retains one yielded name/handle per cached iterator (a backend
+allocation domain) so an unsent lookahead can be replayed from the last sent
+cookie; that name is cloned when yielded/replayed. Popping either resume cookie
+consumes the same cached state, not a second independent iterator.
+
+Idle, per-IO progress, whole-record receive and whole-reply send deadlines are
+positive and explicit. Partial markers use progress/whole-record deadlines,
+not repeated idle timeouts. Backend execution has **no timeout**.
+Admitted operations run in detached server-owned tasks with one-result
+oneshots; disconnect, connection-task cancellation and listener drop do not
+abort their backend work. Dropping the listener signals readers. Drain can
+remain pending for an uncooperative backend.
+
+XIDs correlate replies only. There is no bounded-path transaction suppression,
+retry cache, digest, replay or exactly-once guarantee; repeated complete records
+may execute again. Admitted WRITE continues after disconnect. A lost
+mutation reply (including encode/send failure) is **uncertain**, never evidence
+that retry is safe. Post-mutation encode failure closes rather than fabricating
+a failure status; a nonmutating encode failure can use a fixed pre-reserved RPC
+error. Process/runtime termination is outside the disconnect guarantee.
+
 Relevant RFCs
 =============
  - XDR is the message format: [RFC 1014](https://datatracker.ietf.org/doc/html/rfc1014).

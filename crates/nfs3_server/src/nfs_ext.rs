@@ -36,6 +36,14 @@ pub struct BoundedEntryPlusList {
 }
 
 impl BoundedEntryPlusList {
+    pub fn with_entry_limit(dircount: usize, maxcount: usize, max_entries: usize) -> Self {
+        Self {
+            entries: BoundedList::with_entry_limit(maxcount, max_entries.min(maxcount / 24)),
+            dircount,
+            accumulated_dircount: 0,
+        }
+    }
+
     pub fn new(dircount: usize, maxcount: usize) -> Self {
         Self {
             entries: BoundedList::new(maxcount),
@@ -54,13 +62,16 @@ impl BoundedEntryPlusList {
         let added_dircount =
             entry.fileid.packed_size() + 4 + entry.name.packed_size() + entry.cookie.packed_size();
 
-        if self.accumulated_dircount + added_dircount > self.dircount {
+        let Some(next_dircount) = self.accumulated_dircount.checked_add(added_dircount) else {
+            return Err(entry);
+        };
+        if next_dircount > self.dircount {
             return Err(entry);
         }
 
         let result = self.entries.try_push(entry);
         if result.is_ok() {
-            self.accumulated_dircount += added_dircount;
+            self.accumulated_dircount = next_dircount;
         }
         result
     }

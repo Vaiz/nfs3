@@ -76,6 +76,7 @@ pub struct BoundedList<T> {
     list: List<T>,
     current_size: usize,
     max_size: usize,
+    max_entries: Option<usize>,
 }
 
 impl<T> BoundedList<T>
@@ -90,17 +91,59 @@ where
             list,
             current_size,
             max_size,
+            max_entries: None,
+        }
+    }
+
+    /// Also bound host entries and use explicit fallible geometric growth.
+    /// Reservation work/old-new overlap must be reserved by the caller.
+    #[must_use]
+    pub fn with_entry_limit(max_size: usize, max_entries: usize) -> Self {
+        Self {
+            max_entries: Some(max_entries),
+            ..Self::new(max_size)
         }
     }
 
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
-        let item_size = item.packed_size() + 4;
-        if self.current_size + item_size > self.max_size {
+        let Some(item_size) = item.packed_size().checked_add(4) else {
+            return Err(item);
+        };
+        let Some(next_size) = self.current_size.checked_add(item_size) else {
+            return Err(item);
+        };
+        if next_size > self.max_size {
             return Err(item);
         }
 
+        if let Some(max) = self.max_entries {
+            let entries = &mut self.list.0;
+            if entries.len() >= max {
+                return Err(item);
+            }
+            if entries.len() == entries.capacity() {
+                let target = entries
+                    .capacity()
+                    .checked_mul(2)
+                    .unwrap_or(max)
+                    .max(1)
+                    .min(max);
+                let mut grown = Vec::new();
+                if grown.try_reserve_exact(target).is_err() {
+                    return Err(item);
+                }
+                if grown.capacity() > target {
+                    // Reject allocator excess before publishing a bounded list.
+                    // Keep the accepted page unchanged. Old+new overlap is part
+                    // of the caller's envelope; usable-size overhead is not.
+                    return Err(item);
+                }
+                grown.append(entries);
+                *entries = grown;
+            }
+        }
         self.list.0.push(item);
-        self.current_size += item_size;
+        self.current_size = next_size;
         Ok(())
     }
 

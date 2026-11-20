@@ -2,6 +2,7 @@
 
 extern crate self as nfs3_types;
 
+pub mod async_io;
 pub mod mount;
 pub mod nfs3;
 pub mod portmap;

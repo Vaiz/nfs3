@@ -1,6 +1,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
+pub mod bounded;
+pub mod bounded_nfs;
 pub(crate) mod connect;
 mod error;
 pub mod io;

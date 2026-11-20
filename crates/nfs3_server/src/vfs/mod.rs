@@ -24,9 +24,10 @@
 pub mod adapters;
 pub(crate) mod handle;
 mod iterator;
-
+pub mod owned;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
+pub use owned::{NfsOwnedIo, NfsOwnedRead, OwnedRead, OwnedReadResult, OwnedWrite};
 
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,

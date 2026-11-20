@@ -39,7 +39,7 @@ where
     }
 }
 
-async fn pmapproc_null<T>(_: RPCContext<T>, xid: u32, _: Void) -> Void
+pub async fn pmapproc_null<T>(_: RPCContext<T>, xid: u32, _: Void) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {
@@ -48,7 +48,7 @@ where
 }
 
 // We fake a portmapper here. And always direct back to the same host port
-async fn pmapproc_getport<T>(context: RPCContext<T>, xid: u32, m: mapping) -> u32
+pub async fn pmapproc_getport<T>(context: RPCContext<T>, xid: u32, m: mapping) -> u32
 where
     T: crate::vfs::NfsFileSystem,
 {

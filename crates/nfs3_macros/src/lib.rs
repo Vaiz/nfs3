@@ -1,6 +1,9 @@
 #![doc = include_str!("../README.md")]
 
 extern crate proc_macro;
+mod decode;
+mod encode;
+mod tags;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -8,6 +11,24 @@ use syn::{
     Attribute, Data, DataEnum, DeriveInput, Expr, Fields, FieldsNamed, FieldsUnnamed, Ident, Index,
     Lit, Meta, Variant, parse_macro_input,
 };
+
+/// Derive owner-aware decoding without changing legacy Pack/Unpack implementations.
+#[proc_macro_derive(XdrDecode, attributes(xdr))]
+pub fn derive_xdr_decode(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    decode::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive checked segmented encoding independently of legacy Pack/Unpack.
+#[proc_macro_derive(XdrEncode, attributes(xdr))]
+pub fn derive_xdr_encode(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    encode::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Helper function to parse #[xdr(value)] attribute
 fn parse_xdr_value(attrs: &[Attribute]) -> Option<u32> {

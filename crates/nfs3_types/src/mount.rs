@@ -9,7 +9,10 @@
 
 use std::io::{Read, Write};
 
-use crate::xdr_codec::{List, Opaque, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{
+    Decode, DecodeResult, Decoder, Encode, EncodeError, EncodeResult, Encoder, List, Opaque, Pack,
+    Unpack, XdrCodec, XdrDecode, XdrEncode,
+};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -26,6 +29,7 @@ pub struct name<'a>(pub Opaque<'a>);
 
 #[derive(Copy, Clone, Debug, XdrCodec)]
 #[repr(u32)]
+#[derive(XdrDecode, XdrEncode)]
 pub enum mountstat3 {
     MNT3_OK = 0,
     MNT3ERR_PERM = 1,
@@ -77,7 +81,7 @@ impl std::fmt::Display for mountstat3 {
 // AUTH_GSS_SPKMP = 390011,
 // }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
 pub struct mountres3_ok<'a> {
     pub fhandle: fhandle3<'a>,
     pub auth_flavors: Vec<u32>,
@@ -124,7 +128,7 @@ impl Unpack for mountres3<'_> {
     }
 }
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
 pub struct mountbody<'a, 'b> {
     pub ml_hostname: name<'a>,
     pub ml_directory: dirpath<'b>,
@@ -132,7 +136,7 @@ pub struct mountbody<'a, 'b> {
 
 pub type mountlist<'a, 'b> = List<mountbody<'a, 'b>>;
 
-#[derive(Debug, XdrCodec)]
+#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
 pub struct export_node<'a, 'b> {
     pub ex_dir: dirpath<'a>,
     pub ex_groups: List<name<'b>>,
@@ -142,6 +146,7 @@ pub type exports<'a, 'b> = List<export_node<'a, 'b>>;
 
 #[derive(Copy, Clone, Debug, XdrCodec)]
 #[repr(u32)]
+#[derive(XdrDecode, XdrEncode)]
 pub enum MOUNT_PROGRAM {
     MOUNTPROC3_NULL = 0,
     MOUNTPROC3_MNT = 1,
@@ -178,5 +183,56 @@ impl std::fmt::Display for MOUNT_PROGRAM {
             Self::MOUNTPROC3_EXPORT => "MOUNTPROC3_EXPORT",
         };
         write!(f, "{value}")
+    }
+}
+impl Decode for fhandle3<'_> {
+    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+        Ok(Self(d.opaque(FHSIZE3)?))
+    }
+}
+impl Decode for dirpath<'_> {
+    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+        Ok(Self(d.opaque(MNTPATHLEN)?))
+    }
+}
+impl Decode for name<'_> {
+    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+        Ok(Self(d.opaque(MNTNAMLEN)?))
+    }
+}
+impl Decode for mountres3<'_> {
+    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+        Ok(match d.decode::<mountstat3>()? {
+            mountstat3::MNT3_OK => Self::Ok(d.decode()?),
+            status => Self::Err(status),
+        })
+    }
+}
+
+impl Encode for fhandle3<'_> {
+    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+        e.opaque(self.0.as_ref(), FHSIZE3)
+    }
+}
+impl Encode for dirpath<'_> {
+    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+        e.opaque(self.0.as_ref(), MNTPATHLEN)
+    }
+}
+impl Encode for name<'_> {
+    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+        e.opaque(self.0.as_ref(), MNTNAMLEN)
+    }
+}
+impl Encode for mountres3<'_> {
+    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+        match self {
+            Self::Ok(value) => {
+                e.encode(&mountstat3::MNT3_OK)?;
+                e.encode(value)
+            }
+            Self::Err(mountstat3::MNT3_OK) => e.fail(EncodeError::InvalidRepresentation),
+            Self::Err(status) => e.encode(status),
+        }
     }
 }

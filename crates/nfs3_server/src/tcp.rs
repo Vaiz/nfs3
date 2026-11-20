@@ -296,6 +296,8 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
         loop {
             let (socket, _) = self.listener.accept().await?;
             let context = RPCContext {
+                directory_limits: None,
+                reply_metadata_limit: None,
                 local_port: self.port,
                 client_addr: socket
                     .peer_addr()
