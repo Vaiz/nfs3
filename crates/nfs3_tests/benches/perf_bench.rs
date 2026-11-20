@@ -134,6 +134,7 @@ fn bench_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("perf_read");
 
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let count = u32::try_from(size).expect("benchmark read size fits in u32");
         let (ctx, fh) = rt.block_on(async {
             let ctx = setup_perf(ReadFs::new(size));
             let fh = get_file_handle(&ctx).await;
@@ -141,7 +142,7 @@ fn bench_read(c: &mut Criterion) {
         });
 
         group.throughput(Throughput::Bytes(size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &count, |b, &count| {
             b.to_async(&rt).iter(|| async {
                 let ok = ctx
                     .client
@@ -149,13 +150,13 @@ fn bench_read(c: &mut Criterion) {
                     .read(&READ3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: u32::try_from(sz).expect("benchmark read size fits in u32"),
+                        count,
                     })
                     .await
                     .unwrap()
                     .unwrap();
 
-                debug_assert_eq!(ok.count as usize, sz);
+                debug_assert_eq!(ok.count, count);
             });
         });
     }
@@ -168,6 +169,7 @@ fn bench_write(c: &mut Criterion) {
     let mut group = c.benchmark_group("perf_write");
 
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
+        let count = u32::try_from(size).expect("benchmark write size fits in u32");
         let payload = vec![0xBB_u8; size];
 
         let (ctx, fh) = rt.block_on(async {
@@ -177,7 +179,7 @@ fn bench_write(c: &mut Criterion) {
         });
 
         group.throughput(Throughput::Bytes(size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &sz| {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &count, |b, &count| {
             b.to_async(&rt).iter(|| async {
                 let ok = ctx
                     .client
@@ -185,14 +187,14 @@ fn bench_write(c: &mut Criterion) {
                     .write(&WRITE3args {
                         file: fh.clone(),
                         offset: 0,
-                        count: u32::try_from(sz).expect("benchmark write size fits in u32"),
+                        count,
                         stable: stable_how::UNSTABLE,
                         data: Opaque::borrowed(&payload),
                     })
                     .await
                     .unwrap()
                     .unwrap();
-                debug_assert_eq!(ok.count as usize, sz);
+                debug_assert_eq!(ok.count, count);
             });
         });
     }
