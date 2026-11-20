@@ -1,4 +1,5 @@
-use std::io::Cursor;
+use std::io::{self, Cursor};
+use std::num::NonZeroUsize;
 
 use anyhow::bail;
 use nfs3_types::rpc::{
@@ -6,55 +7,62 @@ use nfs3_types::rpc::{
     rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
 
-#[derive(Debug)]
-pub enum PackedRpcMessage {
-    Incomplete(IncompleteRpcMessage),
-    Complete(CompleteRpcMessage),
-}
-
-impl PackedRpcMessage {
-    pub fn new() -> Self {
-        Self::Incomplete(IncompleteRpcMessage::default())
-    }
-    pub async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
-        match self {
-            Self::Incomplete(incomplete) => {
-                let eof = incomplete.recv(input).await?;
-                if eof {
-                    let data = std::mem::take(incomplete);
-                    *self = Self::Complete(CompleteRpcMessage(data.0));
-                }
-                Ok(eof)
-            }
-            Self::Complete(_) => Ok(true),
-        }
-    }
-}
-
-/// Contains collected RPC message fragments without their headers.
-#[derive(Default, Debug)]
-pub struct IncompleteRpcMessage(Vec<u8>);
-
-impl IncompleteRpcMessage {
-    async fn recv(&mut self, input: &mut (impl AsyncRead + Unpin)) -> anyhow::Result<bool> {
-        let mut header_buf = [0_u8; 4];
-        input.read_exact(&mut header_buf).await?;
-        let header: fragment_header = header_buf.into();
-        let prev_length = self.0.len();
-        let fragment_length = header.fragment_length() as usize;
-        self.0.resize(prev_length + fragment_length, 0);
-        input.read_exact(&mut self.0[prev_length..]).await?;
-
-        Ok(header.eof())
-    }
-}
-
+/// Contains all RPC record payload bytes, without fragment markers.
 #[derive(Debug)]
 pub struct CompleteRpcMessage(Vec<u8>);
 
 impl CompleteRpcMessage {
+    /// Returns `None` only on clean EOF between records.
+    pub async fn recv(
+        input: &mut (impl AsyncBufRead + Unpin),
+        max_rpc_record_size: Option<NonZeroUsize>,
+    ) -> anyhow::Result<Option<Self>> {
+        let mut marker = [0; 4];
+        if input.read(&mut marker[..1]).await? == 0 {
+            return Ok(None);
+        }
+        input.read_exact(&mut marker[1..]).await?;
+
+        let mut payload = Vec::new();
+        loop {
+            let header = fragment_header::from(marker);
+            let mut remaining = header.fragment_length() as usize;
+            let total = payload.len().checked_add(remaining).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "RPC record size overflow")
+            })?;
+            if max_rpc_record_size.is_some_and(|max| total > max.get()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "RPC record exceeds configured size limit",
+                )
+                .into());
+            }
+
+            while remaining != 0 {
+                let available = input.fill_buf().await?;
+                if available.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "incomplete RPC fragment payload",
+                    )
+                    .into());
+                }
+                let count = remaining.min(available.len());
+                payload.try_reserve(count)?;
+                payload.extend_from_slice(&available[..count]);
+                input.consume(count);
+                remaining -= count;
+            }
+
+            if header.eof() {
+                return Ok(Some(Self(payload)));
+            }
+            input.read_exact(&mut marker).await?;
+        }
+    }
+
     pub fn into_inner(self) -> Vec<u8> {
         self.0
     }
@@ -177,4 +185,67 @@ where
     rpc.pack(&mut cursor)?;
     message.pack(&mut cursor)?;
     Ok(CompleteRpcMessage(cursor.into_inner()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn record_limit_counts_payload_across_fragments_and_resets() {
+        let mut input = &b"\0\0\0\x02ab\x80\0\0\x01c\x80\0\0\x03def"[..];
+        for expected in [b"abc", b"def"] {
+            let record = CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
+                .await
+                .expect("valid record")
+                .expect("expected a record");
+            assert_eq!(record.into_inner(), expected);
+        }
+        assert!(
+            CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
+                .await
+                .expect("clean EOF")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_limit_rejects_before_reading_fragment_payload() {
+        let record = &b"\0\0\0\x02ab\x80\0\0\x02cd"[..];
+        let mut input = record;
+        let err = CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
+            .await
+            .expect_err("record exceeds the configured limit");
+        assert_eq!(
+            err.downcast_ref::<io::Error>().map(io::Error::kind),
+            Some(io::ErrorKind::InvalidData)
+        );
+        assert_eq!(input, b"cd");
+
+        let mut input = record;
+        assert_eq!(
+            CompleteRpcMessage::recv(&mut input, None)
+                .await
+                .expect("uncapped record")
+                .expect("expected a record")
+                .into_inner(),
+            b"abcd",
+        );
+    }
+
+    #[tokio::test]
+    async fn truncated_records_are_not_clean_eof() {
+        for truncated in [&b"\x80"[..], &b"\x80\0\0\x02a"[..], &b"\0\0\0\0"[..]] {
+            for limit in [None, NonZeroUsize::new(3)] {
+                let mut input = truncated;
+                let err = CompleteRpcMessage::recv(&mut input, limit)
+                    .await
+                    .expect_err("truncated record");
+                assert_eq!(
+                    err.downcast_ref::<io::Error>().map(io::Error::kind),
+                    Some(io::ErrorKind::UnexpectedEof)
+                );
+            }
+        }
+    }
 }

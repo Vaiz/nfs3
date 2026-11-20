@@ -1,10 +1,10 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use clap::Parser;
 use nfs3_server::memfs::MemFs;
-use nfs3_server::tcp::NFSTcp;
+use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_server::vfs::NfsFileSystem;
-use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 use tracing_appender::non_blocking::WorkerGuard;
 
 mod logging;
@@ -12,6 +12,9 @@ mod memfs;
 mod mirror;
 mod string_ext;
 mod threshold_logger;
+
+const MEMFS_RECORD_LIMIT: NonZeroUsize = NonZeroUsize::new(16 * 1024 * 1024).unwrap();
+const MIRROR_RECORD_LIMIT: NonZeroUsize = NonZeroUsize::new(2 * 1024 * 1024 * 1024).unwrap();
 
 /// CLI tool for the `nfs3_server`
 #[derive(Parser, Debug)]
@@ -64,12 +67,19 @@ async fn main() {
     let export_path = args.export_name;
 
     if args.memfs {
+        let builder = Builder::new().max_rpc_record_size(MEMFS_RECORD_LIMIT);
         let memfs = MemFs::new(memfs::default_config(args.readonly))
             .expect("failed to create memfs instance");
         if args.readonly {
-            start_server(bind_addr, export_path, ReadOnlyAdapter::new(memfs), guards).await;
+            start_server(
+                bind_addr,
+                export_path,
+                builder.read_only_filesystem(memfs),
+                guards,
+            )
+            .await;
         } else {
-            start_server(bind_addr, export_path, memfs, guards).await;
+            start_server(bind_addr, export_path, builder.filesystem(memfs), guards).await;
         }
     } else {
         let path = args
@@ -80,16 +90,23 @@ async fn main() {
         assert!(Path::new(path).exists(), "path [{path}] does not exist");
 
         let mirror_fs = mirror::Fs::new(path);
+        let builder = Builder::new().max_rpc_record_size(MIRROR_RECORD_LIMIT);
         if args.readonly {
             start_server(
                 bind_addr,
                 export_path,
-                ReadOnlyAdapter::new(mirror_fs),
+                builder.read_only_filesystem(mirror_fs),
                 guards,
             )
             .await;
         } else {
-            start_server(bind_addr, export_path, mirror_fs, guards).await;
+            start_server(
+                bind_addr,
+                export_path,
+                builder.filesystem(mirror_fs),
+                guards,
+            )
+            .await;
         }
     }
 }
@@ -101,11 +118,9 @@ async fn main() {
 async fn start_server(
     bind_addr: String,
     export_name: String,
-    fs: impl NfsFileSystem + 'static,
+    builder: Builder<impl NfsFileSystem + 'static>,
     mut guards: Vec<WorkerGuard>,
 ) {
-    use nfs3_server::tcp::NFSTcpListener;
-
     let (tx, rx) = tokio::sync::oneshot::channel();
     let mut tx = Some(tx);
     ctrlc::set_handler(move || {
@@ -117,7 +132,8 @@ async fn start_server(
     })
     .expect("Error setting Ctrl-C handler");
 
-    let mut listener = NFSTcpListener::bind(&bind_addr, fs)
+    let mut listener = builder
+        .bind(&bind_addr)
         .await
         .expect("failed to bind server");
     listener.with_export_name(export_name);

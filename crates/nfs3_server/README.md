@@ -54,6 +54,11 @@ a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.
 
+The [memfs example](examples/memfs.rs) sets a 16 MiB limit on incoming RPC
+records with `.max_rpc_record_size(...)`. Choose a limit that fits your largest
+request, including RPC and NFS headers. Without an explicit limit, record size
+is unlimited.
+
 Relevant RFCs
 =============
  - XDR is the message format: [RFC 1014](https://datatracker.ietf.org/doc/html/rfc1014).

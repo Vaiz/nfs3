@@ -33,6 +33,9 @@ cargo-nfs3-server --path <directory-to-serve> --bind-ip <ip-address> --bind-port
 cargo-nfs3-server --path ./shared --bind-ip 0.0.0.0 --bind-port 11111
 ```
 
+The maximum incoming RPC record size is 16 MiB with `--memfs` and 2 GiB when
+serving a directory. `--readonly` does not change either limit.
+
 ### Options
 - `--path`: Path to the directory to serve (required unless using `--memfs`).
 - `--bind-ip`: IP address to bind the server to (default: `0.0.0.0`).

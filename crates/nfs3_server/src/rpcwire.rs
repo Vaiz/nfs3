@@ -1,20 +1,20 @@
 use std::io::Cursor;
+use std::num::NonZeroUsize;
 use std::time::Instant;
 
 use anyhow::anyhow;
-use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMessage};
+use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncWriteExt, DuplexStream};
+use tokio::io::{AsyncBufRead, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
 use crate::transaction_tracker::{self, TransactionError, TransactionLock};
-use crate::units::KIBIBYTE;
 use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
@@ -161,15 +161,12 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 
 pub type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
 
-/// The Socket Message Handler reads from a `TcpStream` and spawns off
-/// subtasks to handle each message. replies are queued into the
-/// `reply_send_channel`.
+/// Reads RPC records and dispatches each complete message in its own task.
 #[derive(Debug)]
 pub struct SocketMessageHandler<T: NfsFileSystem + 'static> {
-    cur_fragment: PackedRpcMessage,
-    socket_receive_channel: DuplexStream,
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
     context: RPCContext<T>,
+    max_rpc_record_size: Option<NonZeroUsize>,
 }
 
 impl<T> SocketMessageHandler<T>
@@ -179,40 +176,24 @@ where
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub fn new(
         context: RPCContext<T>,
-    ) -> (
-        Self,
-        DuplexStream,
-        mpsc::UnboundedReceiver<SocketMessageType>,
-    ) {
-        let (socksend, sockrecv) = tokio::io::duplex(256 * KIBIBYTE as usize);
+        max_rpc_record_size: Option<NonZeroUsize>,
+    ) -> (Self, mpsc::UnboundedReceiver<SocketMessageType>) {
         let (msgsend, msgrecv) = mpsc::unbounded_channel();
         (
             Self {
-                cur_fragment: PackedRpcMessage::new(),
-                socket_receive_channel: sockrecv,
                 reply_send_channel: msgsend,
                 context,
+                max_rpc_record_size,
             },
-            socksend,
             msgrecv,
         )
     }
 
-    /// Reads a fragment from the socket. This should be looped.
-    pub async fn read(&mut self) -> Result<(), anyhow::Error> {
-        let is_last = self
-            .cur_fragment
-            .recv(&mut self.socket_receive_channel)
-            .await?;
-        if is_last {
-            let message = std::mem::replace(&mut self.cur_fragment, PackedRpcMessage::new());
-            let message = match message {
-                PackedRpcMessage::Complete(data) => data,
-                PackedRpcMessage::Incomplete(_) => {
-                    unreachable!()
-                }
-            };
-
+    pub async fn read_forever(
+        self,
+        input: &mut (impl AsyncBufRead + Unpin),
+    ) -> Result<(), anyhow::Error> {
+        while let Some(message) = CompleteRpcMessage::recv(input, self.max_rpc_record_size).await? {
             let context = self.context.clone();
             let send = self.reply_send_channel.clone();
             tokio::spawn(async move {

@@ -14,9 +14,9 @@ use crate::vfs::FileHandle;
 /// An internal adapter that allows to reuse the same code with `ReadOnly` filesystems.
 ///
 /// In general, you should not use this adapter directly. Instead, use the
-/// [`NFSTcpListener::bind_ro`][1] method to bind a read-only NFS server.
+/// [`Builder::read_only_filesystem`][1] method to configure a read-only NFS server.
 ///
-/// [1]: crate::tcp::NFSTcpListener::bind_ro
+/// [1]: crate::tcp::Builder::read_only_filesystem
 pub struct ReadOnlyAdapter<T>(T);
 
 impl<T> ReadOnlyAdapter<T>

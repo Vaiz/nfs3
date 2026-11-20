@@ -1,4 +1,6 @@
-use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+use std::num::NonZeroUsize;
+
+use nfs3_server::tcp::{Builder, NFSTcp};
 
 const HOSTPORT: u16 = 11111;
 
@@ -24,7 +26,11 @@ async fn main() -> anyhow::Result<()> {
 
     let memfs =
         nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
-    let listener = NFSTcpListener::bind_ro(&format!("{bind_ip}:{bind_port}"), memfs).await?;
+    let listener = Builder::new()
+        .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
+        .read_only_filesystem(memfs)
+        .bind(&format!("{bind_ip}:{bind_port}"))
+        .await?;
     listener.handle_forever().await?;
 
     Ok(())

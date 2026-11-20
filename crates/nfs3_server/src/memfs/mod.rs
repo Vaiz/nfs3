@@ -11,8 +11,10 @@
 //! # Examples
 //!
 //! ```no_run
+//! use std::num::NonZeroUsize;
+//!
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
-//! use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+//! use nfs3_server::tcp::{Builder, NFSTcp};
 //!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
@@ -21,7 +23,11 @@
 //!     config.add_dir("/a directory");
 //!
 //!     let memfs = MemFs::new(config).unwrap();
-//!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs).await?;
+//!     let listener = Builder::new()
+//!         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
+//!         .filesystem(memfs)
+//!         .bind("0.0.0.0:11111")
+//!         .await?;
 //!     listener.handle_forever().await?;
 //!     Ok(())
 //! }

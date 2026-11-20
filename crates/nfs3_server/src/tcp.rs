@@ -1,13 +1,13 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::context::RPCContext;
 use crate::rpcwire::{SocketMessageHandler, write_fragment};
@@ -15,6 +15,76 @@ use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
+
+/// Configures a TCP listener. Supply a filesystem before calling [`Builder::bind`].
+#[must_use]
+pub struct Builder<FS = ()> {
+    fs: FS,
+    options: ListenerOptions,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ListenerOptions {
+    generation_number: Option<u64>,
+    max_rpc_record_size: Option<NonZeroUsize>,
+}
+
+impl Builder {
+    /// Creates a builder with no incoming RPC record size limit.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Supplies a filesystem.
+    pub const fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
+        Builder {
+            fs,
+            options: self.options,
+        }
+    }
+
+    /// Supplies a filesystem that only supports reads.
+    pub const fn read_only_filesystem<RO: NfsReadFileSystem + 'static>(
+        self,
+        fs: RO,
+    ) -> Builder<ReadOnlyAdapter<RO>> {
+        self.filesystem(ReadOnlyAdapter::new(fs))
+    }
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Self {
+            fs: (),
+            options: ListenerOptions::default(),
+        }
+    }
+}
+
+impl<FS> Builder<FS> {
+    /// Sets the file handle generation number. Instances sharing the same filesystem
+    /// can use the same generation number to keep file handles valid across instances.
+    pub const fn generation_number(mut self, generation_number: u64) -> Self {
+        self.options.generation_number = Some(generation_number);
+        self
+    }
+
+    /// Sets the maximum total payload bytes in an incoming RPC record, excluding
+    /// fragment markers. Records larger than the limit cause the connection to close.
+    /// By default there is no limit.
+    pub const fn max_rpc_record_size(mut self, max_rpc_record_size: NonZeroUsize) -> Self {
+        self.options.max_rpc_record_size = Some(max_rpc_record_size);
+        self
+    }
+}
+
+impl<T: NfsFileSystem + 'static> Builder<T> {
+    /// Binds to an `ip:port` address. Use `auto:port` to select a loopback address
+    /// or port `0` to let the OS choose a port.
+    pub async fn bind(self, addr: &str) -> io::Result<NFSTcpListener<T>> {
+        NFSTcpListener::bind_inner(addr, self.fs, self.options).await
+    }
+}
 
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
@@ -26,6 +96,7 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     transaction_tracker: Arc<TransactionTracker>,
     file_handle_converter: crate::vfs::handle::FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
+    max_rpc_record_size: Option<NonZeroUsize>,
 }
 
 impl<T: NfsFileSystem + 'static> Drop for NFSTcpListener<T> {
@@ -45,60 +116,34 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 
 /// processes an established socket
 pub(crate) async fn process_socket<IO, T>(
-    mut socket: IO,
+    socket: IO,
     context: RPCContext<T>,
+    max_rpc_record_size: Option<NonZeroUsize>,
 ) -> Result<(), anyhow::Error>
 where
-    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    IO: AsyncRead + AsyncWrite + Unpin,
     T: NfsFileSystem + 'static,
 {
-    let (mut message_handler, mut socksend, mut msgrecvchan) =
-        SocketMessageHandler::new(context.clone());
+    let (reader, mut writer) = tokio::io::split(socket);
+    let mut reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
+    let (handler, mut replies) = SocketMessageHandler::new(context, max_rpc_record_size);
 
-    tokio::spawn(async move {
-        loop {
-            if let Err(e) = message_handler.read().await {
-                debug!("Message loop broken due to {e}");
-                break;
+    // Race the whole loops so replies cannot interrupt a partially read record,
+    // and a parser failure can close the socket even during a blocked write.
+    let result = tokio::select! {
+        biased;
+        result = handler.read_forever(&mut reader) => result,
+        result = async {
+            while let Some(reply) = replies.recv().await {
+                write_fragment(&mut writer, reply?).await?;
             }
-        }
-    });
-    let mut buf = vec![0u8; 128 * KIBIBYTE as usize].into_boxed_slice();
-    loop {
-        tokio::select! {
-            result = socket.read(&mut buf) => {
-                match result {
-                    Ok(0) => {
-                        return Ok(());
-                    }
-                    Ok(n) => {
-                        let _ = socksend.write_all(&buf[..n]).await;
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                    Err(e) => {
-                        debug!("Message handling closed : {e}");
-                        return Err(e.into());
-                    }
-                }
-            },
-            reply = msgrecvchan.recv() => {
-                match reply {
-                    Some(Err(e)) => {
-                        debug!("Message handling closed : {e}");
-                        return Err(e);
-                    }
-                    Some(Ok(msg)) => {
-                        if let Err(e) = write_fragment(&mut socket, msg).await {
-                            error!("Write error {e}");
-                        }
-                    }
-                    None => {
-                        return Err(anyhow::anyhow!("Unexpected socket context termination"));
-                    }
-                }
-            }
-        }
+            Ok(())
+        } => result,
+    };
+    if let Err(e) = &result {
+        debug!("Message handling closed: {e}");
     }
+    result
 }
 
 pub trait NFSTcp: Send + Sync {
@@ -125,8 +170,9 @@ where
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsReadFileSystem`].
+    #[deprecated(note = "use tcp::Builder::new().read_only_filesystem(fs).bind(addr) instead")]
     pub async fn bind_ro(ipstr: &str, fs: RO) -> io::Result<Self> {
-        Self::bind(ipstr, ReadOnlyAdapter::new(fs)).await
+        Builder::new().read_only_filesystem(fs).bind(ipstr).await
     }
 }
 
@@ -136,8 +182,9 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsFileSystem`].
+    #[deprecated(note = "use tcp::Builder::new().filesystem(fs).bind(addr) instead")]
     pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
-        Self::bind_inner(ipstr, fs, None).await
+        Builder::new().filesystem(fs).bind(ipstr).await
     }
 
     /// Create a new `NFSTcpListener` with a specific generation number.
@@ -146,15 +193,23 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// stale handles from previous server instances. When multiple NFS server
     /// instances share the same generation number, file handles remain valid
     /// across all instances (e.g. behind a load balancer).
+    #[deprecated(
+        note = "use tcp::Builder::new().filesystem(fs).generation_number(number).bind(addr) \
+                instead"
+    )]
     pub async fn bind_with_generation(
         ipstr: &str,
         fs: T,
         generation_number: u64,
     ) -> io::Result<Self> {
-        Self::bind_inner(ipstr, fs, Some(generation_number)).await
+        Builder::new()
+            .filesystem(fs)
+            .generation_number(generation_number)
+            .bind(ipstr)
+            .await
     }
 
-    async fn bind_inner(ipstr: &str, fs: T, generation_number: Option<u64>) -> io::Result<Self> {
+    async fn bind_inner(ipstr: &str, fs: T, options: ListenerOptions) -> io::Result<Self> {
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -176,8 +231,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result =
-                    Self::bind_internal(&ip, port, Arc::clone(&arcfs), generation_number).await;
+                let result = Self::bind_internal(&ip, port, Arc::clone(&arcfs), options).await;
 
                 match result {
                     Err(_) => {
@@ -194,7 +248,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             unreachable!(); // Does not detect automatically that loop above never terminates.
         } else {
             // Otherwise, try this.
-            Self::bind_internal(ip, port, arcfs, generation_number).await
+            Self::bind_internal(ip, port, arcfs, options).await
         }
     }
 
@@ -202,7 +256,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
         ip: &str,
         port: u16,
         arcfs: Arc<T>,
-        generation_number: Option<u64>,
+        options: ListenerOptions,
     ) -> io::Result<Self> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
@@ -213,7 +267,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             SocketAddr::V6(s) => s.port(),
         };
 
-        let file_handle_converter = generation_number.map_or_else(
+        let file_handle_converter = options.generation_number.map_or_else(
             crate::vfs::handle::FileHandleConverter::new,
             crate::vfs::handle::FileHandleConverter::with_generation_number,
         );
@@ -227,6 +281,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
             file_handle_converter,
+            max_rpc_record_size: options.max_rpc_record_size,
         })
     }
 
@@ -310,10 +365,69 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
             };
             info!("Accepting connection from {}", context.client_addr);
             debug!("Accepting socket {:?} {:?}", socket, context);
+            let max_rpc_record_size = self.max_rpc_record_size;
             tokio::spawn(async move {
                 let _ = socket.set_nodelay(true);
-                let _ = process_socket(socket, context).await;
+                let _ = process_socket(socket, context, max_rpc_record_size).await;
             });
         }
+    }
+}
+
+#[cfg(all(test, feature = "memfs", feature = "__test_reexports"))]
+mod tests {
+    use nfs3_types::portmap;
+    use nfs3_types::rpc::{
+        RPC_VERSION_2, call_body, fragment_header, msg_body, opaque_auth, rpc_msg,
+    };
+    use nfs3_types::xdr_codec::Pack;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+    use crate::memfs::{MemFs, MemFsConfig};
+
+    #[tokio::test]
+    async fn truncated_record_closes_connection_during_pending_reply() {
+        let fs = MemFs::new(MemFsConfig::default()).expect("in-memory filesystem");
+        let context = RPCContext::test_ctx("/", Arc::new(fs));
+        let (mut client, server) = tokio::io::duplex(8);
+        let mut call = Vec::new();
+        rpc_msg {
+            xid: 1,
+            body: msg_body::CALL(call_body {
+                rpcvers: RPC_VERSION_2,
+                prog: portmap::PROGRAM,
+                vers: portmap::VERSION,
+                proc: portmap::PMAP_PROG::PMAPPROC_NULL as u32,
+                cred: opaque_auth::default(),
+                verf: opaque_auth::default(),
+            }),
+        }
+        .pack(&mut call)
+        .expect("encode NULL call");
+        let marker = fragment_header::new(u32::try_from(call.len()).expect("small call"), true)
+            .into_xdr_buf();
+
+        let client_io = async {
+            client.write_all(&marker).await.expect("send marker");
+            client.write_all(&call).await.expect("send NULL call");
+            client
+                .write_all(&marker[..2])
+                .await
+                .expect("start next marker");
+            // Read only one byte, so the reply still cannot fit in the duplex buffer.
+            client.read_u8().await.expect("reply started");
+            client.shutdown().await.expect("finish writing");
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(process_socket(server, context, None), client_io)
+        })
+        .await
+        .expect("parser must not wait for the reply to finish");
+        let err = result.expect_err("partial marker is a parser failure");
+        assert_eq!(
+            err.downcast_ref::<io::Error>().map(io::Error::kind),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
     }
 }
