@@ -1,8 +1,8 @@
 #![expect(
     clippy::unwrap_used,
-    reason = "The directory handlers return errors before unwrapping their iterators"
+    reason = "The directory handlers check for errors before unwrapping. FIXME: Remove this \
+              suppression after refactoring the directory handlers."
 )]
-// FIXME: Remove this suppression after refactoring the directory handlers.
 
 #[cfg_attr(
     not(test),
