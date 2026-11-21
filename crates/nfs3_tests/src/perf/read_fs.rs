@@ -1,3 +1,4 @@
+use nfs3_server::nfs3_types::bytes::Bytes;
 use nfs3_server::vfs::{
     FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator, VFSCapabilities,
 };
@@ -52,13 +53,13 @@ impl NfsReadFileSystem for ReadFs {
         _id: &FileHandleU64,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         let start = usize::try_from(offset)
             .unwrap_or(usize::MAX)
             .min(self.data.len());
         let end = start.saturating_add(count as usize).min(self.data.len());
         let eof = end >= self.data.len();
-        Ok((self.data[start..end].to_vec(), eof))
+        Ok((Bytes::copy_from_slice(&self.data[start..end]), eof))
     }
 
     async fn readdirplus(
@@ -87,7 +88,7 @@ impl NfsFileSystem for ReadFs {
         &self,
         _id: &FileHandleU64,
         _offset: u64,
-        _data: &[u8],
+        _data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)

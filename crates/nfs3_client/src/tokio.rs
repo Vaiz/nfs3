@@ -2,6 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncRead as TokioAsyncRead, AsyncWrite as TokioAsyncWrite};
 use tokio::net::{TcpSocket, TcpStream};
 
@@ -27,6 +28,20 @@ where
     async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         tokio::io::AsyncReadExt::read(&mut self.0, buf).await
     }
+
+    async fn async_read_exact_buf(
+        &mut self,
+        buf: &mut BytesMut,
+        len: usize,
+    ) -> std::io::Result<()> {
+        let mut limited = (&mut *buf).limit(len);
+        while limited.remaining_mut() != 0 {
+            if tokio::io::AsyncReadExt::read_buf(&mut self.0, &mut limited).await? == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<T> AsyncWrite for TokioIo<T>
@@ -35,6 +50,13 @@ where
 {
     async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         tokio::io::AsyncWriteExt::write(&mut self.0, buf).await
+    }
+
+    async fn async_write_vectored(
+        &mut self,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::io::Result<usize> {
+        tokio::io::AsyncWriteExt::write_vectored(&mut self.0, bufs).await
     }
 }
 

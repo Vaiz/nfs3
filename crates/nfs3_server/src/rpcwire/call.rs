@@ -1,28 +1,24 @@
-use std::io::Cursor;
-
 use anyhow::bail;
+use bytes::Bytes;
 use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, opaque_auth, rejected_reply,
     reply_body, rpc_msg,
 };
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
-
-use super::messages::RpcRecord;
+use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Error, Pack, Unpack, Void};
 
 /// A decoded RPC call header and its still-encoded procedure arguments.
 pub(crate) struct RpcCall {
     xid: u32,
     body: call_body<'static>,
-    data: Option<Vec<u8>>,
-    message_start: usize, // offset of the start of the message in the data buffer
+    args: Decoder,
 }
 
-impl TryFrom<RpcRecord> for RpcCall {
+impl TryFrom<Bytes> for RpcCall {
     type Error = anyhow::Error;
 
-    fn try_from(packed: RpcRecord) -> Result<Self, Self::Error> {
-        let packed = packed.into_inner();
-        let (rpc, pos) = match rpc_msg::unpack(&mut Cursor::new(&packed)) {
+    fn try_from(record: Bytes) -> Result<Self, Self::Error> {
+        let mut args = Decoder::new(record);
+        let rpc = match rpc_msg::unpack(&mut args) {
             Ok(ok) => ok,
             Err(err) => {
                 bail!("Failed to unpack RPC message: {err}");
@@ -37,12 +33,7 @@ impl TryFrom<RpcRecord> for RpcCall {
             }
         };
 
-        Ok(Self {
-            xid,
-            body,
-            data: Some(packed),
-            message_start: pos,
-        })
+        Ok(Self { xid, body, args })
     }
 }
 
@@ -54,11 +45,16 @@ impl RpcCall {
         &self.body
     }
 
-    pub(crate) const fn take_data(&mut self) -> Cursor<Vec<u8>> {
-        let data = self.data.take().expect("Data already taken");
-        let mut cursor = Cursor::new(data);
-        cursor.set_position(self.message_start as u64);
-        cursor
+    /// Decodes the procedure arguments, which must span the rest of the record.
+    ///
+    /// Releases this call's reference to the record buffer.
+    pub(crate) fn unpack_args<I: Unpack>(&mut self) -> Result<I, Error> {
+        let mut args = std::mem::replace(&mut self.args, Decoder::new(Bytes::new()));
+        let value = I::unpack(&mut args)?;
+        if !args.is_empty() {
+            return Err(Error::TrailingBytes(args.remaining()));
+        }
+        Ok(value)
     }
 
     pub(crate) fn into_success_reply<T>(self, message: &T) -> anyhow::Result<RpcCallOutcome>
@@ -110,21 +106,17 @@ impl RpcCall {
 }
 
 pub(crate) enum RpcCallOutcome {
-    Reply(RpcRecord),
+    /// An encoded reply record, including its record marker, as chunks to write in order.
+    Reply(Encoded),
     NoReply,
 }
 
-fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<RpcRecord>
+fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<Encoded>
 where
     T: Pack + 'static,
 {
-    let size = rpc
-        .packed_size()
-        .checked_add(message.packed_size())
-        .expect("Failed to calculate size");
-
-    let mut cursor = Cursor::new(Vec::with_capacity(size));
-    rpc.pack(&mut cursor)?;
-    message.pack(&mut cursor)?;
-    Ok(RpcRecord::new(cursor.into_inner()))
+    let mut out = Encoder::with_size_hint(rpc.packed_size().saturating_add(message.packed_size()));
+    rpc.pack(&mut out)?;
+    message.pack(&mut out)?;
+    Ok(out.finish_record()?)
 }

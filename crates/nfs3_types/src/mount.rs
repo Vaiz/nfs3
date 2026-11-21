@@ -7,9 +7,7 @@
 
 //! This module contains the definitions of the MOUNT3 protocol as defined in RFC 1813.
 
-use std::io::{Read, Write};
-
-use crate::xdr_codec::{List, Opaque, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{Decoder, Encoder, List, Opaque, Pack, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -97,30 +95,23 @@ impl Pack for mountres3<'_> {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
             Self::Ok(ok) => {
-                let mut len = mountstat3::MNT3_OK.pack(out)?;
-                len += ok.pack(out)?;
-                len
+                mountstat3::MNT3_OK.pack(out)?;
+                ok.pack(out)
             }
-            Self::Err(err) => err.pack(out)?,
-        };
-        Ok(len)
+            Self::Err(err) => err.pack(out),
+        }
     }
 }
 
 impl Unpack for mountres3<'_> {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (stat, len) = mountstat3::unpack(input)?;
-        let (res, res_len) = match stat {
-            mountstat3::MNT3_OK => {
-                let (ok, ok_len) = mountres3_ok::unpack(input)?;
-                (Self::Ok(ok), ok_len)
-            }
-            _ => (Self::Err(stat), 0),
-        };
-        Ok((res, len + res_len))
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        match mountstat3::unpack(input)? {
+            mountstat3::MNT3_OK => Ok(Self::Ok(mountres3_ok::unpack(input)?)),
+            stat => Ok(Self::Err(stat)),
+        }
     }
 }
 

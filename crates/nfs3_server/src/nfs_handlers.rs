@@ -176,7 +176,7 @@ where
                 file_attributes,
                 count: u32::try_from(bytes.len()).expect("buffer is too big"),
                 eof,
-                data: Opaque::owned(bytes),
+                data: Opaque::from_bytes(bytes),
             })
         }
         Err(stat) => {
@@ -561,7 +561,12 @@ where
 
     match context
         .vfs
-        .write(&id, write3args.offset, &write3args.data, write3args.stable)
+        .write(
+            &id,
+            write3args.offset,
+            write3args.data.into_bytes(),
+            write3args.stable,
+        )
         .await
     {
         Ok((fattr, committed)) => {

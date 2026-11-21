@@ -1,4 +1,4 @@
-use std::io::{self, Cursor};
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::time::Duration;
@@ -10,7 +10,7 @@ use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_tests::{RpcTestContext, Server};
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{Decoder, Pack, Unpack, Void, encode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -80,8 +80,7 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
 #[tokio::test]
 async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
     let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
-    let mut payload = Vec::new();
-    call.pack(&mut payload)?;
+    let payload = encode(&call)?;
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let listener = Builder::new()
@@ -105,7 +104,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         assert!(reply_header.eof());
         let mut reply = vec![0; reply_header.fragment_length() as usize];
         stream.read_exact(&mut reply).await?;
-        let (reply, _) = rpc_msg::unpack(&mut Cursor::new(reply))?;
+        let reply = rpc_msg::unpack(&mut Decoder::new(reply))?;
         check_reply_header(call.xid, &reply)?;
 
         // The reader should close the connection as soon as the marker declares
@@ -135,7 +134,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
         let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
         let marker = fragment_header::new(u32::try_from(call.packed_size())?, true);
         let mut frame = marker.into_xdr_buf().to_vec();
-        call.pack(&mut frame)?;
+        frame.extend_from_slice(&encode(&call)?);
         Ok(frame)
     }
 
@@ -156,7 +155,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
             assert!(marker.eof());
             let mut payload = vec![0; marker.fragment_length() as usize];
             client.read_exact(&mut payload).await?;
-            let (reply, _) = rpc_msg::unpack(&mut Cursor::new(payload))?;
+            let reply = rpc_msg::unpack(&mut Decoder::new(payload))?;
             check_reply_header(xid, &reply)?;
             if xid == 1 {
                 client.write_all(&second[3..]).await?;

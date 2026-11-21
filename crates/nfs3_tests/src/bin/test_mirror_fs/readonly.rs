@@ -279,7 +279,7 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .expect("read call failed")
         .unwrap();
 
-    let read_content = read_resok.data.0;
+    let read_content = read_resok.data;
     assert_eq!(read_content.as_ref(), HELLO_WORLD, "Content mismatch");
     assert!(read_resok.eof, "Expected EOF for complete read");
 
@@ -329,7 +329,7 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .expect("read call failed")
         .unwrap();
 
-    let data = read_resok.data.0;
+    let data = read_resok.data;
     assert_eq!(data.as_ref(), b"abcde", "Content mismatch with offset");
 }
 
@@ -633,7 +633,7 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
             .expect("read call failed")
             .unwrap();
 
-        let data = read_resok.data.0;
+        let data = read_resok.data;
         let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
         assert_eq!(
             read_content,

@@ -7,11 +7,12 @@
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
 
-use std::io::{Read, Write};
+use std::io;
 
+use bytes::{Bytes, BytesMut};
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Opaque, Pack, Unpack};
+use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
 
 /// RPC header
 ///
@@ -57,6 +58,97 @@ impl From<[u8; 4]> for fragment_header {
     fn from(bytes: [u8; 4]) -> Self {
         let header = u32::from_be_bytes(bytes);
         Self { header }
+    }
+}
+
+/// Largest allocation made up front based on an advertised fragment length.
+///
+/// Covers a default-sized READ reply or WRITE call (1 MiB of data plus headers)
+/// in one allocation.
+const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
+
+/// Receive buffer that reassembles one RPC record (RFC 5531 record marking).
+///
+/// The caller does the I/O: it passes each fragment marker to
+/// [`start_fragment`](Self::start_fragment), appends the fragment data to
+/// [`buf_mut`](Self::buf_mut) until [`remaining`](Self::remaining) is zero,
+/// and collects the record, without markers, with
+/// [`take_record`](Self::take_record).
+///
+/// Memory follows the data actually received: about 1 MiB at most is reserved
+/// from an advertised length and beyond that the buffer at most doubles, so a
+/// peer cannot make the receiver allocate much more than it sends.
+#[derive(Debug)]
+pub struct RecordBuf {
+    buf: BytesMut,
+    fragment_end: usize,
+    last: bool,
+    max_len: usize,
+}
+
+impl RecordBuf {
+    /// Creates an empty buffer for a record of at most `max_len` bytes.
+    #[must_use]
+    pub fn new(max_len: usize) -> Self {
+        Self {
+            buf: BytesMut::new(),
+            fragment_end: 0,
+            last: false,
+            max_len,
+        }
+    }
+
+    /// Starts the next fragment from its 4-byte record marker.
+    ///
+    /// # Errors
+    ///
+    /// Fails with [`io::ErrorKind::InvalidData`] if the record would exceed the
+    /// size limit.
+    pub fn start_fragment(&mut self, marker: [u8; 4]) -> io::Result<()> {
+        debug_assert_eq!(self.remaining(), 0, "previous fragment is incomplete");
+        let header = fragment_header::from(marker);
+        self.fragment_end = self
+            .buf
+            .len()
+            .checked_add(header.fragment_length() as usize)
+            .filter(|end| *end <= self.max_len)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "RPC record exceeds the size limit",
+                )
+            })?;
+        self.last = header.eof();
+        Ok(())
+    }
+
+    /// Returns the number of bytes of the current fragment not received yet.
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.fragment_end.saturating_sub(self.buf.len())
+    }
+
+    /// Returns the buffer to append fragment data to and the number of bytes
+    /// it still expects, reserving room if the buffer is full.
+    pub fn buf_mut(&mut self) -> (&mut BytesMut, usize) {
+        let remaining = self.remaining();
+        if self.buf.capacity() == self.buf.len() {
+            self.buf
+                .reserve(remaining.min(EAGER_RESERVE.max(self.buf.len())));
+        }
+        (&mut self.buf, remaining)
+    }
+
+    /// Returns the record once its last fragment is complete, leaving the
+    /// buffer empty for the next record.
+    pub fn take_record(&mut self) -> Option<Bytes> {
+        if !self.last || self.remaining() != 0 {
+            return None;
+        }
+        debug_assert_eq!(self.buf.len(), self.fragment_end, "fragment overrun");
+        self.fragment_end = 0;
+        self.last = false;
+        Some(std::mem::take(&mut self.buf).freeze())
     }
 }
 
@@ -156,11 +248,10 @@ impl opaque_auth<'static> {
     /// Panics if the `auth_unix` cannot be packed.
     #[must_use]
     pub fn auth_unix(auth: &auth_unix) -> Self {
-        let mut out = Vec::with_capacity(auth.packed_size());
-        auth.pack(&mut out).expect("failed to pack auth_unix");
+        let body = crate::xdr_codec::encode(auth).expect("failed to pack auth_unix");
         Self {
             flavor: auth_flavor::AUTH_UNIX,
-            body: Opaque::owned(out),
+            body: Opaque::from_bytes(body),
         }
     }
 
@@ -232,37 +323,35 @@ impl Pack for accept_stat_data {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::SUCCESS => accept_stat::SUCCESS.pack(out)?,
-            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out)?,
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
+            Self::SUCCESS => accept_stat::SUCCESS.pack(out),
+            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out),
             Self::PROG_MISMATCH { low, high } => {
-                accept_stat::PROG_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
+                accept_stat::PROG_MISMATCH.pack(out)?;
+                low.pack(out)?;
+                high.pack(out)
             }
-            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out)?,
-            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out)?,
-            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out)?,
-        };
-        Ok(len)
+            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out),
+            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out),
+            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out),
+        }
     }
 }
 
 impl Unpack for accept_stat_data {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (accept_stat, len) = accept_stat::unpack(input)?;
-        let (body, body_len) = match accept_stat {
-            accept_stat::SUCCESS => (Self::SUCCESS, 0),
-            accept_stat::PROG_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::PROG_MISMATCH { low, high }, low_len + high_len)
-            }
-            accept_stat::PROG_UNAVAIL => (Self::PROG_UNAVAIL, 0),
-            accept_stat::PROC_UNAVAIL => (Self::PROC_UNAVAIL, 0),
-            accept_stat::GARBAGE_ARGS => (Self::GARBAGE_ARGS, 0),
-            accept_stat::SYSTEM_ERR => (Self::SYSTEM_ERR, 0),
-        };
-        Ok((body, len + body_len))
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        Ok(match accept_stat::unpack(input)? {
+            accept_stat::SUCCESS => Self::SUCCESS,
+            accept_stat::PROG_MISMATCH => Self::PROG_MISMATCH {
+                low: u32::unpack(input)?,
+                high: u32::unpack(input)?,
+            },
+            accept_stat::PROG_UNAVAIL => Self::PROG_UNAVAIL,
+            accept_stat::PROC_UNAVAIL => Self::PROC_UNAVAIL,
+            accept_stat::GARBAGE_ARGS => Self::GARBAGE_ARGS,
+            accept_stat::SYSTEM_ERR => Self::SYSTEM_ERR,
+        })
     }
 }
 
@@ -291,34 +380,30 @@ impl Pack for rejected_reply {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
             Self::RPC_MISMATCH { low, high } => {
-                reject_stat::RPC_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
+                reject_stat::RPC_MISMATCH.pack(out)?;
+                low.pack(out)?;
+                high.pack(out)
             }
             Self::AUTH_ERROR(auth_stat) => {
-                reject_stat::AUTH_ERROR.pack(out)? + auth_stat.pack(out)?
+                reject_stat::AUTH_ERROR.pack(out)?;
+                auth_stat.pack(out)
             }
-        };
-        Ok(len)
+        }
     }
 }
 
 impl Unpack for rejected_reply {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (reject_stat, len) = reject_stat::unpack(input)?;
-        let (body, body_len) = match reject_stat {
-            reject_stat::RPC_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::RPC_MISMATCH { low, high }, low_len + high_len)
-            }
-            reject_stat::AUTH_ERROR => {
-                let (auth_stat, auth_stat_len) = auth_stat::unpack(input)?;
-                (Self::AUTH_ERROR(auth_stat), auth_stat_len)
-            }
-        };
-        Ok((body, len + body_len))
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        Ok(match reject_stat::unpack(input)? {
+            reject_stat::RPC_MISMATCH => Self::RPC_MISMATCH {
+                low: u32::unpack(input)?,
+                high: u32::unpack(input)?,
+            },
+            reject_stat::AUTH_ERROR => Self::AUTH_ERROR(auth_stat::unpack(input)?),
+        })
     }
 }
 
@@ -342,4 +427,42 @@ pub enum msg_body<'a, 'b> {
     CALL(call_body<'a>),
     #[xdr(1)]
     REPLY(reply_body<'b>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EAGER_RESERVE, RecordBuf, io};
+
+    #[test]
+    fn eager_reservation_is_capped_and_then_grows_with_data() {
+        let mut record = RecordBuf::new(usize::MAX);
+        record.start_fragment([0, 0, 0, 100]).unwrap();
+        let (buf, remaining) = record.buf_mut();
+        assert_eq!((buf.capacity(), remaining), (100, 100));
+
+        let mut record = RecordBuf::new(usize::MAX);
+        record.start_fragment([0x7f, 0xff, 0xff, 0xff]).unwrap();
+        let (buf, remaining) = record.buf_mut();
+        assert_eq!(remaining, 0x7fff_ffff);
+        assert_eq!(buf.capacity(), EAGER_RESERVE);
+        buf.resize(EAGER_RESERVE, 0);
+        assert!(record.buf_mut().0.capacity() <= 2 * EAGER_RESERVE);
+    }
+
+    #[test]
+    fn fragments_are_joined_within_the_limit() {
+        let mut record = RecordBuf::new(3);
+        record.start_fragment([0, 0, 0, 2]).unwrap();
+        record.buf_mut().0.extend_from_slice(b"ab");
+        assert_eq!(record.take_record(), None);
+        let err = record.start_fragment([0x80, 0, 0, 2]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        record.start_fragment([0x80, 0, 0, 1]).unwrap();
+        assert_eq!(record.take_record(), None);
+        record.buf_mut().0.extend_from_slice(b"c");
+        assert_eq!(record.take_record().unwrap(), b"abc"[..]);
+
+        record.start_fragment([0x80, 0, 0, 0]).unwrap();
+        assert_eq!(record.take_record().unwrap(), b""[..]);
+    }
 }

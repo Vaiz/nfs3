@@ -1,14 +1,15 @@
-use std::io::Cursor;
+use std::io::{self, IoSlice};
 use std::time::Instant;
 
+use bytes::Bytes;
 use call::{RpcCall, RpcCallOutcome};
-use messages::{RpcRecord, RpcRecordReader};
+use messages::RpcRecordReader;
 use nfs3_types::rpc::{
-    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
+    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body,
 };
-use nfs3_types::xdr_codec::{Pack, Unpack};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncBufRead, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -29,7 +30,7 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: RpcRecord,
+    message: Bytes,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
@@ -46,7 +47,7 @@ where
 
     let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
     if unix {
-        let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
+        let auth = auth_unix::unpack(&mut Decoder::new(call.cred.body.clone().into_bytes()))?;
         context.auth = auth;
     }
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
@@ -99,18 +100,13 @@ where
     O: Pack + Send + 'static,
     T: NfsFileSystem,
 {
-    let mut cursor = message.take_data();
-    let (args, _) = match I::unpack(&mut cursor) {
-        Ok(ok) => ok,
+    let args = match message.unpack_args::<I>() {
+        Ok(args) => args,
         Err(err) => {
             error!("Failed to unpack message: {err}");
             return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
         }
     };
-    if cursor.position() != cursor.get_ref().len() as u64 {
-        error!("Unpacked message size does not match expected size");
-        return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
-    }
 
     let result = handler(context, message.xid(), args).await;
     message.into_success_reply(&result)
@@ -140,22 +136,23 @@ fn lock_transaction(
     }
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "The assertion bounds the length to the RPC fragment size"
-)]
-pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
+/// Writes an encoded reply record (marker included) with vectored writes.
+pub(crate) async fn write_reply<IO: AsyncWrite + Unpin>(
     socket: &mut IO,
-    buf: RpcRecord,
-) -> Result<(), anyhow::Error> {
-    // TODO: split into many fragments
-    let buf = buf.into_inner();
-    assert!(buf.len() < (1 << 31));
-    let fragment_header = fragment_header::new(buf.len() as u32, true);
-    let header_buf = fragment_header.into_xdr_buf();
-    socket.write_all(&header_buf).await?;
-    trace!("Writing fragment length: {}", buf.len());
-    socket.write_all(&buf).await?;
+    reply: &Encoded,
+) -> io::Result<()> {
+    let mut slices = match reply.chunks() {
+        [head, [], []] => return socket.write_all(head).await,
+        chunks => chunks.map(IoSlice::new),
+    };
+    let mut slices = &mut slices[..];
+    while !slices.is_empty() {
+        let written = socket.write_vectored(slices).await?;
+        if written == 0 {
+            return Err(io::ErrorKind::WriteZero.into());
+        }
+        IoSlice::advance_slices(&mut slices, written);
+    }
     Ok(())
 }
 
@@ -163,10 +160,10 @@ pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 pub(crate) async fn read_and_dispatch_loop<R, T>(
     mut record_reader: RpcRecordReader<R>,
     context: RPCContext<T>,
-    replies: mpsc::Sender<anyhow::Result<RpcRecord>>,
+    replies: mpsc::Sender<anyhow::Result<Encoded>>,
 ) -> anyhow::Result<()>
 where
-    R: AsyncBufRead + Unpin,
+    R: AsyncRead + Unpin,
     T: NfsFileSystem + 'static,
 {
     // Read before reserving so the next framing error can still be
@@ -190,4 +187,99 @@ where
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, IoSlice};
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use bytes::Bytes;
+    use future_assert::FutureTestExt;
+    use nfs3_types::xdr_codec::{Encoded, Encoder, Opaque, Pack};
+    use tokio::io::AsyncWrite;
+
+    use super::write_reply;
+
+    /// Accepts at most `limit` bytes per write, across slices.
+    struct Trickle {
+        out: Vec<u8>,
+        limit: usize,
+    }
+
+    impl AsyncWrite for Trickle {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.poll_write_vectored(cx, &[IoSlice::new(buf)])
+        }
+
+        fn poll_write_vectored(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            bufs: &[IoSlice<'_>],
+        ) -> Poll<io::Result<usize>> {
+            let mut written = 0;
+            for buf in bufs {
+                let n = buf.len().min(self.limit - written);
+                self.out.extend_from_slice(&buf[..n]);
+                written += n;
+            }
+            Poll::Ready(Ok(written))
+        }
+
+        fn is_write_vectored(&self) -> bool {
+            true
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// A reply with a shared payload chunk followed by a non-empty tail.
+    fn chunked_reply() -> Encoded {
+        let payload: Vec<u8> = (0..=255u8).cycle().take(1025).collect();
+        let mut out = Encoder::new();
+        7u32.pack(&mut out).expect("pack");
+        Opaque::from_bytes(Bytes::from(payload))
+            .pack(&mut out)
+            .expect("pack");
+        8u32.pack(&mut out).expect("pack");
+        let reply = out.finish_record().expect("record fits");
+        assert!(reply.chunks().iter().all(|chunk| !chunk.is_empty()));
+        reply
+    }
+
+    #[test]
+    fn reply_chunks_survive_partial_writes() {
+        let reply = chunked_reply();
+        let mut socket = Trickle {
+            out: Vec::new(),
+            limit: 3,
+        };
+        write_reply(&mut socket, &reply)
+            .unwrap_ready()
+            .expect("all chunks written");
+        assert_eq!(socket.out, reply.chunks().concat());
+    }
+
+    #[test]
+    fn zero_progress_is_write_zero() {
+        let mut socket = Trickle {
+            out: Vec::new(),
+            limit: 0,
+        };
+        let err = write_reply(&mut socket, &chunked_reply())
+            .unwrap_ready()
+            .expect_err("no progress");
+        assert_eq!(err.kind(), io::ErrorKind::WriteZero);
+    }
 }

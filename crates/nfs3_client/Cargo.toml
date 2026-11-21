@@ -19,6 +19,7 @@ smol = ["dep:smol", "dep:socket2"]
 
 [dependencies]
 nfs3_types.workspace = true
+bytes.workspace = true
 
 derive-where.workspace = true
 fastrand.workspace = true

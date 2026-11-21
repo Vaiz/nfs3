@@ -28,6 +28,7 @@ mod iterator;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 
+use crate::nfs3_types::bytes::Bytes;
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
     filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
@@ -104,12 +105,15 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// Note that offset/count may go past the end of the file and that
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
+    ///
+    /// Returned buffers of 1 KiB or more are sent to the client without copying;
+    /// a `Vec<u8>` converts into [`Bytes`] for free.
     fn read(
         &self,
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> impl Future<Output = Result<(Vec<u8>, bool), nfsstat3>> + Send;
+    ) -> impl Future<Output = Result<(Bytes, bool), nfsstat3>> + Send;
 
     /// Simple version of readdir. Only need to return filename and id
     ///
@@ -221,11 +225,14 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// incorrectly returned `NFSERR_ISDIR` if the file system
     /// object type was not a regular file. The correct return
     /// value for the NFS version 3 protocol is `NFS3ERR_INVAL`.
+    ///
+    /// `data` usually shares the buffer the request was received in, so it can be
+    /// kept or moved to another task without copying.
     fn write(
         &self,
         id: &Self::Handle,
         offset: u64,
-        data: &[u8],
+        data: Bytes,
         stable: stable_how,
     ) -> impl Future<Output = Result<(fattr3, stable_how), nfsstat3>> + Send;
 

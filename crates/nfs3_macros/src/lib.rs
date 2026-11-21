@@ -43,7 +43,7 @@ impl<'a> NamedFieldsGenerator<'a> {
         self.fields.named.iter().map(|f| {
             let name = &f.ident;
             quote! {
-                total_write += self.#name.pack(out)?;
+                nfs3_types::xdr_codec::Pack::pack(&self.#name, out)?;
             }
         })
     }
@@ -61,8 +61,7 @@ impl<'a> NamedFieldsGenerator<'a> {
         self.fields.named.iter().map(|f| {
             let name = &f.ident;
             quote! {
-                let (#name, read_bytes) = nfs3_types::xdr_codec::Unpack::unpack(input)?;
-                total_read += read_bytes;
+                let #name = nfs3_types::xdr_codec::Unpack::unpack(input)?;
             }
         })
     }
@@ -89,7 +88,7 @@ impl<'a> UnnamedFieldsGenerator<'a> {
         self.fields.unnamed.iter().enumerate().map(|(i, _)| {
             let index = Index::from(i);
             quote! {
-                total_write += self.#index.pack(out)?;
+                nfs3_types::xdr_codec::Pack::pack(&self.#index, out)?;
             }
         })
     }
@@ -107,8 +106,7 @@ impl<'a> UnnamedFieldsGenerator<'a> {
         self.fields.unnamed.iter().enumerate().map(|(i, _)| {
             let var_name = Ident::new(&format!("field_{i}"), proc_macro2::Span::call_site());
             quote! {
-                let (#var_name, read_bytes) = nfs3_types::xdr_codec::Unpack::unpack(input)?;
-                total_read += read_bytes;
+                let #var_name = nfs3_types::xdr_codec::Unpack::unpack(input)?;
             }
         })
     }
@@ -142,20 +140,16 @@ fn generate_struct_impl(name: &Ident, generics: &syn::Generics, fields: &Fields)
                         total_size
                     }
 
-                    fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
-                        use nfs3_types::xdr_codec::Pack;
-                        let mut total_write = 0;
+                    fn pack(&self, out: &mut nfs3_types::xdr_codec::Encoder) -> nfs3_types::xdr_codec::Result<()> {
                         #(#pack_fields)*
-                        Ok(total_write)
+                        Ok(())
                     }
                 }
                 impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                        use nfs3_types::xdr_codec::Unpack;
-                        let mut total_read = 0;
+                    fn unpack(input: &mut nfs3_types::xdr_codec::Decoder) -> nfs3_types::xdr_codec::Result<Self> {
                         #(#unpack_fields)*
-                        Ok((Self { #(#struct_fields)* }, total_read))
+                        Ok(Self { #(#struct_fields)* })
                     }
                 }
             }
@@ -176,20 +170,16 @@ fn generate_struct_impl(name: &Ident, generics: &syn::Generics, fields: &Fields)
                         total_size
                     }
 
-                    fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
-                        use nfs3_types::xdr_codec::Pack;
-                        let mut total_write = 0;
+                    fn pack(&self, out: &mut nfs3_types::xdr_codec::Encoder) -> nfs3_types::xdr_codec::Result<()> {
                         #(#pack_fields)*
-                        Ok(total_write)
+                        Ok(())
                     }
                 }
                 impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                        use nfs3_types::xdr_codec::Unpack;
-                        let mut total_read = 0;
+                    fn unpack(input: &mut nfs3_types::xdr_codec::Decoder) -> nfs3_types::xdr_codec::Result<Self> {
                         #(#unpack_fields)*
-                        Ok((Self(#(#struct_fields),*), total_read))
+                        Ok(Self(#(#struct_fields),*))
                     }
                 }
             }
@@ -202,14 +192,14 @@ fn generate_struct_impl(name: &Ident, generics: &syn::Generics, fields: &Fields)
                         0
                     }
 
-                    fn pack(&self, _out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
-                        Ok(0)
+                    fn pack(&self, _out: &mut nfs3_types::xdr_codec::Encoder) -> nfs3_types::xdr_codec::Result<()> {
+                        Ok(())
                     }
                 }
                 impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
                 #where_clause {
-                    fn unpack(_input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                        Ok((Self, 0))
+                    fn unpack(_input: &mut nfs3_types::xdr_codec::Decoder) -> nfs3_types::xdr_codec::Result<Self> {
+                        Ok(Self)
                     }
                 }
             }
@@ -239,15 +229,14 @@ fn generate_complex_enum_pack_variant(variant: &Variant) -> TokenStream2 {
     match &variant.fields {
         Fields::Unit => {
             quote! {
-                Self::#ident => #xdr_value.pack(out),
+                Self::#ident => nfs3_types::xdr_codec::Pack::pack(&#xdr_value, out),
             }
         }
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             quote! {
                 Self::#ident(val) => {
-                    let mut len = #xdr_value.pack(out)?;
-                    len += val.pack(out)?;
-                    Ok(len)
+                    nfs3_types::xdr_codec::Pack::pack(&#xdr_value, out)?;
+                    nfs3_types::xdr_codec::Pack::pack(val, out)
                 },
             }
         }
@@ -267,7 +256,7 @@ fn generate_complex_enum_packed_size_variant(variant: &Variant) -> TokenStream2 
         }
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             quote! {
-                Self::#ident(val) => 4 + val.packed_size(),
+                Self::#ident(val) => 4 + nfs3_types::xdr_codec::Pack::packed_size(val),
             }
         }
         _ => panic!("Invalid complex enum variant: {ident}"),
@@ -290,9 +279,7 @@ fn generate_complex_enum_unpack_variant(variant: &Variant) -> TokenStream2 {
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             quote! {
                 #xdr_value => {
-                    let (val, val_bytes) = nfs3_types::xdr_codec::Unpack::unpack(input)?;
-                    bytes_read += val_bytes;
-                    Ok(Self::#ident(val))
+                    Ok(Self::#ident(nfs3_types::xdr_codec::Unpack::unpack(input)?))
                 },
             }
         }
@@ -311,7 +298,7 @@ fn generate_simple_enum_impl(
     let pack_variants = data.variants.iter().map(|v| {
         let ident = &v.ident;
         quote! {
-            Self::#ident => (*self as u32).pack(out),
+            Self::#ident => nfs3_types::xdr_codec::Pack::pack(&(*self as u32), out),
         }
     });
 
@@ -329,8 +316,7 @@ fn generate_simple_enum_impl(
                 4
             }
 
-            fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
-                use nfs3_types::xdr_codec::Pack;
+            fn pack(&self, out: &mut nfs3_types::xdr_codec::Encoder) -> nfs3_types::xdr_codec::Result<()> {
                 match self {
                     #(#pack_variants)*
                 }
@@ -338,13 +324,12 @@ fn generate_simple_enum_impl(
         }
         impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
         #where_clause {
-            fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                let (tag, bytes_read) = u32::unpack(input)?;
-                let result = match tag {
+            fn unpack(input: &mut nfs3_types::xdr_codec::Decoder) -> nfs3_types::xdr_codec::Result<Self> {
+                let tag = <u32 as nfs3_types::xdr_codec::Unpack>::unpack(input)?;
+                match tag {
                     #(#unpack_variants)*
                     _ => Err(nfs3_types::xdr_codec::Error::InvalidEnumValue(tag)),
-                };
-                result.map(|value| (value, bytes_read))
+                }
             }
         }
     }
@@ -384,8 +369,7 @@ fn generate_complex_enum_impl(
                 }
             }
 
-            fn pack(&self, out: &mut impl std::io::Write) -> nfs3_types::xdr_codec::Result<usize> {
-                use nfs3_types::xdr_codec::Pack;
+            fn pack(&self, out: &mut nfs3_types::xdr_codec::Encoder) -> nfs3_types::xdr_codec::Result<()> {
                 match self {
                     #(#pack_variants)*
                 }
@@ -393,14 +377,12 @@ fn generate_complex_enum_impl(
         }
         impl #impl_generics nfs3_types::xdr_codec::Unpack for #name #ty_generics
         #where_clause {
-            fn unpack(input: &mut impl std::io::Read) -> nfs3_types::xdr_codec::Result<(Self, usize)> {
-                use nfs3_types::xdr_codec::Unpack;
-                let (tag, mut bytes_read) = u32::unpack(input)?;
-                let result = match tag {
+            fn unpack(input: &mut nfs3_types::xdr_codec::Decoder) -> nfs3_types::xdr_codec::Result<Self> {
+                let tag = <u32 as nfs3_types::xdr_codec::Unpack>::unpack(input)?;
+                match tag {
                     #(#unpack_variants)*
                     _ => Err(nfs3_types::xdr_codec::Error::InvalidEnumValue(tag)),
-                };
-                result.map(|value| (value, bytes_read))
+                }
             }
         }
     }
