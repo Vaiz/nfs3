@@ -24,6 +24,7 @@ clap = { version = "4.5", default-features = false }
 ctrlc = { version = "3.5" }
 fastrand = "2.3"
 filetime = "0.2.25"
+future_assert = "0.1.0"
 intaglio = "1.13.3"
 jiff = { version = "1.0.1", default-features = false, features = ["std"] }
 proc-macro2 = "1.0.95"

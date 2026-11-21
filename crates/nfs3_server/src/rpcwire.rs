@@ -2,13 +2,13 @@ use std::io::Cursor;
 use std::time::Instant;
 
 use anyhow::anyhow;
-use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage, PackedRpcMessage};
+use messages::{RpcCall, RpcCallOutcome, RpcRecord, RpcRecordReader};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncWriteExt, DuplexStream};
+use tokio::io::{AsyncWriteExt, BufReader, DuplexStream};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -18,7 +18,7 @@ use crate::units::KIBIBYTE;
 use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
-pub mod messages;
+pub(crate) mod messages;
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
@@ -29,12 +29,12 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: CompleteRpcMessage,
-) -> anyhow::Result<HandleResult>
+    message: RpcRecord,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {
-    let message = IncomingRpcMessage::try_from(message)?;
+    let message = RpcCall::try_from(message)?;
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
@@ -68,7 +68,7 @@ where
             Some(err) => return message.into_error_reply(err),
             None => {
                 // This is a retransmission, so we don't need to do anything
-                return Ok(HandleResult::NoReply);
+                return Ok(RpcCallOutcome::NoReply);
             }
         }
     }
@@ -89,11 +89,11 @@ where
 }
 
 /// Handles the RPC message and returns a result. The handler is an async function
-pub async fn handle<I, O, T>(
+pub(crate) async fn handle<I, O, T>(
     context: RPCContext<T>,
-    mut message: IncomingRpcMessage,
+    mut message: RpcCall,
     handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
-) -> anyhow::Result<HandleResult>
+) -> anyhow::Result<RpcCallOutcome>
 where
     I: Unpack,
     O: Pack + Send + 'static,
@@ -144,9 +144,9 @@ fn lock_transaction(
     clippy::cast_possible_truncation,
     reason = "The assertion bounds the length to the RPC fragment size"
 )]
-pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
+pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
-    buf: CompleteRpcMessage,
+    buf: RpcRecord,
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
     let buf = buf.into_inner();
@@ -159,15 +159,12 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
+pub(crate) type SocketMessageType = Result<RpcRecord, anyhow::Error>;
 
-/// The Socket Message Handler reads from a `TcpStream` and spawns off
-/// subtasks to handle each message. replies are queued into the
-/// `reply_send_channel`.
+/// Reads RPC records from the duplex stream and dispatches each complete call in its own task.
 #[derive(Debug)]
-pub struct SocketMessageHandler<T: NfsFileSystem + 'static> {
-    cur_fragment: PackedRpcMessage,
-    socket_receive_channel: DuplexStream,
+pub(crate) struct SocketMessageHandler<T: NfsFileSystem + 'static> {
+    record_reader: RpcRecordReader<BufReader<DuplexStream>>,
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
     context: RPCContext<T>,
 }
@@ -177,7 +174,7 @@ where
     T: NfsFileSystem + 'static,
 {
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
-    pub fn new(
+    pub(crate) fn new(
         context: RPCContext<T>,
     ) -> (
         Self,
@@ -188,8 +185,7 @@ where
         let (msgsend, msgrecv) = mpsc::unbounded_channel();
         (
             Self {
-                cur_fragment: PackedRpcMessage::new(),
-                socket_receive_channel: sockrecv,
+                record_reader: RpcRecordReader::new(BufReader::new(sockrecv), None),
                 reply_send_channel: msgsend,
                 context,
             },
@@ -198,31 +194,18 @@ where
         )
     }
 
-    /// Reads a fragment from the socket. This should be looped.
-    pub async fn read(&mut self) -> Result<(), anyhow::Error> {
-        let is_last = self
-            .cur_fragment
-            .recv(&mut self.socket_receive_channel)
-            .await?;
-        if is_last {
-            let message = std::mem::replace(&mut self.cur_fragment, PackedRpcMessage::new());
-            let message = match message {
-                PackedRpcMessage::Complete(data) => data,
-                PackedRpcMessage::Incomplete(_) => {
-                    unreachable!()
-                }
-            };
-
+    pub(crate) async fn read_and_dispatch(mut self) -> std::io::Result<()> {
+        while let Some(message) = self.record_reader.read_record().await? {
             let context = self.context.clone();
             let send = self.reply_send_channel.clone();
             tokio::spawn(async move {
                 let result = handle_rpc_message(context, message).await;
 
                 match result {
-                    Ok(HandleResult::Reply(reply)) => {
+                    Ok(RpcCallOutcome::Reply(reply)) => {
                         let _ = send.send(Ok(reply));
                     }
-                    Ok(HandleResult::NoReply) => {
+                    Ok(RpcCallOutcome::NoReply) => {
                         // No reply needed
                     }
                     Err(err) => {
