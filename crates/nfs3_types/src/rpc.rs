@@ -9,7 +9,7 @@
 
 use std::io;
 
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
@@ -139,16 +139,19 @@ impl RecordBuf {
         (&mut self.buf, remaining)
     }
 
-    /// Returns the record once its last fragment is complete, leaving the
-    /// buffer empty for the next record.
-    pub fn take_record(&mut self) -> Option<Bytes> {
+    /// Returns a decoder over the record once its last fragment is complete,
+    /// leaving the buffer empty for the next record.
+    ///
+    /// The decoder knows the record's allocation, so large opaque data such as
+    /// READ or WRITE payloads is shared with the record instead of copied.
+    pub fn take_record(&mut self) -> Option<Decoder> {
         if !self.last || self.remaining() != 0 {
             return None;
         }
         debug_assert_eq!(self.buf.len(), self.fragment_end, "fragment overrun");
         self.fragment_end = 0;
         self.last = false;
-        Some(std::mem::take(&mut self.buf).freeze())
+        Some(Decoder::from_owned(std::mem::take(&mut self.buf)))
     }
 }
 
@@ -431,7 +434,7 @@ pub enum msg_body<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::{EAGER_RESERVE, RecordBuf, io};
+    use super::{Decoder, EAGER_RESERVE, RecordBuf, io};
 
     #[test]
     fn eager_reservation_is_capped_and_then_grows_with_data() {
@@ -454,15 +457,16 @@ mod tests {
         let mut record = RecordBuf::new(3);
         record.start_fragment([0, 0, 0, 2]).unwrap();
         record.buf_mut().0.extend_from_slice(b"ab");
-        assert_eq!(record.take_record(), None);
+        assert!(record.take_record().is_none());
         let err = record.start_fragment([0x80, 0, 0, 2]).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         record.start_fragment([0x80, 0, 0, 1]).unwrap();
-        assert_eq!(record.take_record(), None);
+        assert!(record.take_record().is_none());
         record.buf_mut().0.extend_from_slice(b"c");
-        assert_eq!(record.take_record().unwrap(), b"abc"[..]);
+        let take = |record: &mut RecordBuf| record.take_record().map(Decoder::into_remaining);
+        assert_eq!(take(&mut record).unwrap(), b"abc"[..]);
 
         record.start_fragment([0x80, 0, 0, 0]).unwrap();
-        assert_eq!(record.take_record().unwrap(), b""[..]);
+        assert_eq!(take(&mut record).unwrap(), b""[..]);
     }
 }

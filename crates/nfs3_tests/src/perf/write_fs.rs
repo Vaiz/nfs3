@@ -1,4 +1,4 @@
-use nfs3_server::nfs3_types::bytes::Bytes;
+use bytes::Bytes;
 use nfs3_server::vfs::{FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator};
 
 use crate::perf::nfs3_types::nfs3::{

@@ -14,12 +14,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bytes::Bytes;
 use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
-use nfs3_server::nfs3_types::bytes::Bytes;
 use nfs3_server::nfs3_types::nfs3::{
     cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
     stable_how,

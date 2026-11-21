@@ -48,8 +48,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
+use bytes::Bytes;
 pub use config::MemFsConfig;
-use nfs3_types::bytes::Bytes;
 use nfs3_types::nfs3::{
     self as nfs, cookie3, createverf3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
     sattr3, specdata3,

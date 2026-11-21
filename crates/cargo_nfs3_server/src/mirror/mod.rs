@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use iterator::MirrorFsIterator;
 use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
-use nfs3_server::nfs3_types::bytes::Bytes;
 use nfs3_server::nfs3_types::nfs3::{
     createverf3, fattr3, filename3, nfspath3, nfsstat3, sattr3, set_gid3, set_mode3, set_size3,
     set_uid3, stable_how,

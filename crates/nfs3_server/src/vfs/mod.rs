@@ -25,10 +25,10 @@ pub mod adapters;
 pub(crate) mod handle;
 mod iterator;
 
+use bytes::Bytes;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
 
-use crate::nfs3_types::bytes::Bytes;
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
     filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
