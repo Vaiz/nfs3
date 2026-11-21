@@ -140,10 +140,12 @@ jobs:
     - name: clippy
       run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
+    - name: Install cargo-quickinstall
+      run: cargo install cargo-quickinstall
+
     - name: machete
       run: |
-        # cargo-machete 0.10.1 does not compile with the pinned Rust toolchain.
-        cargo install --locked --version '=0.9.2' cargo-machete
+        cargo quickinstall --version "$CARGO_MACHETE_VERSION" cargo-machete
         cargo machete
 
   linelint:
