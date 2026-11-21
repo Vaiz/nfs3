@@ -48,15 +48,33 @@ Note that this example uses *writable* instance of `MemFs`.
 Usage
 =====
 
-Use `tcp::Builder::new()` to configure a listener. Select a filesystem with `.filesystem(fs)`
-for a `vfs::NfsFileSystem` or `.read_only_filesystem(fs)` for a `vfs::NfsReadFileSystem`,
-then call `.bind(addr).await` with a `std::net::SocketAddr`. See the `memfs` and `ro_memfs`
-examples for complete servers.
+To serve a filesystem that implements `NfsFileSystem`, bind it to a TCP address:
 
-Before binding, you can set the export path with `.export_name(name)`, set a stable file-handle
-generation with `.generation_number(number)`, or cap the incoming RPC record payload with
-`.max_rpc_record_size(limit)` (a `NonZeroUsize` in bytes). The limit is off by default.
-The legacy `auto:port` address syntax is deprecated; use an explicit loopback address instead.
+```rust,no_run
+use std::net::{Ipv4Addr, SocketAddr};
+
+use nfs3_server::tcp::{Builder, NFSTcp};
+use nfs3_server::vfs::NfsFileSystem;
+
+async fn serve(fs: impl NfsFileSystem + 'static) -> std::io::Result<()> {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 11111));
+    let listener = Builder::new().filesystem(fs).bind(addr).await?;
+    listener.handle_forever().await
+}
+```
+
+For a read-only export, use `.read_only_filesystem(fs)` instead. It only requires
+`NfsReadFileSystem`. See `memfs` and `ro_memfs` for complete examples.
+
+Set options before calling `.bind()`:
+
+| Option | Default |
+| --- | --- |
+| `export_name` | `/` |
+| `generation_number` | Generated when the listener is created |
+| `max_rpc_record_size` | Unlimited; set a `NonZeroUsize` to cap incoming RPC payload bytes per record |
+
+The legacy `auto:port` syntax is deprecated. Pass an explicit address instead, as above.
 
 Relevant RFCs
 =============

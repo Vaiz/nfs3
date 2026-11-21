@@ -11,6 +11,8 @@
 //! # Examples
 //!
 //! ```no_run
+//! use std::net::{Ipv4Addr, SocketAddr};
+//!
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
 //! use nfs3_server::tcp::{Builder, NFSTcp};
 //!
@@ -21,10 +23,8 @@
 //!     config.add_dir("/a directory");
 //!
 //!     let memfs = MemFs::new(config).unwrap();
-//!     let listener = Builder::new()
-//!         .filesystem(memfs)
-//!         .bind("0.0.0.0:11111".parse()?)
-//!         .await?;
+//!     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 11111));
+//!     let listener = Builder::new().filesystem(memfs).bind(addr).await?;
 //!     listener.handle_forever().await?;
 //!     Ok(())
 //! }
