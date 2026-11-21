@@ -41,7 +41,7 @@ jobs:
       run: cargo quickinstall rust-mcp-server
 
     - name: Install cargo-machete
-      run: cargo install --locked --version "=$CARGO_MACHETE_VERSION" cargo-machete
+      run: cargo quickinstall --version "$CARGO_MACHETE_VERSION" cargo-machete
 
     - name: Install cargo-deny
       run: cargo quickinstall cargo-deny
