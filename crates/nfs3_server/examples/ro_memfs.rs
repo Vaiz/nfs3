@@ -1,8 +1,11 @@
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 
 use nfs3_server::tcp::{Builder, NFSTcp};
 
 const HOSTPORT: u16 = 11111;
+const RPC_RECORD_LIMIT: NonZeroUsize =
+    NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit");
 
 // To mount the NFS server on Linux, use the following command:
 // mount -t nfs -o nolock,vers=3,tcp,port=11111,mountport=11111,soft 127.0.0.1:/ /mnt/nfs
@@ -29,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::new(bind_ip.parse()?, bind_port);
     let listener = Builder::new()
         .read_only_filesystem(memfs)
+        .max_rpc_record_size(RPC_RECORD_LIMIT)
         .bind(addr)
         .await?;
     listener.handle_forever().await?;

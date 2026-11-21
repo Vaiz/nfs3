@@ -12,9 +12,13 @@
 //!
 //! ```no_run
 //! use std::net::{Ipv4Addr, SocketAddr};
+//! use std::num::NonZeroUsize;
 //!
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
 //! use nfs3_server::tcp::{Builder, NFSTcp};
+//!
+//! const RPC_RECORD_LIMIT: NonZeroUsize =
+//!     NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit");
 //!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
@@ -24,7 +28,11 @@
 //!
 //!     let memfs = MemFs::new(config).unwrap();
 //!     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 11111));
-//!     let listener = Builder::new().filesystem(memfs).bind(addr).await?;
+//!     let listener = Builder::new()
+//!         .filesystem(memfs)
+//!         .max_rpc_record_size(RPC_RECORD_LIMIT)
+//!         .bind(addr)
+//!         .await?;
 //!     listener.handle_forever().await?;
 //!     Ok(())
 //! }

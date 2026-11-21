@@ -97,7 +97,20 @@ This project follows strict code quality standards:
 - **Tests**: All changes must maintain test coverage
 - **Documentation**: Public APIs must be documented
 
-### 5. Common Patterns
+### 5. Documentation Audience
+
+- Write for the document's intended reader. The CLI README explains flags,
+  limits, and behavior users see when running the binary. The library README
+  and rustdoc explain defaults and configuration APIs for developers.
+- Keep details where their primary audience looks for them. Repeat a detail
+  only when another audience needs it in context; link to the primary
+  documentation when readers only need a way to find more detail.
+- Before publishing or updating a PR, review all added or edited prose in the
+  full PR diff against its base, including doc comments and edits from earlier
+  commits. Check both technical accuracy and whether each detail belongs in
+  that document for its intended reader.
+
+### 6. Common Patterns
 
 #### Checking Project Health
 ```
