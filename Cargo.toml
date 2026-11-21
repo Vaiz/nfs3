@@ -25,7 +25,7 @@ ctrlc = { version = "3.5" }
 fastrand = "2.3"
 filetime = "0.2.25"
 intaglio = "1.13.3"
-jiff = { version = "0.2.28", default-features = false, features = ["std"] }
+jiff = { version = "1.0.1", default-features = false, features = ["std"] }
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 socket2 = "0.6"
