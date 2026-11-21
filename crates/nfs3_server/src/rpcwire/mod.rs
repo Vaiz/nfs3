@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Instant;
 
 use call::{RpcCall, RpcCallOutcome};
@@ -47,9 +48,9 @@ where
     let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
     if unix {
         let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
-        context.auth = auth;
+        context.auth = Arc::new(auth);
     }
-    if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
+    if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(context.auth.as_ref())) {
         warn!(
             "refusing a call from uid {} on {}",
             context.auth.uid, context.client_addr

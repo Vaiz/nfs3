@@ -272,11 +272,13 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
             let (socket, _) = self.listener.accept().await?;
             let context = RPCContext {
                 local_port: self.port,
-                client_addr: socket
-                    .peer_addr()
-                    .expect("failed to get peer address")
-                    .to_string(),
-                auth: nfs3_types::rpc::auth_unix::default(),
+                client_addr: Arc::new(
+                    socket
+                        .peer_addr()
+                        .expect("failed to get peer address")
+                        .to_string(),
+                ),
+                auth: Arc::default(),
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
                 export_name: Arc::clone(&self.export_name),
