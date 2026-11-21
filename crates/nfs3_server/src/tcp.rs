@@ -9,7 +9,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use crate::context::{ConnectionContext, RPCContext};
+use crate::context::RPCContext;
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::{read_and_dispatch_loop, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
@@ -270,19 +270,19 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
 
         loop {
             let (socket, _) = self.listener.accept().await?;
-            let context = RPCContext::new(ConnectionContext {
-                local_port: self.port,
-                client_addr: socket
+            let context = RPCContext::new(
+                self.port,
+                socket
                     .peer_addr()
                     .expect("failed to get peer address")
                     .to_string(),
-                vfs: Arc::clone(&self.arcfs),
-                mount_signal: self.mount_signal.clone(),
-                export_name: Arc::clone(&self.export_name),
-                transaction_tracker: Arc::clone(&self.transaction_tracker),
-                file_handle_converter: self.file_handle_converter,
-            });
-            info!("Accepting connection from {}", context.client_addr);
+                Arc::clone(&self.arcfs),
+                self.mount_signal.clone(),
+                Arc::clone(&self.export_name),
+                Arc::clone(&self.transaction_tracker),
+                self.file_handle_converter,
+            );
+            info!("Accepting connection from {}", context.client_addr());
             debug!("Accepting socket {:?} {:?}", socket, context);
             tokio::spawn(async move {
                 let _ = socket.set_nodelay(true);

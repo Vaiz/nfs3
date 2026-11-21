@@ -49,19 +49,19 @@ where
     } else {
         None
     };
-    if prog != portmap::PROGRAM && !context.vfs.authorize(auth.as_ref()) {
+    if prog != portmap::PROGRAM && !context.vfs().authorize(auth.as_ref()) {
         warn!(
             "refusing a call from uid {} on {}",
             auth.as_ref().map_or(0, |auth| auth.uid),
-            context.client_addr
+            context.client_addr()
         );
         return message.into_auth_error(auth_stat::AUTH_TOOWEAK);
     }
     drop(auth);
 
     let transaction = lock_transaction(
-        &context.transaction_tracker,
-        &context.client_addr,
+        context.transaction_tracker(),
+        context.client_addr(),
         xid,
         call,
     );
@@ -283,10 +283,8 @@ mod tests {
             };
             let mut bytes = Vec::new();
             call.pack(&mut bytes)?;
-            let context = connection.clone();
-            assert!(std::ptr::eq(&raw const *context, &raw const *connection));
             let RpcCallOutcome::Reply(reply) =
-                handle_rpc_message(context, RpcRecord::new(bytes)).await?
+                handle_rpc_message(connection.clone(), RpcRecord::new(bytes)).await?
             else {
                 anyhow::bail!("expected a reply to call {xid}");
             };

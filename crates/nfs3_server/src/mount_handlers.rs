@@ -83,7 +83,7 @@ where
     };
 
     debug!("mountproc3_mnt({xid},{utf8path})");
-    let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_str()) {
+    let path = if let Some(path) = utf8path.strip_prefix(context.export_name()) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export
@@ -91,15 +91,15 @@ where
         return mountres3::Err(mountstat3::MNT3ERR_NOENT);
     };
 
-    match context.vfs.lookup_by_path(path).await {
+    match context.vfs().lookup_by_path(path).await {
         Ok(fileid) => {
-            let root = context.file_handle_converter.fh_to_nfs(&fileid);
+            let root = context.file_handle_converter().fh_to_nfs(&fileid);
             let response = mountres3_ok {
                 fhandle: fhandle3(root.data),
                 auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
             };
             debug!("{xid} --> {response:?}");
-            if let Some(ref chan) = context.mount_signal {
+            if let Some(chan) = context.mount_signal() {
                 let _ = chan.send(true).await;
             }
             mountres3::Ok(response)
@@ -146,7 +146,7 @@ async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> export
 where
     T: crate::vfs::NfsFileSystem,
 {
-    let export_name = context.export_name.as_bytes().to_vec();
+    let export_name = context.export_name().as_bytes().to_vec();
     List(vec![export_node {
         ex_dir: dirpath(Opaque::owned(export_name)),
         ex_groups: List::default(),
@@ -166,7 +166,7 @@ where
     };
 
     debug!("mountproc3_umnt({xid},{utf8path})");
-    if let Some(ref chan) = context.mount_signal {
+    if let Some(chan) = context.mount_signal() {
         let _ = chan.send(false).await;
     }
     Void
@@ -177,7 +177,7 @@ where
     T: crate::vfs::NfsFileSystem,
 {
     debug!("mountproc3_umnt_all({xid})");
-    if let Some(ref chan) = context.mount_signal {
+    if let Some(chan) = context.mount_signal() {
         let _ = chan.send(false).await;
     }
     Void

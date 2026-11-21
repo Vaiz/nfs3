@@ -53,7 +53,7 @@ where
     T: crate::vfs::NfsFileSystem,
 {
     debug!("pmapproc_getport({xid}, {m:?})");
-    let port = u32::from(context.local_port);
+    let port = u32::from(context.local_port());
     debug!("\t{xid} --> {port}");
     port
 }

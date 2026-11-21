@@ -86,7 +86,7 @@ where
 
 macro_rules! fh_to_id {
     ($context:expr, $fh:expr) => {
-        match $context.file_handle_converter.fh_from_nfs($fh) {
+        match $context.file_handle_converter().fh_from_nfs($fh) {
             Ok(id) => id,
             Err(stat) => {
                 warn!("cannot resolve fh: {stat}");
@@ -114,7 +114,7 @@ where
     let handle = getattr3args.object;
 
     let id = fh_to_id!(context, &handle);
-    match context.vfs.getattr(&id).await {
+    match context.vfs().getattr(&id).await {
         Ok(obj_attributes) => {
             debug!(" {xid} --> {obj_attributes:?}");
             GETATTR3res::Ok(GETATTR3resok { obj_attributes })
@@ -136,13 +136,13 @@ where
 {
     let dirops = lookup3args.what;
     let dirid = fh_to_id!(context, &dirops.dir);
-    let dir_attributes = nfs_option_from_result(context.vfs.getattr(&dirid).await);
-    match context.vfs.lookup(&dirid, &dirops.name).await {
+    let dir_attributes = nfs_option_from_result(context.vfs().getattr(&dirid).await);
+    match context.vfs().lookup(&dirid, &dirops.name).await {
         Ok(fid) => {
-            let obj_attributes = nfs_option_from_result(context.vfs.getattr(&fid).await);
+            let obj_attributes = nfs_option_from_result(context.vfs().getattr(&fid).await);
             debug!("lookup success {} --> {:?}", xid, obj_attributes);
             LOOKUP3res::Ok(LOOKUP3resok {
-                object: context.file_handle_converter.fh_to_nfs(&fid),
+                object: context.file_handle_converter().fh_to_nfs(&fid),
                 obj_attributes,
                 dir_attributes,
             })
@@ -164,9 +164,9 @@ where
 {
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
-    let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
+    let file_attributes = nfs_option_from_result(context.vfs().getattr(&id).await);
     match context
-        .vfs
+        .vfs()
         .read(&id, read3args.offset, read3args.count)
         .await
     {
@@ -192,7 +192,7 @@ where
 {
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
-    match context.vfs.fsinfo(&id).await {
+    match context.vfs().fsinfo(&id).await {
         Ok(fsinfo) => {
             debug!("fsinfo success {xid} --> {fsinfo:?}");
             FSINFO3res::Ok(fsinfo)
@@ -216,9 +216,9 @@ where
     let handle = args.object;
     let mut access = args.access;
     let id = fh_to_id!(context, &handle);
-    let obj_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
+    let obj_attributes = nfs_option_from_result(context.vfs().getattr(&id).await);
 
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         access &= ACCESS3_READ | ACCESS3_LOOKUP | ACCESS3_EXECUTE;
     }
 
@@ -236,7 +236,7 @@ where
     let handle = args.object;
     debug!("nfsproc3_pathconf({xid}, {handle:?})");
     let id = fh_to_id!(context, &handle);
-    let obj_attr = nfs_option_from_result(context.vfs.getattr(&id).await);
+    let obj_attr = nfs_option_from_result(context.vfs().getattr(&id).await);
 
     let res = PATHCONF3resok {
         obj_attributes: obj_attr,
@@ -258,7 +258,7 @@ where
 {
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
-    let obj_attr = nfs_option_from_result(context.vfs.getattr(&id).await);
+    let obj_attr = nfs_option_from_result(context.vfs().getattr(&id).await);
     let fsstat = FSSTAT3resok {
         obj_attributes: obj_attr,
         tbytes: TEBIBYTE,
@@ -285,7 +285,7 @@ where
     use crate::vfs::ReadDirPlusIterator;
 
     let dirid = fh_to_id!(context, &args.dir);
-    let dir_attr_maybe = context.vfs.getattr(&dirid).await;
+    let dir_attr_maybe = context.vfs().getattr(&dirid).await;
 
     let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
 
@@ -364,7 +364,7 @@ where
     }
     let max_bytes_allowed = args.maxcount as usize - 128;
 
-    let iter = context.vfs.readdirplus(&dirid, args.cookie).await;
+    let iter = context.vfs().readdirplus(&dirid, args.cookie).await;
 
     if let Err(stat) = iter {
         error!("readdirplus error {xid} --> {stat}");
@@ -380,7 +380,7 @@ where
     loop {
         match iter.next().await {
             NextResult::Ok(dir_entry_plus) => {
-                let entry = dir_entry_plus.into_entry(&context.file_handle_converter);
+                let entry = dir_entry_plus.into_entry(context.file_handle_converter());
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
@@ -432,7 +432,7 @@ where
     use crate::vfs::ReadDirIterator;
 
     let dirid = fh_to_id!(context, &readdir3args.dir);
-    let dir_attr_maybe = context.vfs.getattr(&dirid).await;
+    let dir_attr_maybe = context.vfs().getattr(&dirid).await;
     let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
     let cookieverf = cookieverf3::from_attr(&dir_attributes);
 
@@ -476,7 +476,7 @@ where
     }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
 
-    let iter = context.vfs.readdir(&dirid, readdir3args.cookie).await;
+    let iter = context.vfs().readdir(&dirid, readdir3args.cookie).await;
     if let Err(stat) = iter {
         return READDIR3res::Err((
             stat,
@@ -540,7 +540,7 @@ async fn nfsproc3_write<T>(
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return WRITE3res::Err((nfsstat3::NFS3ERR_ROFS, WRITE3resfail::default()));
     }
@@ -560,7 +560,7 @@ where
         .map_or(pre_op_attr::None, pre_op_attr::Some);
 
     match context
-        .vfs
+        .vfs()
         .write(&id, write3args.offset, &write3args.data, write3args.stable)
         .await
     {
@@ -573,7 +573,7 @@ where
                 },
                 count: write3args.count,
                 committed,
-                verf: context.file_handle_converter.verf(),
+                verf: context.file_handle_converter().verf(),
             })
         }
         Err(stat) => {
@@ -595,7 +595,7 @@ async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args)
 where
     T: NfsFileSystem,
 {
-    let id = match context.file_handle_converter.fh_from_nfs(&args.file) {
+    let id = match context.file_handle_converter().fh_from_nfs(&args.file) {
         Ok(id) => id,
         Err(stat) => {
             warn!("cannot resolve fh: {stat}");
@@ -610,17 +610,17 @@ where
     let before = get_wcc_attr(&context, &id)
         .await
         .map_or(pre_op_attr::None, pre_op_attr::Some);
-    match context.vfs.commit(&id, args.offset, args.count).await {
+    match context.vfs().commit(&id, args.offset, args.count).await {
         Ok(()) => {
-            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
+            let after = nfs_option_from_result(context.vfs().getattr(&id).await);
             debug!("commit success {xid}");
             COMMIT3res::Ok(COMMIT3resok {
                 file_wcc: wcc_data { before, after },
-                verf: context.file_handle_converter.verf(),
+                verf: context.file_handle_converter().verf(),
             })
         }
         Err(stat) => {
-            let after = nfs_option_from_result(context.vfs.getattr(&id).await);
+            let after = nfs_option_from_result(context.vfs().getattr(&id).await);
             error!("commit error {xid} --> {stat}");
             COMMIT3res::Err((
                 stat,
@@ -636,7 +636,7 @@ async fn nfsproc3_create<T>(context: RPCContext<T>, xid: u32, args: CREATE3args<
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return CREATE3res::Err((nfsstat3::NFS3ERR_ROFS, CREATE3resfail::default()));
     }
@@ -656,8 +656,8 @@ where
     };
 
     if matches!(&createhow, createhow3::GUARDED(_)) {
-        if context.vfs.lookup(&dirid, &dirops.name).await.is_ok() {
-            let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
+        if context.vfs().lookup(&dirid, &dirops.name).await.is_ok() {
+            let after = nfs_option_from_result(context.vfs().getattr(&dirid).await);
             return CREATE3res::Err((
                 nfsstat3::NFS3ERR_EXIST,
                 CREATE3resfail {
@@ -670,14 +670,14 @@ where
     let (fid, postopattr) = match createhow {
         createhow3::EXCLUSIVE(verf) => {
             let fid = context
-                .vfs
+                .vfs()
                 .create_exclusive(&dirid, &dirops.name, verf)
                 .await;
             (fid, post_op_attr::None)
         }
         createhow3::UNCHECKED(target_attributes) | createhow3::GUARDED(target_attributes) => {
             match context
-                .vfs
+                .vfs()
                 .create(&dirid, &dirops.name, target_attributes)
                 .await
             {
@@ -687,14 +687,14 @@ where
         }
     };
 
-    let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
+    let after = nfs_option_from_result(context.vfs().getattr(&dirid).await);
     let dir_wcc = wcc_data { before, after };
 
     match fid {
         Ok(fid) => {
             debug!("create success {xid} --> {fid:?}, {postopattr:?}");
             CREATE3res::Ok(CREATE3resok {
-                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter().fh_to_nfs(&fid)),
                 obj_attributes: postopattr,
                 dir_wcc,
             })
@@ -710,7 +710,7 @@ async fn nfsproc3_setattr<T>(context: RPCContext<T>, xid: u32, args: SETATTR3arg
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return SETATTR3res::Err((nfsstat3::NFS3ERR_ROFS, SETATTR3resfail::default()));
     }
@@ -743,7 +743,7 @@ where
         }
     }
 
-    match context.vfs.setattr(&id, args.new_attributes).await {
+    match context.vfs().setattr(&id, args.new_attributes).await {
         Ok(post_op_attr) => {
             debug!("setattr success {xid} --> {post_op_attr:?}");
             SETATTR3res::Ok(SETATTR3resok {
@@ -772,7 +772,7 @@ async fn nfsproc3_remove<T>(context: RPCContext<T>, xid: u32, args: REMOVE3args<
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return REMOVE3res::Err((nfsstat3::NFS3ERR_ROFS, REMOVE3resfail::default()));
     }
@@ -786,16 +786,16 @@ where
         }
     };
 
-    match context.vfs.remove(&dirid, &args.object.name).await {
+    match context.vfs().remove(&dirid, &args.object.name).await {
         Ok(()) => {
-            let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
+            let after = nfs_option_from_result(context.vfs().getattr(&dirid).await);
             debug!("remove success {xid}");
             REMOVE3res::Ok(REMOVE3resok {
                 dir_wcc: wcc_data { before, after },
             })
         }
         Err(stat) => {
-            let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
+            let after = nfs_option_from_result(context.vfs().getattr(&dirid).await);
             error!("remove error {xid} --> {stat}");
             REMOVE3res::Err((
                 stat,
@@ -815,7 +815,7 @@ async fn nfsproc3_rename<T>(
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return RENAME3res::Err((nfsstat3::NFS3ERR_ROFS, RENAME3resfail::default()));
     }
@@ -839,12 +839,12 @@ where
     };
 
     let result = context
-        .vfs
+        .vfs()
         .rename(&from_dirid, &args.from.name, &to_dirid, &args.to.name)
         .await;
 
-    let post_from_dir_attr = nfs_option_from_result(context.vfs.getattr(&from_dirid).await);
-    let post_to_dir_attr = nfs_option_from_result(context.vfs.getattr(&to_dirid).await);
+    let post_from_dir_attr = nfs_option_from_result(context.vfs().getattr(&from_dirid).await);
+    let post_to_dir_attr = nfs_option_from_result(context.vfs().getattr(&to_dirid).await);
 
     let fromdir_wcc = wcc_data {
         before: pre_from_dir_attr,
@@ -878,7 +878,7 @@ async fn nfsproc3_mkdir<T>(context: RPCContext<T>, xid: u32, args: MKDIR3args<'_
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return MKDIR3res::Err((nfsstat3::NFS3ERR_ROFS, MKDIR3resfail::default()));
     }
@@ -893,15 +893,15 @@ where
         }
     };
 
-    let result = context.vfs.mkdir(&dirid, &args.where_.name).await;
-    let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
+    let result = context.vfs().mkdir(&dirid, &args.where_.name).await;
+    let after = nfs_option_from_result(context.vfs().getattr(&dirid).await);
     let dir_wcc = wcc_data { before, after };
 
     match result {
         Ok((fid, fattr)) => {
             debug!("mkdir success {xid} --> {fid:?}, {fattr:?}");
             MKDIR3res::Ok(MKDIR3resok {
-                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter().fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc,
             })
@@ -921,7 +921,7 @@ async fn nfsproc3_symlink<T>(
 where
     T: NfsFileSystem,
 {
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+    if !matches!(context.vfs().capabilities(), VFSCapabilities::ReadWrite) {
         warn!("No write capabilities.");
         return SYMLINK3res::Err((nfsstat3::NFS3ERR_ROFS, SYMLINK3resfail::default()));
     }
@@ -937,7 +937,7 @@ where
     };
 
     match context
-        .vfs
+        .vfs()
         .symlink(
             &dirid,
             &args.where_.name,
@@ -949,11 +949,11 @@ where
         Ok((fid, fattr)) => {
             debug!("symlink success {xid} --> {fid:?}, {fattr:?}");
             SYMLINK3res::Ok(SYMLINK3resok {
-                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
+                obj: post_op_fh3::Some(context.file_handle_converter().fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc: wcc_data {
                     before: pre_dir_attr,
-                    after: nfs_option_from_result(context.vfs.getattr(&dirid).await),
+                    after: nfs_option_from_result(context.vfs().getattr(&dirid).await),
                 },
             })
         }
@@ -964,7 +964,7 @@ where
                 SYMLINK3resfail {
                     dir_wcc: wcc_data {
                         before: pre_dir_attr,
-                        after: nfs_option_from_result(context.vfs.getattr(&dirid).await),
+                        after: nfs_option_from_result(context.vfs().getattr(&dirid).await),
                     },
                 },
             ))
@@ -981,9 +981,9 @@ where
     T: NfsFileSystem,
 {
     let id = fh_to_id!(context, &args.symlink);
-    let symlink_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
+    let symlink_attributes = nfs_option_from_result(context.vfs().getattr(&id).await);
 
-    match context.vfs.readlink(&id).await {
+    match context.vfs().readlink(&id).await {
         Ok(data) => {
             debug!("readlink success {xid} --> {data:?}");
             READLINK3res::Ok(READLINK3resok {
@@ -1009,7 +1009,7 @@ async fn get_wcc_attr<T>(
 where
     T: NfsFileSystem,
 {
-    context.vfs.getattr(object_id).await.map(|v| wcc_attr {
+    context.vfs().getattr(object_id).await.map(|v| wcc_attr {
         size: v.size,
         mtime: v.mtime,
         ctime: v.ctime,
