@@ -41,7 +41,9 @@ jobs:
       run: cargo quickinstall rust-mcp-server
 
     - name: Install cargo-machete
-      run: cargo quickinstall cargo-machete
+      run: |
+        # cargo-machete 0.10.1 does not compile with the pinned Rust toolchain.
+        cargo install --locked --version '=0.9.2' cargo-machete
 
     - name: Install cargo-deny
       run: cargo quickinstall cargo-deny
