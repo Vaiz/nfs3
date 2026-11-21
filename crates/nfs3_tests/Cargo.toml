@@ -30,6 +30,10 @@ harness = false
 [[bench]]
 name = "rpc_allocations"
 harness = false
+# Run explicitly with --bench rpc_allocations -- --allocations; Metabench's
+# default engines include Gungraun, which needs an external runner on Linux.
+bench = false
+test = false
 
 [lints]
 workspace = true
