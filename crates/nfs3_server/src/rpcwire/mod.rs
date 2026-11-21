@@ -284,7 +284,7 @@ mod tests {
             let mut bytes = Vec::new();
             call.pack(&mut bytes)?;
             let context = connection.clone();
-            assert!(Arc::ptr_eq(&context.client_addr, &connection.client_addr));
+            assert!(std::ptr::eq(&raw const *context, &raw const *connection));
             let RpcCallOutcome::Reply(reply) =
                 handle_rpc_message(context, RpcRecord::new(bytes)).await?
             else {

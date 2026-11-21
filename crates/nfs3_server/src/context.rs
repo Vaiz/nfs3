@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -6,16 +7,34 @@ use tokio::sync::mpsc;
 use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::handle::FileHandleConverter;
 
-/// Context shared by calls on a connection. Cloning takes constant time and
-/// does not allocate.
-pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
+/// Context shared by calls on a connection. Cloning increments one reference
+/// count and does not allocate.
+pub struct RPCContext<T: crate::vfs::NfsFileSystem>(Arc<ConnectionContext<T>>);
+
+/// Connection state borrowed through an [`RPCContext`].
+#[doc(hidden)]
+pub struct ConnectionContext<T: crate::vfs::NfsFileSystem> {
     pub local_port: u16,
-    pub client_addr: Arc<String>,
+    pub client_addr: String,
     pub vfs: Arc<T>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
     pub export_name: Arc<String>,
     pub transaction_tracker: Arc<TransactionTracker>,
     pub(crate) file_handle_converter: FileHandleConverter,
+}
+
+impl<T: crate::vfs::NfsFileSystem> RPCContext<T> {
+    pub(crate) fn new(context: ConnectionContext<T>) -> Self {
+        Self(Arc::new(context))
+    }
+}
+
+impl<T: crate::vfs::NfsFileSystem> Deref for RPCContext<T> {
+    type Target = ConnectionContext<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> fmt::Debug for RPCContext<T>
@@ -38,15 +57,7 @@ where
     T: crate::vfs::NfsFileSystem,
 {
     fn clone(&self) -> Self {
-        Self {
-            local_port: self.local_port,
-            client_addr: Arc::clone(&self.client_addr),
-            vfs: Arc::clone(&self.vfs),
-            mount_signal: self.mount_signal.clone(),
-            export_name: Arc::clone(&self.export_name),
-            transaction_tracker: Arc::clone(&self.transaction_tracker),
-            file_handle_converter: self.file_handle_converter,
-        }
+        Self(Arc::clone(&self.0))
     }
 }
 
@@ -57,9 +68,9 @@ where
     T: crate::vfs::NfsFileSystem + 'static,
 {
     pub fn test_ctx(export_name: &str, vfs: Arc<T>) -> Self {
-        Self {
+        Self::new(ConnectionContext {
             local_port: 2049,
-            client_addr: Arc::new("localhost".to_owned()),
+            client_addr: "localhost".to_owned(),
             vfs,
             mount_signal: None,
             export_name: Arc::new(export_name.to_owned()),
@@ -69,7 +80,7 @@ where
                 1024,
             )),
             file_handle_converter: FileHandleConverter::new(),
-        }
+        })
     }
     #[must_use]
     pub fn root_dir(&self) -> nfs3_types::nfs3::nfs_fh3 {
