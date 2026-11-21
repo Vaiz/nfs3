@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.3...cargo-nfs3-server-v0.3.0) - 2026-11-21
+
+### Added
+
+- *(nfs3_server)* add a typed TCP listener builder ([#184](https://github.com/Vaiz/nfs3/pull/184))
+
+### Fixed
+
+- cap incoming RPC records in the CLI and server examples ([#185](https://github.com/Vaiz/nfs3/pull/185))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
+### Other
+
+- [**breaking**] bump MSRV to Rust 1.95 ([#171](https://github.com/Vaiz/nfs3/pull/171))
+
 ## [0.2.3](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.2...cargo-nfs3-server-v0.2.3) - 2026-10-21
 
 ### Other

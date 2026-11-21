@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.5.1...nfs3_macros-v0.5.2) - 2026-11-21
+
+### Fixed
+
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
 ## [0.5.1](https://github.com/Vaiz/nfs3/compare/nfs3_macros-v0.5.0...nfs3_macros-v0.5.1) - 2026-10-21
 
 ### Other

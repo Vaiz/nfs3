@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.11.1...nfs3_server-v0.12.0) - 2026-11-21
+
+### Added
+
+- *(nfs3_server)* add a typed TCP listener builder ([#184](https://github.com/Vaiz/nfs3/pull/184))
+- *(nfs3_server)* read RPC records directly from TCP sockets ([#182](https://github.com/Vaiz/nfs3/pull/182))
+- *(nfs3_server)* add support for limiting the size of incoming RPC messages ([#181](https://github.com/Vaiz/nfs3/pull/181))
+
+### Fixed
+
+- cap incoming RPC records in the CLI and server examples ([#185](https://github.com/Vaiz/nfs3/pull/185))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
+### Other
+
+- [**breaking**] bump MSRV to Rust 1.95 ([#171](https://github.com/Vaiz/nfs3/pull/171))
+
 ## [0.11.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.11.0...nfs3_server-v0.11.1) - 2026-10-21
 
 ### Added
