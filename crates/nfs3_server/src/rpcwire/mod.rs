@@ -160,7 +160,7 @@ pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 }
 
 /// Reads RPC records and dispatches each complete call in its own task.
-pub(crate) async fn read_and_dispatch<R, T>(
+pub(crate) async fn read_and_dispatch_loop<R, T>(
     mut record_reader: RpcRecordReader<R>,
     context: RPCContext<T>,
     replies: mpsc::Sender<anyhow::Result<RpcRecord>>,

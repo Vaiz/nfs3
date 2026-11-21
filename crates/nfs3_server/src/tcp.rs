@@ -11,7 +11,7 @@ use tracing::{debug, info};
 
 use crate::context::RPCContext;
 use crate::rpcwire::messages::RpcRecordReader;
-use crate::rpcwire::{read_and_dispatch, write_fragment};
+use crate::rpcwire::{read_and_dispatch_loop, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
@@ -64,7 +64,7 @@ where
     // Race whole loops: a reply cannot cancel a partial read, but a framing
     // error can cancel a blocked write and close the connection.
     tokio::select! {
-        result = read_and_dispatch(reader, context, replies) => result,
+        result = read_and_dispatch_loop(reader, context, replies) => result,
         result = async {
             while let Some(reply) = pending_replies.recv().await {
                 let Ok(reply) = reply else { anyhow::bail!("Error handling RPC message") };
