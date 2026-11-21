@@ -24,7 +24,7 @@ where
 
     // Race the whole loops so replies cannot interrupt a partially read record,
     // and a parser failure can close the socket even during a blocked write.
-    let result = tokio::select! {
+    tokio::select! {
         biased;
         result = handler.read_forever(&mut reader) => result,
         result = async {
@@ -33,9 +33,6 @@ where
             }
             Ok(())
         } => result,
-    };
-    if let Err(e) = &result {
-        debug!("Message handling closed: {e}");
     }
-    result
+    .inspect_err(|e| debug!("Message handling error: {e}"))
 }
