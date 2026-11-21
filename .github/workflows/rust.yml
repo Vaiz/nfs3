@@ -140,6 +140,9 @@ jobs:
     - name: clippy
       run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
+    - name: clippy (opt-in allocation benchmark)
+      run: cargo clippy --locked --all-features -p nfs3_tests --bench rpc_allocations -- -D warnings
+
     - name: machete
       run: |
         # cargo-machete 0.10.1 does not compile with the pinned Rust toolchain.
