@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use super::util::{add_padding, get_padding, zero_padding};
-use super::{Error, Pack, Result, Unpack};
+use super::{Error, Pack, Result};
 use crate::rpc::fragment_header;
 
 /// Shared payloads shorter than this are copied into the encoder head.
@@ -18,92 +18,6 @@ const MIN_SHARED_CHUNK: usize = 1024;
 const MAX_INITIAL_HEAD: usize = 1024;
 
 const MARKER_LEN: usize = 4;
-
-/// XDR input: an in-memory RPC record (or any complete XDR buffer).
-///
-/// Every read is bounds-checked and returns [`Error`] instead of panicking.
-/// Variable-length opaque data either shares the input buffer or is copied:
-/// it is shared only when it covers at least half of the original buffer, so
-/// a small decoded value never pins a large record in memory.
-#[derive(Debug, Clone)]
-pub struct Decoder {
-    buf: Bytes,
-    record_len: usize,
-}
-
-impl Decoder {
-    /// Creates a decoder over a complete XDR buffer.
-    pub fn new(buf: impl Into<Bytes>) -> Self {
-        let buf = buf.into();
-        Self {
-            record_len: buf.len(),
-            buf,
-        }
-    }
-
-    /// Returns the number of bytes not decoded yet.
-    #[must_use]
-    pub const fn remaining(&self) -> usize {
-        self.buf.len()
-    }
-
-    /// Returns `true` if all input has been decoded.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.buf.is_empty()
-    }
-
-    /// Returns the number of bytes decoded so far.
-    #[must_use]
-    pub const fn position(&self) -> usize {
-        self.record_len - self.buf.len()
-    }
-
-    /// Returns the bytes that have not been decoded yet.
-    #[must_use]
-    pub fn into_remaining(self) -> Bytes {
-        self.buf
-    }
-
-    pub(crate) fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
-        if self.buf.len() < N {
-            return Err(Error::UnexpectedEof);
-        }
-        let mut out = [0; N];
-        self.buf.copy_to_slice(&mut out);
-        Ok(out)
-    }
-
-    /// Skips and validates the zero padding that follows `len` data bytes.
-    pub(crate) fn skip_padding(&mut self, len: usize) -> Result<()> {
-        let padding = get_padding(len);
-        let bytes = self.buf.get(..padding).ok_or(Error::UnexpectedEof)?;
-        if bytes.iter().any(|&b| b != 0) {
-            return Err(Error::NonZeroPadding);
-        }
-        self.buf.advance(padding);
-        Ok(())
-    }
-
-    /// Reads `len` bytes of opaque data followed by its padding.
-    ///
-    /// The length is validated against the remaining input before anything is
-    /// allocated.
-    pub(crate) fn read_opaque(&mut self, len: usize) -> Result<Bytes> {
-        if len > self.buf.len() || get_padding(len) > self.buf.len() - len {
-            return Err(Error::InvalidLength(len));
-        }
-        let data = if len.saturating_mul(2) >= self.record_len {
-            self.buf.split_to(len)
-        } else {
-            let data = Bytes::copy_from_slice(&self.buf[..len]);
-            self.buf.advance(len);
-            data
-        };
-        self.skip_padding(len)?;
-        Ok(data)
-    }
-}
 
 /// XDR output: a contiguous head buffer plus at most one shared payload.
 ///
@@ -264,13 +178,12 @@ impl Encoded {
     /// Returns all bytes in one buffer, copying only if there is a shared payload.
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
-        if self.payload.is_empty() && self.tail.is_empty() {
-            return self.head.freeze();
-        }
-        let chunks = self.chunks();
-        let mut out = BytesMut::with_capacity(chunks.iter().map(|c| c.len()).sum());
-        for chunk in chunks {
-            out.extend_from_slice(chunk);
+        let mut out = self.head;
+        if !self.payload.is_empty() || !self.tail.is_empty() {
+            // Reuses spare head capacity, e.g. the full size reserved by `encode`.
+            out.reserve(self.payload.len() + self.tail.len());
+            out.extend_from_slice(&self.payload);
+            out.extend_from_slice(&self.tail);
         }
         out.freeze()
     }
@@ -283,91 +196,22 @@ pub fn encode<T: Pack + ?Sized>(value: &T) -> Result<Bytes> {
     Ok(out.finish().into_bytes())
 }
 
-/// Decodes a `T` that must occupy all of `buf`.
-pub fn decode<T: Unpack>(buf: impl Into<Bytes>) -> Result<T> {
-    let mut input = Decoder::new(buf);
-    let value = T::unpack(&mut input)?;
-    if !input.is_empty() {
-        return Err(Error::TrailingBytes(input.remaining()));
-    }
-    Ok(value)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xdr_codec::Opaque;
-
-    fn byte_range(bytes: &[u8]) -> std::ops::Range<usize> {
-        let start = bytes.as_ptr() as usize;
-        start..start + bytes.len()
-    }
+    use crate::xdr_codec::{Decoder, Opaque, Unpack};
 
     #[test]
-    fn length_beyond_input_is_rejected_before_allocating() {
-        // Claims a 4 GiB - 1 opaque with only four bytes of input.
-        let mut input = Decoder::new(&[0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4][..]);
-        assert_eq!(
-            Opaque::unpack(&mut input).unwrap_err(),
-            Error::InvalidLength(0xffff_ffff)
-        );
-        // Data fits but its padding does not.
-        assert_eq!(
-            decode::<Opaque<'_>>(&[0, 0, 0, 1, 7][..]).unwrap_err(),
-            Error::InvalidLength(1)
-        );
-        assert_eq!(
-            decode::<Vec<u32>>(&[0, 0, 0, 2, 0, 0, 0, 1][..]).unwrap_err(),
-            Error::InvalidLength(2)
-        );
-    }
-
-    #[test]
-    fn non_zero_padding_is_rejected() {
-        assert_eq!(
-            decode::<Opaque<'_>>(&[0, 0, 0, 1, 7, 0, 1, 0][..]).unwrap_err(),
-            Error::NonZeroPadding
-        );
-        assert_eq!(
-            decode::<[u8; 2]>(&[1, 2, 0, 1][..]).unwrap_err(),
-            Error::NonZeroPadding
-        );
-        assert_eq!(
-            decode::<Opaque<'_>>(&[0, 0, 0, 1, 7, 0, 0, 0][..]).unwrap(),
-            Opaque::borrowed(&[7])
-        );
-    }
-
-    #[test]
-    fn decode_requires_full_consumption() {
-        assert_eq!(
-            decode::<u32>(&[0, 0, 0, 1, 0][..]).unwrap_err(),
-            Error::TrailingBytes(1)
-        );
-        assert_eq!(
-            decode::<u32>(&[0, 0, 0][..]).unwrap_err(),
-            Error::UnexpectedEof
-        );
-    }
-
-    #[test]
-    fn large_opaque_shares_the_record_and_small_one_is_copied() {
-        let mut record = BytesMut::new();
-        record.put_u32(4);
-        record.put_slice(b"name");
-        record.put_u32(100);
-        record.put_bytes(0xAB, 100);
-        let record = record.freeze();
-        let record_range = byte_range(&record);
-
-        let mut input = Decoder::new(record);
-        let small = Opaque::unpack(&mut input).unwrap();
-        let large = Opaque::unpack(&mut input).unwrap();
-        assert!(input.is_empty());
-        assert_eq!(&*small, b"name");
-        assert!(!record_range.contains(&(small.as_ptr() as usize)));
-        let large_range = byte_range(&large);
-        assert!(record_range.start <= large_range.start && large_range.end <= record_range.end);
+    fn into_bytes_appends_the_payload_to_the_reserved_head() {
+        let payload = Bytes::from(vec![0xCD; MIN_SHARED_CHUNK]);
+        let value = Opaque::from_bytes(payload);
+        let mut out = Encoder::with_head_capacity(value.packed_size());
+        value.pack(&mut out).unwrap();
+        let encoded = out.finish();
+        let head = encoded.chunks()[0].as_ptr();
+        let bytes = encoded.into_bytes();
+        assert_eq!(bytes.as_ptr(), head);
+        assert_eq!(&bytes[4..], &*value);
     }
 
     #[test]

@@ -2,8 +2,8 @@
 
 mod iterator;
 
+use bytes::Bytes;
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::bytes::Bytes;
 use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3};
 
 use super::{

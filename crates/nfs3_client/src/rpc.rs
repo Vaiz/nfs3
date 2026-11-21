@@ -3,7 +3,6 @@
 use std::fmt::Debug;
 use std::io::{self, IoSlice};
 
-use bytes::Bytes;
 use nfs3_types::rpc::{
     RPC_VERSION_2, RecordBuf, accept_stat_data, call_body, msg_body, opaque_auth, reply_body,
     rpc_msg,
@@ -116,7 +115,7 @@ where
     where
         T: Unpack,
     {
-        let mut input = Decoder::new(Self::recv_record(io).await?);
+        let mut input = Self::recv_record(io).await?;
         let resp_msg = rpc_msg::unpack(&mut input)?;
 
         if resp_msg.xid != xid {
@@ -144,7 +143,7 @@ where
     }
 
     /// Reads one RPC record (all fragments) into a single buffer.
-    async fn recv_record(io: &mut IO) -> io::Result<Bytes> {
+    async fn recv_record(io: &mut IO) -> io::Result<Decoder> {
         let mut record = RecordBuf::new(usize::MAX);
         loop {
             let mut marker = [0u8; 4];

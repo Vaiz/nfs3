@@ -49,10 +49,7 @@ Usage
 =====
 
 You simply need to implement the `vfs::NfsReadFileSystem` and (optionaly) `vfs::NfsFileSystem`
-traits. File data is passed as `bytes::Bytes` (re-exported as
-`nfs3_server::nfs3_types::bytes`): data returned by `read` is sent without another
-copy, and `write` receives large payloads as a view into the received RPC record.
-See memfs.rs for an example and bin/main.rs for how to actually start
+traits. See memfs.rs for an example and bin/main.rs for how to actually start
 a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.

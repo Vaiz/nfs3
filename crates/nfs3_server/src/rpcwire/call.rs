@@ -13,11 +13,10 @@ pub(crate) struct RpcCall {
     args: Decoder,
 }
 
-impl TryFrom<Bytes> for RpcCall {
+impl TryFrom<Decoder> for RpcCall {
     type Error = anyhow::Error;
 
-    fn try_from(record: Bytes) -> Result<Self, Self::Error> {
-        let mut args = Decoder::new(record);
+    fn try_from(mut args: Decoder) -> Result<Self, Self::Error> {
         let rpc = match rpc_msg::unpack(&mut args) {
             Ok(ok) => ok,
             Err(err) => {

@@ -1,4 +1,4 @@
-use nfs3_server::nfs3_types::bytes::Bytes;
+use bytes::Bytes;
 use nfs3_server::vfs::{
     DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
     VFSCapabilities,

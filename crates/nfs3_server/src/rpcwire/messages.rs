@@ -1,8 +1,9 @@
 use std::io;
 use std::num::NonZeroUsize;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use nfs3_types::rpc::RecordBuf;
+use nfs3_types::xdr_codec::Decoder;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::units::KIBIBYTE;
@@ -34,7 +35,7 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
     /// Reads an RPC record, returning `Ok(None)` only at EOF between records.
     ///
     /// A partial record or a record exceeding the configured payload limit is an error.
-    pub(crate) async fn read_record(&mut self) -> io::Result<Option<Bytes>> {
+    pub(crate) async fn read_record(&mut self) -> io::Result<Option<Decoder>> {
         if self.read_ahead.is_empty() && self.fill_read_ahead().await? == 0 {
             return Ok(None);
         }
@@ -97,6 +98,7 @@ mod tests {
                 .unwrap_ready()
                 .expect("valid record")
                 .expect("expected a record");
+            let record = record.into_remaining();
             assert_eq!(record, expected);
             // Records never share an allocation with the read-ahead buffer.
             if !record.is_empty() {
@@ -122,7 +124,7 @@ mod tests {
             .unwrap_ready()
             .expect("valid record")
             .expect("expected a record");
-        assert_eq!(record, payload);
+        assert_eq!(record.into_remaining(), payload);
     }
 
     #[test]
@@ -141,7 +143,8 @@ mod tests {
                 .read_record()
                 .unwrap_ready()
                 .expect("uncapped record")
-                .expect("expected a record"),
+                .expect("expected a record")
+                .into_remaining(),
             b"abcd"[..],
         );
     }

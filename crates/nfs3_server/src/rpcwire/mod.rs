@@ -1,7 +1,6 @@
 use std::io::{self, IoSlice};
 use std::time::Instant;
 
-use bytes::Bytes;
 use call::{RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
 use nfs3_types::rpc::{
@@ -30,7 +29,7 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: Bytes,
+    message: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
