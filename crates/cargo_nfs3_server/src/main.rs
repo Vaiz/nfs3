@@ -132,11 +132,11 @@ async fn start_server(
     })
     .expect("Error setting Ctrl-C handler");
 
-    let mut listener = builder
+    let listener = builder
+        .export_name(export_name)
         .bind(&bind_addr)
         .await
         .expect("failed to bind server");
-    listener.with_export_name(export_name);
     let handle_future = listener.handle_forever();
 
     tokio::select! {

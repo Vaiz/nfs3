@@ -23,10 +23,15 @@ pub struct Builder<FS = ()> {
     options: ListenerOptions,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct ListenerOptions {
     generation_number: Option<u64>,
     max_rpc_record_size: Option<NonZeroUsize>,
+    export_name: Option<Arc<String>>,
+}
+
+fn normalized_export_name(name: &str) -> Arc<String> {
+    Arc::new(format!("/{}", name.trim_matches('/')))
 }
 
 impl Builder {
@@ -36,7 +41,7 @@ impl Builder {
     }
 
     /// Supplies a filesystem.
-    pub const fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
+    pub fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
         Builder {
             fs,
             options: self.options,
@@ -44,7 +49,7 @@ impl Builder {
     }
 
     /// Supplies a filesystem that only supports reads.
-    pub const fn read_only_filesystem<RO: NfsReadFileSystem + 'static>(
+    pub fn read_only_filesystem<RO: NfsReadFileSystem + 'static>(
         self,
         fs: RO,
     ) -> Builder<ReadOnlyAdapter<RO>> {
@@ -62,6 +67,13 @@ impl Default for Builder {
 }
 
 impl<FS> Builder<FS> {
+    /// Sets the NFS export path (default: `/`). For example, `data` and `/data/`
+    /// both export the filesystem at `/data`.
+    pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
+        self.options.export_name = Some(normalized_export_name(name.as_ref()));
+        self
+    }
+
     /// Sets the file handle generation number. Instances sharing the same filesystem
     /// can use the same generation number to keep file handles valid across instances.
     pub const fn generation_number(mut self, generation_number: u64) -> Self {
@@ -231,7 +243,8 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result = Self::bind_internal(&ip, port, Arc::clone(&arcfs), options).await;
+                let result =
+                    Self::bind_internal(&ip, port, Arc::clone(&arcfs), options.clone()).await;
 
                 match result {
                     Err(_) => {
@@ -277,7 +290,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             port,
             arcfs,
             mount_signal: None,
-            export_name: Arc::from("/".to_string()),
+            export_name: options.export_name.unwrap_or_else(|| Arc::new("/".into())),
             transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
             file_handle_converter,
@@ -297,20 +310,10 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
         ))
     }
 
-    /// Sets an optional NFS export name.
-    ///
-    /// - `export_name`: The desired export name without slashes.
-    ///
-    /// Example: Name `foo` results in the export path `/foo`.
-    /// Default path is `/` if not set.
+    /// Sets the NFS export path. Prefer [`Builder::export_name`] before binding.
+    #[deprecated(note = "use tcp::Builder::export_name before binding instead")]
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
-        self.export_name = Arc::new(format!(
-            "/{}",
-            export_name
-                .as_ref()
-                .trim_end_matches('/')
-                .trim_start_matches('/')
-        ));
+        self.export_name = normalized_export_name(export_name.as_ref());
     }
 }
 
