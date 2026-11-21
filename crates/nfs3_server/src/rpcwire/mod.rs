@@ -169,9 +169,11 @@ where
     R: AsyncBufRead + Unpin,
     T: NfsFileSystem + 'static,
 {
+    // Read before reserving so the next framing error can still be
+    // surfaced even when all reply slots are in use.
     while let Some(message) = record_reader.read_record().await? {
-        // Read before reserving so the next framing error can still be
-        // surfaced even when all reply slots are in use.
+        // Reserve before spawning so a client can't accumulate unbounded
+        // handler tasks: running calls and queued replies share the same slots.
         let permit = replies.clone().reserve_owned().await?;
         let context = context.clone();
         tokio::spawn(async move {
