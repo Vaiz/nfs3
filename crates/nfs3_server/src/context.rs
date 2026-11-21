@@ -5,9 +5,10 @@ use nfs3_types::rpc::auth_unix;
 use tokio::sync::mpsc;
 
 use crate::transaction_tracker::TransactionTracker;
+use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
 
-pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
+pub struct RPCContext<T: NfsFileSystem> {
     pub local_port: u16,
     pub client_addr: String,
     pub auth: auth_unix,
@@ -20,7 +21,7 @@ pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
 
 impl<T> fmt::Debug for RPCContext<T>
 where
-    T: crate::vfs::NfsFileSystem,
+    T: NfsFileSystem,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("RPCContext")
@@ -36,7 +37,7 @@ where
 
 impl<T> Clone for RPCContext<T>
 where
-    T: crate::vfs::NfsFileSystem,
+    T: NfsFileSystem,
 {
     fn clone(&self) -> Self {
         Self {
@@ -56,7 +57,7 @@ where
 #[cfg(feature = "__test_reexports")]
 impl<T> RPCContext<T>
 where
-    T: crate::vfs::NfsFileSystem + 'static,
+    T: NfsFileSystem + 'static,
 {
     pub fn test_ctx(export_name: &str, vfs: Arc<T>) -> Self {
         Self {

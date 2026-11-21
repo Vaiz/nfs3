@@ -8,7 +8,7 @@ use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::vfs::NfsFileSystem;
 
 #[cfg_attr(
@@ -20,8 +20,8 @@ use crate::vfs::NfsFileSystem;
 )]
 pub async fn handle_mount<T>(
     context: RPCContext<T>,
-    message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult>
+    message: RpcCall,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {

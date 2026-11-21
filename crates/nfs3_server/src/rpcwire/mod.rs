@@ -1,8 +1,7 @@
 use std::io::Cursor;
-use std::num::NonZeroUsize;
 use std::time::Instant;
 
-use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage};
+use messages::{RpcCall, RpcCallOutcome, RpcRecord, RpcRecordReader};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
@@ -28,12 +27,12 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: CompleteRpcMessage,
-) -> anyhow::Result<HandleResult>
+    message: RpcRecord,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {
-    let message = IncomingRpcMessage::try_from(message)?;
+    let message = RpcCall::try_from(message)?;
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
@@ -67,7 +66,7 @@ where
             Some(err) => return message.into_error_reply(err),
             None => {
                 // This is a retransmission, so we don't need to do anything
-                return Ok(HandleResult::NoReply);
+                return Ok(RpcCallOutcome::NoReply);
             }
         }
     }
@@ -90,9 +89,9 @@ where
 /// Handles the RPC message and returns a result. The handler is an async function
 pub(crate) async fn handle<I, O, T>(
     context: RPCContext<T>,
-    mut message: IncomingRpcMessage,
+    mut message: RpcCall,
     handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
-) -> anyhow::Result<HandleResult>
+) -> anyhow::Result<RpcCallOutcome>
 where
     I: Unpack,
     O: Pack + Send + 'static,
@@ -145,7 +144,7 @@ fn lock_transaction(
 )]
 pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
-    buf: CompleteRpcMessage,
+    buf: RpcRecord,
 ) -> Result<(), anyhow::Error> {
     // TODO: split into many fragments
     let buf = buf.into_inner();
@@ -158,14 +157,13 @@ pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub(crate) type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
+pub(crate) type SocketMessageType = Result<RpcRecord, anyhow::Error>;
 
 /// Reads RPC records and dispatches each complete message in its own task.
 #[derive(Debug)]
 pub(crate) struct SocketMessageHandler<T: NfsFileSystem + 'static> {
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
     context: RPCContext<T>,
-    max_rpc_record_size: Option<NonZeroUsize>,
 }
 
 impl<T> SocketMessageHandler<T>
@@ -175,34 +173,33 @@ where
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
     pub(crate) fn new(
         context: RPCContext<T>,
-        max_rpc_record_size: Option<NonZeroUsize>,
     ) -> (Self, mpsc::UnboundedReceiver<SocketMessageType>) {
         let (msgsend, msgrecv) = mpsc::unbounded_channel();
         (
             Self {
                 reply_send_channel: msgsend,
                 context,
-                max_rpc_record_size,
             },
             msgrecv,
         )
     }
 
-    pub(crate) async fn read_forever(
+    /// Reads RPC messages from the input and spawns tasks to handle them.
+    pub(crate) async fn read_and_dispatch(
         self,
-        input: &mut (impl AsyncBufRead + Unpin),
+        mut reader: RpcRecordReader<impl AsyncBufRead + Unpin>,
     ) -> Result<(), anyhow::Error> {
-        while let Some(message) = CompleteRpcMessage::recv(input, self.max_rpc_record_size).await? {
+        while let Some(message) = reader.read_record().await? {
             let context = self.context.clone();
             let out = self.reply_send_channel.clone();
             tokio::spawn(async move {
                 let result = handle_rpc_message(context, message).await;
 
                 match result {
-                    Ok(HandleResult::Reply(reply)) => {
+                    Ok(RpcCallOutcome::Reply(reply)) => {
                         let _ = out.send(Ok(reply));
                     }
-                    Ok(HandleResult::NoReply) => {
+                    Ok(RpcCallOutcome::NoReply) => {
                         // No reply needed
                     }
                     Err(err) => {
