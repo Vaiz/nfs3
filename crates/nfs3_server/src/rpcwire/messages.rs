@@ -22,14 +22,17 @@ impl RpcRecord {
 #[derive(Debug)]
 pub(crate) struct RpcRecordReader<R> {
     input: R,
-    max_rpc_record_size: Option<NonZeroUsize>,
+    max_rpc_record_size: usize,
 }
 
 impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
     pub(crate) const fn new(input: R, max_rpc_record_size: Option<NonZeroUsize>) -> Self {
         Self {
             input,
-            max_rpc_record_size,
+            max_rpc_record_size: match max_rpc_record_size {
+                Some(max) => max.get(),
+                None => usize::MAX,
+            },
         }
     }
 
@@ -50,10 +53,7 @@ impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
             let total = payload.len().checked_add(fragment_len).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "RPC record size overflow")
             })?;
-            if self
-                .max_rpc_record_size
-                .is_some_and(|max| total > max.get())
-            {
+            if total > self.max_rpc_record_size {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "RPC record exceeds configured size limit",
