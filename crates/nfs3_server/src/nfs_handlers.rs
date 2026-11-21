@@ -18,8 +18,8 @@ use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
+use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 

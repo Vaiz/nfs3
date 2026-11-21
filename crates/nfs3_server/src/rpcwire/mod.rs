@@ -1,23 +1,23 @@
 use std::io::Cursor;
 use std::time::Instant;
 
-use anyhow::anyhow;
-use messages::{RpcCall, RpcCallOutcome, RpcRecord, RpcRecordReader};
+use call::{RpcCall, RpcCallOutcome};
+use messages::{RpcRecord, RpcRecordReader};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
 use nfs3_types::xdr_codec::{Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncWriteExt, BufReader, DuplexStream};
+use tokio::io::{AsyncBufRead, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
 use crate::context::RPCContext;
 use crate::transaction_tracker::{self, TransactionError, TransactionLock};
-use crate::units::KIBIBYTE;
 use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
+pub(crate) mod call;
 pub(crate) mod messages;
 
 // Information from RFC 5531
@@ -159,63 +159,35 @@ pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub(crate) type SocketMessageType = Result<RpcRecord, anyhow::Error>;
-
-/// Reads RPC records from the duplex stream and dispatches each complete call in its own task.
-#[derive(Debug)]
-pub(crate) struct SocketMessageHandler<T: NfsFileSystem + 'static> {
-    record_reader: RpcRecordReader<BufReader<DuplexStream>>,
-    reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
+/// Reads RPC records and dispatches each complete call in its own task.
+pub(crate) async fn read_and_dispatch_loop<R, T>(
+    mut record_reader: RpcRecordReader<R>,
     context: RPCContext<T>,
-}
-
-impl<T> SocketMessageHandler<T>
+    replies: mpsc::Sender<anyhow::Result<RpcRecord>>,
+) -> anyhow::Result<()>
 where
+    R: AsyncBufRead + Unpin,
     T: NfsFileSystem + 'static,
 {
-    /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
-    pub(crate) fn new(
-        context: RPCContext<T>,
-    ) -> (
-        Self,
-        DuplexStream,
-        mpsc::UnboundedReceiver<SocketMessageType>,
-    ) {
-        let (socksend, sockrecv) = tokio::io::duplex(256 * KIBIBYTE as usize);
-        let (msgsend, msgrecv) = mpsc::unbounded_channel();
-        (
-            Self {
-                record_reader: RpcRecordReader::new(BufReader::new(sockrecv), None),
-                reply_send_channel: msgsend,
-                context,
-            },
-            socksend,
-            msgrecv,
-        )
-    }
-
-    pub(crate) async fn read_and_dispatch(mut self) -> std::io::Result<()> {
-        while let Some(message) = self.record_reader.read_record().await? {
-            let context = self.context.clone();
-            let send = self.reply_send_channel.clone();
-            tokio::spawn(async move {
-                let result = handle_rpc_message(context, message).await;
-
-                match result {
-                    Ok(RpcCallOutcome::Reply(reply)) => {
-                        let _ = send.send(Ok(reply));
-                    }
-                    Ok(RpcCallOutcome::NoReply) => {
-                        // No reply needed
-                    }
-                    Err(err) => {
-                        error!("Error handling RPC message: {err}");
-                        let _ = send.send(Err(anyhow!("Error handling RPC message")));
-                    }
+    // Read before reserving so the next framing error can still be
+    // surfaced even when all reply slots are in use.
+    while let Some(message) = record_reader.read_record().await? {
+        // Reserve before spawning so a client can't accumulate unbounded
+        // handler tasks: running calls and queued replies share the same slots.
+        let permit = replies.clone().reserve_owned().await?;
+        let context = context.clone();
+        tokio::spawn(async move {
+            match handle_rpc_message(context, message).await {
+                Ok(RpcCallOutcome::Reply(reply)) => {
+                    permit.send(Ok(reply));
                 }
-            });
-        }
-
-        Ok(())
+                Ok(RpcCallOutcome::NoReply) => {}
+                Err(err) => {
+                    error!("Error handling RPC message: {err}");
+                    permit.send(Err(err));
+                }
+            }
+        });
     }
+    Ok(())
 }
