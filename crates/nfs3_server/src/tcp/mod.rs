@@ -4,7 +4,7 @@ mod socket;
 mod tests;
 
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +20,7 @@ use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct ListenerOptions {
     generation_number: Option<u64>,
     max_rpc_record_size: Option<NonZeroUsize>,
@@ -83,9 +83,14 @@ where
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsReadFileSystem`].
-    #[deprecated(note = "use tcp::Builder::new().read_only_filesystem(fs).bind(addr) instead")]
+    ///
+    /// The legacy `auto:port` mode is deprecated but still accepted here.
+    #[deprecated(
+        note = "use tcp::Builder::new().read_only_filesystem(fs).bind(socket_addr); auto:port is \
+                deprecated"
+    )]
     pub async fn bind_ro(ipstr: &str, fs: RO) -> io::Result<Self> {
-        Builder::new().read_only_filesystem(fs).bind(ipstr).await
+        Self::bind_legacy(ipstr, ReadOnlyAdapter::new(fs), ListenerOptions::default()).await
     }
 }
 
@@ -95,9 +100,13 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsFileSystem`].
-    #[deprecated(note = "use tcp::Builder::new().filesystem(fs).bind(addr) instead")]
+    ///
+    /// The legacy `auto:port` mode is deprecated but still accepted here.
+    #[deprecated(
+        note = "use tcp::Builder::new().filesystem(fs).bind(socket_addr); auto:port is deprecated"
+    )]
     pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
-        Builder::new().filesystem(fs).bind(ipstr).await
+        Self::bind_legacy(ipstr, fs, ListenerOptions::default()).await
     }
 
     /// Create a new `NFSTcpListener` with a specific generation number.
@@ -106,23 +115,31 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// stale handles from previous server instances. When multiple NFS server
     /// instances share the same generation number, file handles remain valid
     /// across all instances (e.g. behind a load balancer).
+    ///
+    /// The legacy `auto:port` mode is deprecated but still accepted here.
     #[deprecated(
-        note = "use tcp::Builder::new().filesystem(fs).generation_number(number).bind(addr) \
-                instead"
+        note = "use tcp::Builder::new().filesystem(fs).generation_number(number).\
+                bind(socket_addr); auto:port is deprecated"
     )]
     pub async fn bind_with_generation(
         ipstr: &str,
         fs: T,
         generation_number: u64,
     ) -> io::Result<Self> {
-        Builder::new()
-            .filesystem(fs)
-            .generation_number(generation_number)
-            .bind(ipstr)
-            .await
+        Self::bind_legacy(
+            ipstr,
+            fs,
+            ListenerOptions {
+                generation_number: Some(generation_number),
+                ..ListenerOptions::default()
+            },
+        )
+        .await
     }
 
-    async fn bind_inner(ipstr: &str, fs: T, options: ListenerOptions) -> io::Result<Self> {
+    async fn bind_legacy(ipstr: &str, fs: T, options: ListenerOptions) -> io::Result<Self> {
+        const LAST_HOST: u16 = 33;
+
         let (ip, port) = ipstr.split_once(':').ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::AddrNotAvailable,
@@ -136,50 +153,25 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             )
         })?;
 
-        let arcfs: Arc<T> = Arc::new(fs);
-
-        if ip == "auto" {
-            let mut num_tries_left = 32;
-
-            for try_ip in 1u16.. {
-                let ip = generate_host_ip(try_ip);
-
-                let result =
-                    Self::bind_internal(&ip, port, Arc::clone(&arcfs), options.clone()).await;
-
-                match result {
-                    Err(_) => {
-                        if num_tries_left == 0 {
-                            return result;
-                        }
-                        num_tries_left -= 1;
-                    }
-                    Ok(_) => {
-                        return result;
-                    }
-                }
-            }
-            unreachable!(); // Does not detect automatically that loop above never terminates.
-        } else {
-            // Otherwise, try this.
-            Self::bind_internal(ip, port, arcfs, options).await
+        if ip != "auto" {
+            let listener = TcpListener::bind((ip, port)).await?;
+            return Self::from_listener(listener, fs, options);
         }
+
+        for host in 1..=LAST_HOST {
+            let ip = generate_host_ip(host);
+            match TcpListener::bind((ip.as_str(), port)).await {
+                Ok(listener) => return Self::from_listener(listener, fs, options),
+                Err(err) if host == LAST_HOST => return Err(err),
+                Err(_) => {}
+            }
+        }
+        unreachable!("the final bind attempt always returns");
     }
 
-    async fn bind_internal(
-        ip: &str,
-        port: u16,
-        arcfs: Arc<T>,
-        options: ListenerOptions,
-    ) -> io::Result<Self> {
-        let ipstr = format!("{ip}:{port}");
-        let listener = TcpListener::bind(&ipstr).await?;
-        info!("Listening on {:?}", &ipstr);
-
-        let port = match listener.local_addr().expect("failed to get local address") {
-            SocketAddr::V4(s) => s.port(),
-            SocketAddr::V6(s) => s.port(),
-        };
+    fn from_listener(listener: TcpListener, fs: T, options: ListenerOptions) -> io::Result<Self> {
+        let addr = listener.local_addr()?;
+        info!("Listening on {addr}");
 
         let file_handle_converter = options.generation_number.map_or_else(
             crate::vfs::handle::FileHandleConverter::new,
@@ -188,8 +180,8 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
 
         Ok(Self {
             listener,
-            port,
-            arcfs,
+            port: addr.port(),
+            arcfs: Arc::new(fs),
             mount_signal: None,
             export_name: options.export_name.unwrap_or_else(|| Arc::new("/".into())),
             transaction_tracker: Self::new_transaction_tracker(),

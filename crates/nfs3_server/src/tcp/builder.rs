@@ -1,5 +1,8 @@
 use std::io;
+use std::net::SocketAddr;
 use std::num::NonZeroUsize;
+
+use tokio::net::TcpListener;
 
 use super::{ListenerOptions, NFSTcpListener, normalized_export_name};
 use crate::vfs::adapters::ReadOnlyAdapter;
@@ -76,10 +79,12 @@ impl<FS> Builder<FS> {
 }
 
 impl<T: NfsFileSystem + 'static> Builder<T> {
-    /// Binds to an `ip:port` address.
+    /// Binds to an IPv4 or IPv6 socket address.
     ///
-    /// Use `auto:port` to select a loopback address or port `0` to let the OS choose a port.
-    pub async fn bind(self, addr: &str) -> io::Result<NFSTcpListener<T>> {
-        NFSTcpListener::bind_inner(addr, self.fs, self.options).await
+    /// Use port `0` to let the OS choose an available port. The legacy
+    /// `auto:port` mode is deprecated; pass an explicit loopback IP instead.
+    pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
+        let listener = TcpListener::bind(addr).await?;
+        NFSTcpListener::from_listener(listener, self.fs, self.options)
     }
 }

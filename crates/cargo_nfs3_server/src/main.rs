@@ -1,3 +1,4 @@
+use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::path::Path;
 
@@ -31,7 +32,7 @@ struct Args {
 
     /// IP address to bind the server to
     #[arg(short = 'i', long, default_value = "0.0.0.0")]
-    bind_ip: String,
+    bind_ip: IpAddr,
 
     /// Port to bind the server to
     #[arg(short = 'p', long, default_value_t = 11111)]
@@ -63,7 +64,7 @@ async fn main() {
     let args = Args::parse();
     let guards = logging::init_logging(&args.log_level, args.log_file.as_deref(), !args.quiet);
 
-    let bind_addr = format!("{}:{}", args.bind_ip, args.bind_port);
+    let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
     let export_path = args.export_name;
 
     if args.memfs {
@@ -102,7 +103,7 @@ async fn main() {
     reason = "it's not expected to be read"
 )]
 async fn start_server(
-    bind_addr: String,
+    bind_addr: SocketAddr,
     export_name: String,
     builder: Builder<impl NfsFileSystem + 'static>,
     mut guards: Vec<WorkerGuard>,
@@ -120,7 +121,7 @@ async fn start_server(
 
     let listener = builder
         .export_name(export_name)
-        .bind(&bind_addr)
+        .bind(bind_addr)
         .await
         .expect("failed to bind server");
     let handle_future = listener.handle_forever();

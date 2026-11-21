@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
 use std::io::SeekFrom;
+use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -64,7 +65,10 @@ async fn main() {
     let listener = Builder::new()
         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
         .filesystem(fs)
-        .bind(&format!("{bind_ip}:{bind_port}"))
+        .bind(SocketAddr::new(
+            bind_ip.parse().expect("invalid bind IP address"),
+            bind_port,
+        ))
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();

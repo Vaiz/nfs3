@@ -26,7 +26,7 @@
 //!     let listener = Builder::new()
 //!         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
 //!         .filesystem(memfs)
-//!         .bind("0.0.0.0:11111")
+//!         .bind(([0, 0, 0, 0], 11111).into())
 //!         .await?;
 //!     listener.handle_forever().await?;
 //!     Ok(())
