@@ -67,7 +67,8 @@ where
         result = read_and_dispatch(reader, context, replies) => result,
         result = async {
             while let Some(reply) = pending_replies.recv().await {
-                write_fragment(&mut writer, reply?).await?;
+                let Ok(reply) = reply else { anyhow::bail!("Error handling RPC message") };
+                write_fragment(&mut writer, reply).await?;
             }
             Ok(())
         } => result,

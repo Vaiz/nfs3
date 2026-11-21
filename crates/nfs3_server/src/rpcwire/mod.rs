@@ -1,7 +1,6 @@
 use std::io::Cursor;
 use std::time::Instant;
 
-use anyhow::anyhow;
 use call::{RpcCall, RpcCallOutcome};
 use messages::{RpcRecord, RpcRecordReader};
 use nfs3_types::rpc::{
@@ -183,7 +182,7 @@ where
                 Ok(RpcCallOutcome::NoReply) => {}
                 Err(err) => {
                     error!("Error handling RPC message: {err}");
-                    permit.send(Err(anyhow!("Error handling RPC message")));
+                    permit.send(Err(err));
                 }
             }
         });
