@@ -2,7 +2,6 @@ use std::io::Cursor;
 use std::num::NonZeroUsize;
 use std::time::Instant;
 
-use anyhow::anyhow;
 use messages::{CompleteRpcMessage, HandleResult, IncomingRpcMessage};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
@@ -195,20 +194,20 @@ where
     ) -> Result<(), anyhow::Error> {
         while let Some(message) = CompleteRpcMessage::recv(input, self.max_rpc_record_size).await? {
             let context = self.context.clone();
-            let send = self.reply_send_channel.clone();
+            let out = self.reply_send_channel.clone();
             tokio::spawn(async move {
                 let result = handle_rpc_message(context, message).await;
 
                 match result {
                     Ok(HandleResult::Reply(reply)) => {
-                        let _ = send.send(Ok(reply));
+                        let _ = out.send(Ok(reply));
                     }
                     Ok(HandleResult::NoReply) => {
                         // No reply needed
                     }
                     Err(err) => {
                         error!("Error handling RPC message: {err}");
-                        let _ = send.send(Err(anyhow!("Error handling RPC message")));
+                        let _ = out.send(Err(err));
                     }
                 }
             });
