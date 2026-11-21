@@ -189,32 +189,34 @@ where
 
 #[cfg(test)]
 mod tests {
+    use future_assert::FutureTestExt;
+
     use super::*;
 
-    #[tokio::test]
-    async fn record_limit_counts_payload_across_fragments_and_resets() {
+    #[test]
+    fn record_limit_counts_payload_across_fragments_and_resets() {
         let mut input = &b"\0\0\0\x02ab\x80\0\0\x01c\x80\0\0\x03def"[..];
         for expected in [b"abc", b"def"] {
             let record = CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
-                .await
+                .unwrap_ready()
                 .expect("valid record")
                 .expect("expected a record");
             assert_eq!(record.into_inner(), expected);
         }
         assert!(
             CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
-                .await
+                .unwrap_ready()
                 .expect("clean EOF")
                 .is_none()
         );
     }
 
-    #[tokio::test]
-    async fn configured_limit_rejects_before_reading_fragment_payload() {
+    #[test]
+    fn configured_limit_rejects_before_reading_fragment_payload() {
         let record = &b"\0\0\0\x02ab\x80\0\0\x02cd"[..];
         let mut input = record;
         let err = CompleteRpcMessage::recv(&mut input, NonZeroUsize::new(3))
-            .await
+            .unwrap_ready()
             .expect_err("record exceeds the configured limit");
         assert_eq!(
             err.downcast_ref::<io::Error>().map(io::Error::kind),
@@ -225,7 +227,7 @@ mod tests {
         let mut input = record;
         assert_eq!(
             CompleteRpcMessage::recv(&mut input, None)
-                .await
+                .unwrap_ready()
                 .expect("uncapped record")
                 .expect("expected a record")
                 .into_inner(),
@@ -233,13 +235,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn truncated_records_are_not_clean_eof() {
+    #[test]
+    fn truncated_records_are_not_clean_eof() {
         for truncated in [&b"\x80"[..], &b"\x80\0\0\x02a"[..], &b"\0\0\0\0"[..]] {
             for limit in [None, NonZeroUsize::new(3)] {
                 let mut input = truncated;
                 let err = CompleteRpcMessage::recv(&mut input, limit)
-                    .await
+                    .unwrap_ready()
                     .expect_err("truncated record");
                 assert_eq!(
                     err.downcast_ref::<io::Error>().map(io::Error::kind),
