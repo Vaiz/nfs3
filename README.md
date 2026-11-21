@@ -14,6 +14,17 @@ This project provides a Rust-based implementation of an NFS3 protocol. It includ
 - `crates/nfs3_server`: Async NFS3 server implementation.
 - `crates/nfs3_client`: Async NFS3 client implementation.
 
+## Bounded IO
+
+The [client](crates/nfs3_client/README.md#checked-rpc-and-nfs-clients) and
+[server](crates/nfs3_server/README.md#canonical-bounded-listener)
+use one checked bounded transport each and owned VFS methods, using the
+[owned payload and codec APIs](crates/nfs3_types/README.md).
+The streaming codec and duplicate client APIs are removed. Limits are explicit, with no
+default profile; managed allocation bounds are not total-process memory bounds.
+See the crate docs for retention, backend ownership and uncertain mutation outcomes.
+Correctness validation does not establish a copy, memory or performance target pass.
+
 ## NFS3 Server
 
 The `cargo-nfs3-server` tool allows you to quickly set up an NFSv3 server. It supports features like in-memory filesystems and read-only mode. For more details, refer to the [cargo-nfs3-server README](crates/cargo_nfs3_server/README.md).

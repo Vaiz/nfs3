@@ -1,4 +1,6 @@
-use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+use nfs3_server::tcp::NFSTcpListener;
+
+mod support;
 
 const HOSTPORT: u16 = 11111;
 
@@ -24,8 +26,16 @@ async fn main() -> anyhow::Result<()> {
 
     let memfs =
         nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
-    let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), memfs).await?;
-    listener.handle_forever().await?;
+    let listener = NFSTcpListener::bind(
+        &format!("{bind_ip}:{bind_port}"),
+        memfs,
+        "/".to_owned(),
+        support::limits(),
+    )
+    .await?;
+    let result = listener.run().await;
+    listener.drain().await;
+    result?;
 
     Ok(())
 }

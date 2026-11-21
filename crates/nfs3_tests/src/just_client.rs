@@ -1,5 +1,4 @@
 use nfs3_client::nfs3_types::nfs3::{Nfs3Result, cookieverf3, entry3, fattr3, nfs_fh3, nfsstat3};
-use nfs3_client::nfs3_types::xdr_codec::Opaque;
 
 /// Core trait needed for `JustClientExt` to operate
 pub trait JustClient {
@@ -60,7 +59,7 @@ pub trait JustClientExt: JustClient {
         content: &[u8],
     ) -> Result<nfs_fh3, nfsstat3> {
         use nfs3_client::nfs3_types::nfs3::{
-            CREATE3args, Nfs3Result, WRITE3args, createhow3, sattr3, stable_how,
+            CREATE3args, Nfs3Result, createhow3, sattr3, stable_how,
         };
 
         let create_result = self
@@ -83,14 +82,12 @@ pub trait JustClientExt: JustClient {
         if !content.is_empty() {
             let write_result = self
                 .client()
-                .write(&WRITE3args {
-                    file: file_handle.clone(),
-                    offset: 0,
-                    count: u32::try_from(content.len())
-                        .map_err(|_overflow| nfsstat3::NFS3ERR_INVAL)?,
-                    stable: stable_how::UNSTABLE,
-                    data: Opaque::owned(content.to_vec()),
-                })
+                .write(
+                    file_handle.clone(),
+                    0,
+                    stable_how::UNSTABLE,
+                    &crate::fixture_payload(content.to_vec()),
+                )
                 .await
                 .expect("failed to write to file");
 
@@ -145,7 +142,9 @@ pub trait JustClientExt: JustClient {
 
             match read_result {
                 Nfs3Result::Ok(ok) => {
-                    result.extend_from_slice(&ok.data.0);
+                    for chunk in ok.data.chunks() {
+                        result.extend_from_slice(chunk);
+                    }
                     if ok.eof || ok.count == 0 {
                         break;
                     }

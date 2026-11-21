@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
-use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,17 +19,16 @@ use nfs3_server::nfs3_types::nfs3::{
     cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
     stable_how,
 };
-use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+use nfs3_server::tcp::NFSTcpListener;
 use nfs3_server::vfs::{
     DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
 };
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
 
 const HOSTPORT: u16 = 11111;
+mod support;
 
 // This example implements a simple NFS server that mirrors a directory from the host filesystem.
 // Usage:
@@ -60,10 +58,17 @@ async fn main() {
     let path = PathBuf::from(path);
 
     let fs = MirrorFs::new(path);
-    let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), fs)
-        .await
-        .unwrap();
-    listener.handle_forever().await.unwrap();
+    let listener = NFSTcpListener::bind(
+        &format!("{bind_ip}:{bind_port}"),
+        fs,
+        "/".to_owned(),
+        support::limits(),
+    )
+    .await
+    .unwrap();
+    let result = listener.run().await;
+    listener.drain().await;
+    result.unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -436,38 +441,15 @@ impl NfsReadFileSystem for MirrorFs {
         Ok(ent.fsmeta.clone())
     }
 
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "The requested byte count is a u32"
-    )]
     async fn read(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let id = id.as_u64();
-        let fsmap = self.fsmap.read().await;
-        let entry = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&entry.name);
-        drop(fsmap);
-        let mut f = File::open(&path).await.or(Err(nfsstat3::NFS3ERR_NOENT))?;
-        let len = f.metadata().await.or(Err(nfsstat3::NFS3ERR_NOENT))?.len();
-        let mut start = offset;
-        let mut end = offset + u64::from(count);
-        let eof = end >= len;
-        if start >= len {
-            start = len;
-        }
-        if end > len {
-            end = len;
-        }
-        f.seek(SeekFrom::Start(start))
-            .await
-            .or(Err(nfsstat3::NFS3ERR_IO))?;
-        let mut buf = vec![0; (end - start) as usize];
-        f.read_exact(&mut buf).await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok((buf, eof))
+        request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(request.handle.as_u64())?.name)
+        };
+        nfs3_server::fs_util::read_owned_file(request, path).await
     }
 
     async fn readdirplus(
@@ -515,40 +497,19 @@ impl NfsFileSystem for MirrorFs {
     }
     async fn write(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        data: &[u8],
-        _stable: stable_how,
+        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
-        let id = id.as_u64();
-        let fsmap = self.fsmap.read().await;
-        let ent = fsmap.find_entry(id)?;
-        let path = fsmap.sym_to_path(&ent.name);
-        drop(fsmap);
-        debug!("write to init {:?}", path);
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)
-            .await
-            .map_err(|e| {
-                debug!("Unable to open: {e}");
-                nfsstat3::NFS3ERR_IO
-            })?;
-        f.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-            debug!("Unable to seek: {e}");
-            nfsstat3::NFS3ERR_IO
-        })?;
-        f.write_all(data).await.map_err(|e| {
-            debug!("Unable to write: {e}");
-            nfsstat3::NFS3ERR_IO
-        })?;
-        debug!("write to {:?} {offset} {:?}", path.display(), data.len());
-        let _ = f.flush().await;
-        let _ = f.sync_all().await;
-        let meta = f.metadata().await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok((metadata_to_fattr3(id, &meta), stable_how::FILE_SYNC))
+        let id = request.handle.as_u64();
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(id)?.name)
+        };
+        let (metadata, stable) = nfs3_server::fs_util::write_owned_file(request, path).await?;
+        let attr = metadata_to_fattr3(id, &metadata);
+        if let Ok(entry) = self.fsmap.write().await.find_entry_mut(id) {
+            entry.fsmeta = attr.clone();
+        }
+        Ok((attr, stable))
     }
 
     async fn create(
@@ -729,8 +690,12 @@ impl NfsFileSystem for MirrorFs {
         .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
-        Ok(())
+    async fn commit(&self, id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        let path = {
+            let map = self.fsmap.read().await;
+            map.sym_to_path(&map.find_entry(id.as_u64())?.name)
+        };
+        nfs3_server::fs_util::commit_file(path).await
     }
 }
 

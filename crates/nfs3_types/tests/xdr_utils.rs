@@ -1,23 +1,19 @@
 // Tests for XDR utility functions and edge cases
 
 use std::borrow::Cow;
-use std::io::Cursor;
 
-use nfs3_types::xdr_codec::{Opaque, Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{DecodeError, Opaque, PayloadError, Void};
+mod support;
+use support::{decode, encode};
 
 #[test]
 fn void_serialization() {
     let void_val = Void;
 
-    let mut buffer = Vec::new();
-    let len = void_val.pack(&mut buffer).unwrap();
-    assert_eq!(len, 0);
-    assert_eq!(void_val.packed_size(), 0);
+    let buffer = encode(&void_val);
     assert_eq!(buffer, []);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, unpack_len) = Void::unpack(&mut cursor).unwrap();
-    assert_eq!(unpack_len, 0);
+    let deserialized: Void = decode(&buffer).unwrap();
     assert_eq!(void_val, deserialized);
 }
 
@@ -25,28 +21,18 @@ fn void_serialization() {
 fn boolean_serialization() {
     // Test true
     let true_val = true;
-    let mut buffer = Vec::new();
-    let len = true_val.pack(&mut buffer).unwrap();
-    assert_eq!(len, 4);
-    assert_eq!(true_val.packed_size(), 4);
+    let buffer = encode(&true_val);
     assert_eq!(buffer, [0, 0, 0, 1]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, unpack_len) = bool::unpack(&mut cursor).unwrap();
-    assert_eq!(unpack_len, 4);
+    let deserialized: bool = decode(&buffer).unwrap();
     assert_eq!(true_val, deserialized);
 
     // Test false
     let false_val = false;
-    let mut buffer = Vec::new();
-    let len = false_val.pack(&mut buffer).unwrap();
-    assert_eq!(len, 4);
-    assert_eq!(false_val.packed_size(), 4);
+    let buffer = encode(&false_val);
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, unpack_len) = bool::unpack(&mut cursor).unwrap();
-    assert_eq!(unpack_len, 4);
+    let deserialized: bool = decode(&buffer).unwrap();
     assert_eq!(false_val, deserialized);
 }
 
@@ -56,14 +42,9 @@ fn integer_serialization() {
     let test_cases_u32 = [0u32, 1, 255, 256, 65535, 65536, u32::MAX];
 
     for original in test_cases_u32 {
-        let mut buffer = Vec::new();
-        let len = original.pack(&mut buffer).unwrap();
-        assert_eq!(len, 4);
-        assert_eq!(original.packed_size(), 4);
-
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = u32::unpack(&mut cursor).unwrap();
-        assert_eq!(unpack_len, 4);
+        let buffer = encode(&original);
+        assert_eq!(buffer, original.to_be_bytes());
+        let deserialized: u32 = decode(&buffer).unwrap();
         assert_eq!(original, deserialized);
     }
 }
@@ -79,14 +60,9 @@ fn u64_serialization() {
     ];
 
     for original in test_cases {
-        let mut buffer = Vec::new();
-        let len = original.pack(&mut buffer).unwrap();
-        assert_eq!(len, 8);
-        assert_eq!(original.packed_size(), 8);
-
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = u64::unpack(&mut cursor).unwrap();
-        assert_eq!(unpack_len, 8);
+        let buffer = encode(&original);
+        assert_eq!(buffer, original.to_be_bytes());
+        let deserialized: u64 = decode(&buffer).unwrap();
         assert_eq!(original, deserialized);
     }
 }
@@ -108,11 +84,8 @@ fn opaque_padding_verification() {
         let data = vec![0x42; data_size];
         let opaque = Opaque(Cow::Borrowed(&data));
 
-        assert_eq!(opaque.packed_size(), expected_total);
-
-        let mut buffer = Vec::new();
-        let len = opaque.pack(&mut buffer).unwrap();
-        assert_eq!(len, expected_total);
+        let buffer = encode(&opaque);
+        assert_eq!(buffer.len(), expected_total);
 
         // Verify the length field
         assert_eq!(
@@ -143,15 +116,9 @@ fn large_data_serialization() {
     let opaque = Opaque(Cow::Borrowed(&large_data));
 
     let expected_size = 4 + 1024; // No padding needed since 1024 is multiple of 4
-    assert_eq!(opaque.packed_size(), expected_size);
-
-    let mut buffer = Vec::new();
-    let len = opaque.pack(&mut buffer).unwrap();
-    assert_eq!(len, expected_size);
-
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, unpack_len) = Opaque::unpack(&mut cursor).unwrap();
-    assert_eq!(unpack_len, expected_size);
+    let buffer = encode(&opaque);
+    assert_eq!(buffer.len(), expected_size);
+    let deserialized: Opaque<'static> = decode(&buffer).unwrap();
     assert_eq!(opaque.as_ref(), deserialized.as_ref());
 }
 
@@ -159,27 +126,29 @@ fn large_data_serialization() {
 fn endianness_verification() {
     // Verify that multi-byte values are serialized in big-endian (network) byte order
     let test_u32 = 0x1234_5678_u32;
-    let mut buffer = Vec::new();
-    test_u32.pack(&mut buffer).unwrap();
+    let buffer = encode(&test_u32);
     assert_eq!(buffer, [0x12, 0x34, 0x56, 0x78]);
 
     let test_u64 = 0x1234_5678_9abc_def0_u64;
-    let mut buffer = Vec::new();
-    test_u64.pack(&mut buffer).unwrap();
+    let buffer = encode(&test_u64);
     assert_eq!(buffer, [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
 }
 
 #[test]
 fn truncated_data_handling() {
     // Test behavior with truncated data (should fail gracefully)
-    let mut cursor = Cursor::new([0x00, 0x00]); // Only 2 bytes, need 4 for u32
-    let result = u32::unpack(&mut cursor);
-    assert!(result.is_err(), "Should fail when not enough data");
+    let result = decode::<u32>(&[0, 0]);
+    assert!(matches!(
+        result,
+        Err(DecodeError::Wire(PayloadError::Truncated { .. }))
+    ));
 
     // Test with opaque data that claims to be longer than available data
-    let mut cursor = Cursor::new([0x00, 0x00, 0x00, 0x05, 0x41, 0x42]); // Claims 5 bytes, only has 2
-    let result = Opaque::unpack(&mut cursor);
-    assert!(result.is_err(), "Should fail when opaque data is truncated");
+    let result = decode::<Opaque<'static>>(&[0, 0, 0, 5, 0x41, 0x42]);
+    assert!(matches!(
+        result,
+        Err(DecodeError::Wire(PayloadError::Truncated { .. }))
+    ));
 }
 
 #[test]
@@ -192,17 +161,9 @@ fn cow_borrowed_vs_owned() {
     let owned_opaque = Opaque(Cow::Owned(owned_data));
 
     // Both should serialize identically
-    let mut borrowed_buffer = Vec::new();
-    let borrowed_len = borrowed_opaque.pack(&mut borrowed_buffer).unwrap();
-
-    let mut owned_buffer = Vec::new();
-    let owned_len = owned_opaque.pack(&mut owned_buffer).unwrap();
-
-    assert_eq!(borrowed_len, owned_len);
+    let borrowed_buffer = encode(&borrowed_opaque);
+    let owned_buffer = encode(&owned_opaque);
     assert_eq!(borrowed_buffer, owned_buffer);
-
-    // Both should have the same packed size
-    assert_eq!(borrowed_opaque.packed_size(), owned_opaque.packed_size());
 }
 
 #[test]
@@ -214,17 +175,10 @@ fn zero_vs_nonzero_data() {
     let nonzero_data = vec![0x55u8; 16];
     let nonzero_opaque = Opaque(Cow::Borrowed(&nonzero_data));
 
-    // Both should have the same size
-    assert_eq!(zero_opaque.packed_size(), nonzero_opaque.packed_size());
-
     // Both should serialize to different contents but same structure
-    let mut zero_buffer = Vec::new();
-    let zero_len = zero_opaque.pack(&mut zero_buffer).unwrap();
-
-    let mut nonzero_buffer = Vec::new();
-    let nonzero_len = nonzero_opaque.pack(&mut nonzero_buffer).unwrap();
-
-    assert_eq!(zero_len, nonzero_len);
+    let zero_buffer = encode(&zero_opaque);
+    let nonzero_buffer = encode(&nonzero_opaque);
+    assert_eq!(zero_buffer.len(), nonzero_buffer.len());
     assert_ne!(zero_buffer, nonzero_buffer); // Different data contents
     assert_eq!(&zero_buffer[..4], &nonzero_buffer[..4]); // Same length field
 }
@@ -235,18 +189,10 @@ fn empty_vs_nonempty_opaque() {
     let empty_opaque = Opaque(Cow::Borrowed(&[]));
     let nonempty_opaque = Opaque(Cow::Borrowed(&[0x42]));
 
-    // Different sizes
-    assert_eq!(empty_opaque.packed_size(), 4);
-    assert_eq!(nonempty_opaque.packed_size(), 8);
-
     // Test serialization
-    let mut empty_buffer = Vec::new();
-    let empty_len = empty_opaque.pack(&mut empty_buffer).unwrap();
-    assert_eq!(empty_len, 4);
+    let empty_buffer = encode(&empty_opaque);
     assert_eq!(empty_buffer, [0, 0, 0, 0]);
 
-    let mut nonempty_buffer = Vec::new();
-    let nonempty_len = nonempty_opaque.pack(&mut nonempty_buffer).unwrap();
-    assert_eq!(nonempty_len, 8);
+    let nonempty_buffer = encode(&nonempty_opaque);
     assert_eq!(nonempty_buffer, [0, 0, 0, 1, 0x42, 0, 0, 0]);
 }

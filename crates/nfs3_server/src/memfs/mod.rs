@@ -12,17 +12,19 @@
 //!
 //! ```no_run
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
-//! use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+//! use nfs3_server::tcp::{NFSTcpListener, ServerLimits};
 //!
-//! async fn run() -> anyhow::Result<()> {
+//! async fn run(limits: ServerLimits) -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
 //!     config.add_file("/a.txt", "hello world\n".as_bytes());
 //!     config.add_file("/b.txt", "Greetings\n".as_bytes());
 //!     config.add_dir("/a directory");
 //!
 //!     let memfs = MemFs::new(config).unwrap();
-//!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs).await?;
-//!     listener.handle_forever().await?;
+//!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs, "/".to_owned(), limits).await?;
+//!     let result = listener.run().await;
+//!     listener.drain().await;
+//!     result?;
 //!     Ok(())
 //! }
 //! ```
@@ -141,38 +143,6 @@ impl File {
             .resize(usize::try_from(size).expect("size is too large"), 0);
         self.attr.size = size;
         self.attr.used = size;
-    }
-
-    fn read(&self, offset: u64, count: u32) -> (Vec<u8>, bool) {
-        let mut start = usize::try_from(offset).unwrap_or(usize::MAX);
-        let mut end = start + count as usize;
-        let bytes = &self.content;
-        let eof = end >= bytes.len();
-        if start >= bytes.len() {
-            start = bytes.len();
-        }
-        if end > bytes.len() {
-            end = bytes.len();
-        }
-        (bytes[start..end].to_vec(), eof)
-    }
-
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "The offset is bounded by the buffer length above the cast"
-    )]
-    fn write(&mut self, offset: u64, data: &[u8]) -> Result<fattr3, nfsstat3> {
-        if offset > self.content.len() as u64 {
-            return Err(nfsstat3::NFS3ERR_INVAL);
-        }
-
-        let offset = offset as usize;
-        let end_offset = offset + data.len();
-        if end_offset > self.content.len() {
-            self.resize(end_offset as u64);
-        }
-        self.content[offset..end_offset].copy_from_slice(data);
-        Ok(self.attr.clone())
     }
 }
 
@@ -710,14 +680,19 @@ impl NfsReadFileSystem for MemFs {
 
     async fn read(
         &self,
-        id: &FileHandleU64,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+        mut request: crate::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<crate::vfs::OwnedReadResult, nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
-        let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry.as_file()?;
-        Ok(file.read(offset, count))
+        let file = fs
+            .get(request.handle)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?
+            .as_file()?;
+        let start = usize::try_from(request.offset)
+            .unwrap_or(usize::MAX)
+            .min(file.content.len());
+        let count = request.buffer().len().min(file.content.len() - start);
+        request.buffer()[..count].copy_from_slice(&file.content[start..start + count]);
+        request.complete(count, start + count == file.content.len())
     }
 
     async fn readdir(
@@ -749,28 +724,38 @@ impl NfsReadFileSystem for MemFs {
 }
 
 impl NfsFileSystem for MemFs {
+    async fn write(
+        &self,
+        request: crate::vfs::OwnedWrite<FileHandleU64>,
+    ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
+        let mut fs = self.fs.write().expect("lock is poisoned");
+        let file = fs
+            .get_mut(request.handle)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)?
+            .as_file_mut()
+            .map_err(|_status| nfsstat3::NFS3ERR_INVAL)?;
+        let start = usize::try_from(request.offset).map_err(|_overflow| nfsstat3::NFS3ERR_FBIG)?;
+        if start > file.content.len() {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+        let end = start
+            .checked_add(request.data.len())
+            .ok_or(nfsstat3::NFS3ERR_FBIG)?;
+        if end > file.content.len() {
+            file.resize(end as u64);
+        }
+        let mut offset = start;
+        for chunk in request.data.chunks() {
+            file.content[offset..offset + chunk.len()].copy_from_slice(chunk);
+            offset += chunk.len();
+        }
+        Ok((file.attr.clone(), nfs::stable_how::FILE_SYNC))
+    }
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
         let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         entry.set_attr(&setattr);
         Ok(entry.attr().clone())
-    }
-
-    async fn write(
-        &self,
-        id: &FileHandleU64,
-        offset: u64,
-        data: &[u8],
-        _stable: nfs::stable_how, // MemFs writes are always `FILE_SYNC`
-    ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
-        let mut fs = self.fs.write().expect("lock is poisoned");
-
-        let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry
-            .as_file_mut()
-            .map_err(|_status| nfsstat3::NFS3ERR_INVAL)?;
-        let attr = file.write(offset, data)?;
-        Ok((attr, nfs::stable_how::FILE_SYNC))
     }
 
     async fn create(

@@ -7,11 +7,11 @@
 
 //! This module contains the definitions of the `NFSv3` protocol as defined in RFC 1813.
 
-use std::io::{Read, Write};
-
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, Unpack, Void};
+use crate::xdr_codec::{
+    Decode, DecodeResult, Decoder, Encode, EncodeError, EncodeResult, Encoder, List, Opaque, Void,
+};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -65,48 +65,6 @@ impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
     }
 }
 
-impl<T, E> Pack for Nfs3Result<T, E>
-where
-    T: Pack,
-    E: Pack,
-{
-    fn packed_size(&self) -> usize {
-        match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
-            Self::Err((code, err)) => code.packed_size() + err.packed_size(),
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
-            Self::Err((code, err)) => code.pack(out)? + err.pack(out)?,
-        };
-        Ok(len)
-    }
-}
-
-impl<T, E> Unpack for Nfs3Result<T, E>
-where
-    T: Unpack,
-    E: Unpack,
-{
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (code, dsz): (nfsstat3, usize) = Unpack::unpack(input)?;
-        sz += dsz;
-        if code == nfsstat3::NFS3_OK {
-            let (val, fsz) = Unpack::unpack(input)?;
-            sz += fsz;
-            Ok((Self::Ok(val), sz))
-        } else {
-            let (val, csz) = Unpack::unpack(input)?;
-            sz += csz;
-            Ok((Self::Err((code, val)), sz))
-        }
-    }
-}
-
 pub type ACCESS3res = Nfs3Result<ACCESS3resok, ACCESS3resfail>;
 pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
@@ -118,7 +76,7 @@ pub type LOOKUP3res = Nfs3Result<LOOKUP3resok, LOOKUP3resfail>;
 pub type MKDIR3res = Nfs3Result<MKDIR3resok, MKDIR3resfail>;
 pub type MKNOD3res = Nfs3Result<MKNOD3resok, MKNOD3resfail>;
 pub type PATHCONF3res = Nfs3Result<PATHCONF3resok, PATHCONF3resfail>;
-pub type READ3res<'a> = Nfs3Result<READ3resok<'a>, READ3resfail>;
+pub type READ3res<D> = Nfs3Result<READ3resok<D>, READ3resfail>;
 pub type READDIR3res<'a> = Nfs3Result<READDIR3resok<'a>, READDIR3resfail>;
 pub type READDIRPLUS3res<'a> = Nfs3Result<READDIRPLUS3resok<'a>, READDIRPLUS3resfail>;
 pub type READLINK3res<'a> = Nfs3Result<READLINK3resok<'a>, READLINK3resfail>;
@@ -130,7 +88,7 @@ pub type SYMLINK3res = Nfs3Result<SYMLINK3resok, SYMLINK3resfail>;
 pub type WRITE3res = Nfs3Result<WRITE3resok, WRITE3resfail>;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, XdrCodec)]
-pub enum Nfs3Option<T: Pack + Unpack> {
+pub enum Nfs3Option<T> {
     #[xdr(1)]
     Some(T),
     #[default]
@@ -138,7 +96,7 @@ pub enum Nfs3Option<T: Pack + Unpack> {
     None,
 }
 
-impl<T: Pack + Unpack> Nfs3Option<T> {
+impl<T> Nfs3Option<T> {
     pub const fn is_some(&self) -> bool {
         matches!(self, Self::Some(_))
     }
@@ -410,12 +368,13 @@ pub struct READ3resfail {
     pub file_attributes: post_op_attr,
 }
 
+/// READ success fields, generic over the bulk representation.
 #[derive(Debug, XdrCodec)]
-pub struct READ3resok<'a> {
+pub struct READ3resok<D> {
     pub file_attributes: post_op_attr,
     pub count: count3,
     pub eof: bool,
-    pub data: Opaque<'a>,
+    pub data: D,
 }
 
 #[derive(Debug, XdrCodec)]
@@ -558,13 +517,89 @@ pub struct SYMLINK3resok {
     pub dir_wcc: wcc_data,
 }
 
+/// Structural WRITE decoding preserves count and opaque length separately.
 #[derive(Debug, XdrCodec)]
-pub struct WRITE3args<'a> {
+pub struct WRITE3args<D> {
     pub file: nfs_fh3,
     pub offset: offset3,
     pub count: count3,
     pub stable: stable_how,
-    pub data: Opaque<'a>,
+    pub data: D,
+}
+
+impl<T: Decode, E: Decode> Decode for Nfs3Result<T, E> {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        let status = decoder.decode::<nfsstat3>()?;
+        if status == nfsstat3::NFS3_OK {
+            Ok(Self::Ok(decoder.decode()?))
+        } else {
+            Ok(Self::Err((status, decoder.decode()?)))
+        }
+    }
+}
+impl Decode for nfs_fh3 {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        Ok(Self {
+            data: decoder.opaque(NFS3_FHSIZE)?,
+        })
+    }
+}
+impl Decode for mknoddata3 {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        Ok(match decoder.decode::<ftype3>()? {
+            ftype3::NF3CHR => Self::NF3CHR(decoder.decode()?),
+            ftype3::NF3BLK => Self::NF3BLK(decoder.decode()?),
+            ftype3::NF3SOCK => Self::NF3SOCK(decoder.decode()?),
+            ftype3::NF3FIFO => Self::NF3FIFO(decoder.decode()?),
+            ftype3::NF3REG | ftype3::NF3DIR | ftype3::NF3LNK => Self::default,
+        })
+    }
+}
+
+impl<T: Encode, E: Encode> Encode for Nfs3Result<T, E> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        match self {
+            Self::Ok(value) => {
+                encoder.encode(&nfsstat3::NFS3_OK)?;
+                encoder.encode(value)
+            }
+            Self::Err((nfsstat3::NFS3_OK, _)) => encoder.fail(EncodeError::InvalidRepresentation),
+            Self::Err((status, value)) => {
+                encoder.encode(status)?;
+                encoder.encode(value)
+            }
+        }
+    }
+}
+
+impl Encode for nfs_fh3 {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.opaque(self.data.as_ref(), NFS3_FHSIZE)
+    }
+}
+
+impl Encode for mknoddata3 {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        match self {
+            Self::NF3CHR(value) => {
+                encoder.encode(&ftype3::NF3CHR)?;
+                encoder.encode(value)
+            }
+            Self::NF3BLK(value) => {
+                encoder.encode(&ftype3::NF3BLK)?;
+                encoder.encode(value)
+            }
+            Self::NF3SOCK(value) => {
+                encoder.encode(&ftype3::NF3SOCK)?;
+                encoder.encode(value)
+            }
+            Self::NF3FIFO(value) => {
+                encoder.encode(&ftype3::NF3FIFO)?;
+                encoder.encode(value)
+            }
+            Self::default => encoder.fail(EncodeError::InvalidRepresentation),
+        }
+    }
 }
 
 #[derive(Debug, Default, XdrCodec)]
@@ -744,7 +779,7 @@ pub enum mknoddata3 {
     default,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct nfs_fh3 {
     pub data: Opaque<'static>,
 }
@@ -962,7 +997,7 @@ pub struct symlinkdata3<'a> {
     pub symlink_data: nfspath3<'a>,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum time_how {
     #[default]
     DONT_CHANGE = 0,
@@ -1002,60 +1037,6 @@ pub type size3 = u64;
 
 pub type uid3 = u32;
 
-impl Pack for mknoddata3 {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::NF3CHR(val) | Self::NF3BLK(val) => val.packed_size(),
-            Self::NF3SOCK(val) | Self::NF3FIFO(val) => val.packed_size(),
-            Self::default => 0,
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(match self {
-            Self::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
-            Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
-            Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
-            Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
-        })
-    }
-}
-
-impl Unpack for mknoddata3 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
-        sz += dsz;
-
-        let v = match v {
-            4 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3CHR(val)
-            }
-            3 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3BLK(val)
-            }
-            6 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3SOCK(val)
-            }
-            7 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3FIFO(val)
-            }
-            _ => Self::default,
-        };
-
-        Ok((v, sz))
-    }
-}
-
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, XdrCodec)]
 pub enum NFS_PROGRAM {
     #[default]
@@ -1084,7 +1065,7 @@ pub enum NFS_PROGRAM {
 }
 
 impl std::convert::TryFrom<u32> for NFS_PROGRAM {
-    type Error = crate::xdr_codec::Error;
+    type Error = crate::xdr_codec::DecodeError;
 
     fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
@@ -1110,7 +1091,7 @@ impl std::convert::TryFrom<u32> for NFS_PROGRAM {
             19 => Ok(Self::NFSPROC3_FSINFO),
             20 => Ok(Self::NFSPROC3_PATHCONF),
             21 => Ok(Self::NFSPROC3_COMMIT),
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
+            _ => Err(crate::xdr_codec::DecodeError::InvalidTag(value)),
         }
     }
 }

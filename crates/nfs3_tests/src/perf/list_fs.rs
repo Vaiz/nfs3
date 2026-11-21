@@ -62,11 +62,9 @@ impl NfsReadFileSystem for ListFs {
 
     async fn read(
         &self,
-        _id: &FileHandleU64,
-        _offset: u64,
-        _count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ISDIR)
+        _request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        Err(nfsstat3::NFS3ERR_INVAL)
     }
 
     async fn readdirplus(
@@ -101,10 +99,7 @@ impl NfsFileSystem for ListFs {
 
     async fn write(
         &self,
-        _id: &FileHandleU64,
-        _offset: u64,
-        _data: &[u8],
-        _stable: stable_how,
+        _request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }

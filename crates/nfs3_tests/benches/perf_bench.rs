@@ -11,10 +11,9 @@ use std::cell::RefCell;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nfs3_client::nfs3_types::nfs3::{
-    GETATTR3args, LOOKUP3args, READ3args, READDIRPLUS3args, WRITE3args, cookieverf3, diropargs3,
-    nfs_fh3, stable_how,
+    GETATTR3args, LOOKUP3args, READ3args, READDIRPLUS3args, cookieverf3, diropargs3, nfs_fh3,
+    stable_how,
 };
-use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::Server;
 use nfs3_tests::perf::{ListFs, ReadFs, WriteFs};
 use tokio::io::DuplexStream;
@@ -32,12 +31,19 @@ fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx 
     nfs3_tests::init_logging(tracing::Level::WARN);
 
     let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
-    let server = Server::new(server_io, fs).unwrap();
+    let server = Server::new(server_io, fs, nfs3_tests::server_limits()).unwrap();
     let root_dir = server.root_dir();
     let server_handle = tokio::task::spawn(server.run());
 
     let client_io = nfs3_client::tokio::TokioIo::new(client_io);
-    let client = nfs3_client::Nfs3Client::new(client_io);
+    let rpc = nfs3_client::rpc::RpcClient::new(
+        client_io,
+        nfs3_tests::client_limits(),
+        nfs3_client::nfs3_types::rpc::opaque_auth::default(),
+        nfs3_client::nfs3_types::rpc::opaque_auth::default(),
+    )
+    .unwrap();
+    let client = nfs3_client::Nfs3Client::new(rpc, 1024 * 1024).unwrap();
 
     PerfCtx {
         _server_handle: server_handle,
@@ -170,7 +176,7 @@ fn bench_write(c: &mut Criterion) {
 
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
         let count = u32::try_from(size).expect("benchmark write size fits in u32");
-        let payload = vec![0xBB_u8; size];
+        let payload = nfs3_tests::fixture_payload(vec![0xBB_u8; size]);
 
         let (ctx, fh) = rt.block_on(async {
             let ctx = setup_perf(WriteFs::new(size as u64));
@@ -184,13 +190,7 @@ fn bench_write(c: &mut Criterion) {
                 let ok = ctx
                     .client
                     .borrow_mut()
-                    .write(&WRITE3args {
-                        file: fh.clone(),
-                        offset: 0,
-                        count,
-                        stable: stable_how::UNSTABLE,
-                        data: Opaque::borrowed(&payload),
-                    })
+                    .write(fh.clone(), 0, stable_how::UNSTABLE, &payload)
                     .await
                     .unwrap()
                     .unwrap();

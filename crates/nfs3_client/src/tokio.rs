@@ -33,6 +33,13 @@ impl<T> AsyncWrite for TokioIo<T>
 where
     T: TokioAsyncWrite + Unpin + Send,
 {
+    async fn async_write_vectored(
+        &mut self,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::io::Result<usize> {
+        tokio::io::AsyncWriteExt::write_vectored(&mut self.0, bufs).await
+    }
+
     async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         tokio::io::AsyncWriteExt::write(&mut self.0, buf).await
     }

@@ -22,19 +22,43 @@ cargo install cargo-nfs3-server
 ```
 
 ### Running the Server
-You can start the server with the following command:
+Every independent resource/deadline limit is required. There is no automatic
+numeric profile or configuration file. This is an intentional finite **example**
+for 1 MiB transfers, 16 connections and at most four admitted operations, not a
+production recommendation or a process-memory cap:
 
 ```bash
-cargo-nfs3-server --path <directory-to-serve> --bind-ip <ip-address> --bind-port <port>
+cargo-nfs3-server --path ./shared --bind-ip 0.0.0.0 --bind-port 11111 \
+  --record-block-bytes 65536 --record-max-bytes 2097152 --record-max-fragments 4096 \
+  --decode-metadata-bytes 2097152 --decode-collection-elements 65536 \
+  --decode-depth 64 --decode-reservation-bytes 16777216 \
+  --encode-wire-bytes 2097152 --encode-metadata-bytes 2097152 --encode-chunks 256 \
+  --encode-depth 64 --encode-reservation-bytes 16777216 \
+  --read-max-bytes 1048576 --write-max-bytes 1048576 \
+  --directory-wire-bytes 1048576 --directory-entries 10000 \
+  --directory-name-bytes 4096 --directory-metadata-bytes 2097152 \
+  --max-connections 16 --max-operations 4 --backing-bytes 536870912 \
+  --idle-timeout-ms 30000 --progress-timeout-ms 5000 \
+  --receive-timeout-ms 30000 --send-timeout-ms 30000
 ```
 
-#### Example:
-```bash
-cargo-nfs3-server --path ./shared --bind-ip 0.0.0.0 --bind-port 11111
-```
+The [server policy contract](../nfs3_server/README.md#canonical-bounded-listener)
+defines each domain, derived fixed work/builder envelopes, validation and exclusions.
+All `*-bytes` values are byte counts; collection/entry/chunk/fragment/depth limits
+are counts; deadline values are positive milliseconds. READ/WRITE transfer,
+decode, encode, directory, connection, operation, backing and time limits remain
+independent. Invalid/infeasible envelopes are rejected before binding.
+
+The CLI uses the sole finite server engine. Ctrl-C stops admissions/readers and
+gracefully drains admitted work and replies before releasing logging guards.
+An uncooperative backend can prevent drain indefinitely; backend execution has
+no timeout. Repeated XIDs execute again; a lost mutation reply is uncertain.
+The crate's `tests/` retain mirror regressions and exercise required CLI flags;
+the prebuilt `nfs3_tests` `test_mirror_fs` helper supplies explicit fixture policy.
 
 ### Options
 - `--path`: Path to the directory to serve (required unless using `--memfs`).
+- `--export-name`: Export path (default: `/`), normalized by the listener.
 - `--bind-ip`: IP address to bind the server to (default: `0.0.0.0`).
 - `--bind-port`: Port to bind the server to (default: `11111`).
 - `--readonly`: Serve the directory as read-only.
@@ -42,3 +66,5 @@ cargo-nfs3-server --path ./shared --bind-ip 0.0.0.0 --bind-port 11111
 - `--log-level`: Set the log level (`error`, `warn`, `info`, `debug`, `trace`).
 - `--log-file`: Path to a file for logging output.
 - `--quiet`: Disable console logging.
+- Operational policy flags: all flags shown in the example are required except
+  the pre-existing path/bind options; see `--help` for names and types.

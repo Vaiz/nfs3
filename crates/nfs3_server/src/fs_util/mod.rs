@@ -1,5 +1,5 @@
 pub(crate) mod metadata_ext;
-
+mod owned_io;
 use std::fs::Metadata;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
@@ -10,6 +10,7 @@ use nfs3_types::nfs3::{
     fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
     set_size3, set_uid3, specdata3,
 };
+pub use owned_io::{commit_file, read_owned_file, write_owned_file};
 use tokio::fs::OpenOptions;
 use tracing::debug;
 

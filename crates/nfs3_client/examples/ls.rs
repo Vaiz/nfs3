@@ -1,4 +1,5 @@
 use std::env;
+mod support;
 use std::time::{Duration, UNIX_EPOCH};
 
 use jiff::Timestamp;
@@ -32,13 +33,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gid: 0xffff_fffe,
         gids: vec![],
     };
-    let credential = opaque_auth::auth_unix(&auth_unix);
+    let credential = opaque_auth::auth_unix(&auth_unix, support::limits().encode)?;
 
-    let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
-        .portmapper_port(portmapper_port)
-        .credential(credential)
-        .mount()
-        .await?;
+    let mut connection = Nfs3ConnectionBuilder::new(
+        TokioConnector,
+        ip,
+        mount_path,
+        support::limits(),
+        1024 * 1024,
+    )?
+    .portmapper_port(portmapper_port)
+    .credential(credential)
+    .mount()
+    .await?;
 
     let root = connection.root_nfs_fh3();
 

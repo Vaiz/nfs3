@@ -6,12 +6,22 @@ use std::time::{Duration, Instant};
 use nfs3_server::vfs::FileHandleU64;
 use tokio::fs::ReadDir;
 
+/// One lookahead entry may have been yielded but not included in the wire page.
+#[derive(Debug)]
+pub struct HeldEntry {
+    pub before: u64,
+    pub cookie: u64,
+    pub handle: FileHandleU64,
+    pub name: std::ffi::OsString,
+}
+
 /// Cache entry for iterator state with the actual `ReadDir` object
 #[derive(Debug)]
 pub struct CachedIteratorInfo {
     pub cookie: u64,
     pub cached_at: Instant,
     pub read_dir: ReadDir,
+    pub held: Option<HeldEntry>,
 }
 
 /// Simple iterator cache that tracks valid iterator positions
@@ -51,19 +61,33 @@ impl IteratorCache {
         cache.get_mut(&dir_id).and_then(|iterators| {
             iterators
                 .iter()
-                .position(|info| info.cookie == cookie)
+                .position(|info| {
+                    info.cookie == cookie
+                        || info
+                            .held
+                            .as_ref()
+                            .is_some_and(|entry| entry.before == cookie)
+                })
                 .map(|index| iterators.swap_remove(index))
         })
     }
 
     /// Cache an iterator state with `ReadDir` object
-    pub fn cache_state(&self, dir_id: FileHandleU64, cookie: u64, read_dir: ReadDir, now: Instant) {
+    pub fn cache_state(
+        &self,
+        dir_id: FileHandleU64,
+        cookie: u64,
+        read_dir: ReadDir,
+        held: Option<HeldEntry>,
+        now: Instant,
+    ) {
         let mut cache = self.cache.write().expect("lock is poisoned");
 
         let info = CachedIteratorInfo {
             cookie,
             cached_at: now,
             read_dir,
+            held,
         };
 
         cache.entry(dir_id).or_default().push(info);

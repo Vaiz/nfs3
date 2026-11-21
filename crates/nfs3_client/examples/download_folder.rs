@@ -1,4 +1,5 @@
 use std::env;
+mod support;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -38,13 +39,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gid: 0xffff_fffe,
         gids: vec![],
     };
-    let credential = opaque_auth::auth_unix(&auth_unix);
+    let credential = opaque_auth::auth_unix(&auth_unix, support::limits().encode)?;
 
-    let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
-        .portmapper_port(portmapper_port)
-        .credential(credential)
-        .mount()
-        .await?;
+    let mut connection = Nfs3ConnectionBuilder::new(
+        TokioConnector,
+        ip,
+        mount_path,
+        support::limits(),
+        1024 * 1024,
+    )?
+    .portmapper_port(portmapper_port)
+    .credential(credential)
+    .mount()
+    .await?;
 
     let mut remote_folder_fh = connection.root_nfs_fh3();
     let path = Path::new(&remote_folder);
@@ -171,9 +178,10 @@ async fn download_file(
             .await?
             .unwrap();
 
-        let read_data = read.data.0;
-        file.write_all(&read_data)?;
-        offset += read_data.len() as u64;
+        for chunk in read.data.chunks() {
+            file.write_all(chunk)?;
+        }
+        offset += read.data.len() as u64;
 
         if read.eof {
             break;

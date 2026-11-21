@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use nfs3_server::memfs::MemFs;
-use nfs3_server::tcp::NFSTcp;
+use nfs3_server::tcp::ServerLimits;
 use nfs3_server::vfs::NfsFileSystem;
 use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -10,6 +10,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 mod logging;
 mod memfs;
 mod mirror;
+mod policy;
 mod string_ext;
 mod threshold_logger;
 
@@ -18,6 +19,8 @@ mod threshold_logger;
 #[command(name = "cargo-nfs3-server")]
 #[command(about = "A simple NFSv3 server implementation")]
 struct Args {
+    #[command(flatten)]
+    policy: policy::Policy,
     /// Path to the directory to serve for `MirrorFs`
     #[arg(long)]
     path: Option<String>,
@@ -58,6 +61,11 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    let limits = args.policy.limits().unwrap_or_else(|error| {
+        Args::command()
+            .error(clap::error::ErrorKind::ValueValidation, error.to_string())
+            .exit()
+    });
     let guards = logging::init_logging(&args.log_level, args.log_file.as_deref(), !args.quiet);
 
     let bind_addr = format!("{}:{}", args.bind_ip, args.bind_port);
@@ -67,9 +75,16 @@ async fn main() {
         let memfs = MemFs::new(memfs::default_config(args.readonly))
             .expect("failed to create memfs instance");
         if args.readonly {
-            start_server(bind_addr, export_path, ReadOnlyAdapter::new(memfs), guards).await;
+            start_server(
+                bind_addr,
+                export_path,
+                ReadOnlyAdapter::new(memfs),
+                limits,
+                guards,
+            )
+            .await;
         } else {
-            start_server(bind_addr, export_path, memfs, guards).await;
+            start_server(bind_addr, export_path, memfs, limits, guards).await;
         }
     } else {
         let path = args
@@ -85,24 +100,22 @@ async fn main() {
                 bind_addr,
                 export_path,
                 ReadOnlyAdapter::new(mirror_fs),
+                limits,
                 guards,
             )
             .await;
         } else {
-            start_server(bind_addr, export_path, mirror_fs, guards).await;
+            start_server(bind_addr, export_path, mirror_fs, limits, guards).await;
         }
     }
 }
 
-#[expect(
-    clippy::collection_is_never_read,
-    reason = "it's not expected to be read"
-)]
 async fn start_server(
     bind_addr: String,
     export_name: String,
     fs: impl NfsFileSystem + 'static,
-    mut guards: Vec<WorkerGuard>,
+    limits: ServerLimits,
+    _guards: Vec<WorkerGuard>,
 ) {
     use nfs3_server::tcp::NFSTcpListener;
 
@@ -111,17 +124,15 @@ async fn start_server(
     ctrlc::set_handler(move || {
         if let Some(tx) = tx.take() {
             tracing::info!("Received Ctrl-C, shutting down...");
-            guards.clear();
             let _ = tx.send(());
         }
     })
     .expect("Error setting Ctrl-C handler");
 
-    let mut listener = NFSTcpListener::bind(&bind_addr, fs)
+    let listener = NFSTcpListener::bind(&bind_addr, fs, export_name, limits)
         .await
         .expect("failed to bind server");
-    listener.with_export_name(export_name);
-    let handle_future = listener.handle_forever();
+    let handle_future = listener.run();
 
     tokio::select! {
         result = handle_future => {
@@ -132,4 +143,5 @@ async fn start_server(
         }
         _ = rx => { }
     }
+    listener.drain().await;
 }

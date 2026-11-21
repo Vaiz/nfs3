@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use nfs3_client::nfs3_types::nfs3::{
     COMMIT3args, CREATE3args, LINK3args, LINK3res, MKDIR3args, REMOVE3args, RENAME3args,
-    RMDIR3args, SETATTR3args, SYMLINK3args, SYMLINK3res, WRITE3args, createhow3, createverf3,
-    diropargs3, filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, sattr3, sattrguard3, set_mode3,
-    set_size3, stable_how, symlinkdata3,
+    RMDIR3args, SETATTR3args, SYMLINK3args, SYMLINK3res, createhow3, createverf3, diropargs3,
+    filename3, ftype3, nfs_fh3, nfspath3, nfsstat3, sattr3, sattrguard3, set_mode3, set_size3,
+    stable_how, symlinkdata3,
 };
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::JustClientExt;
@@ -64,13 +64,12 @@ pub async fn write_to_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nf
 
     let write_res = ctx
         .client
-        .write(&WRITE3args {
-            file: file_fh,
-            offset: 0,
-            count,
-            stable: stable_how::UNSTABLE,
-            data: Opaque::borrowed(NEW_CONTENT),
-        })
+        .write(
+            file_fh,
+            0,
+            stable_how::UNSTABLE,
+            &nfs3_tests::fixture_payload(NEW_CONTENT.to_vec()),
+        )
         .await
         .expect("write call failed");
 
@@ -99,13 +98,12 @@ pub async fn write_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh
 
     let write_res = ctx
         .client
-        .write(&WRITE3args {
-            file: file_fh,
-            offset: WRITE_OFFSET,
-            count,
-            stable: stable_how::UNSTABLE,
-            data: Opaque::borrowed(WRITE_DATA),
-        })
+        .write(
+            file_fh,
+            WRITE_OFFSET,
+            stable_how::UNSTABLE,
+            &nfs3_tests::fixture_payload(WRITE_DATA.to_vec()),
+        )
         .await
         .expect("write call failed");
 
@@ -384,7 +382,14 @@ pub async fn create_hard_link(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .await;
 
     match link_res {
-        Err(e) if e.to_string().contains("Procedure unavailable") => {
+        Err(nfs3_client::RpcError {
+            kind:
+                nfs3_client::RpcErrorKind::NotAccepted(
+                    nfs3_client::nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL,
+                ),
+            connection_usable: true,
+            ..
+        }) => {
             // Hard links not supported by this filesystem - this is OK
         }
         Ok(link_result) => {

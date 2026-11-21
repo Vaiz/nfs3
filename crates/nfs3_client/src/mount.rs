@@ -2,11 +2,11 @@ use nfs3_types::mount::{
     MOUNT_PROGRAM, PROGRAM, VERSION, dirpath, exports, mountlist, mountres3, mountres3_ok,
 };
 use nfs3_types::rpc::opaque_auth;
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{Decode, Encode, Void};
 
-use crate::error::{MountError, RpcError};
 use crate::io::{AsyncRead, AsyncWrite};
-use crate::rpc::RpcClient;
+use crate::rpc::{RpcClient, RpcLimits};
+use crate::{MountError, RpcError, RpcErrorKind};
 
 /// Client for the mount service
 #[derive(Debug)]
@@ -19,21 +19,20 @@ where
     IO: AsyncRead + AsyncWrite + Send,
 {
     /// Create a new mount client.
-    pub fn new(io: IO) -> Self {
-        Self {
-            rpc: RpcClient::new(io),
-        }
+    pub fn new(io: IO, limits: RpcLimits) -> Result<Self, RpcErrorKind> {
+        Self::new_with_auth(io, limits, opaque_auth::default(), opaque_auth::default())
     }
 
     /// Create a new mount client with custom credential and verifier.
     pub fn new_with_auth(
         io: IO,
+        limits: RpcLimits,
         credential: opaque_auth<'static>,
         verifier: opaque_auth<'static>,
-    ) -> Self {
-        Self {
-            rpc: RpcClient::new_with_auth(io, credential, verifier),
-        }
+    ) -> Result<Self, RpcErrorKind> {
+        Ok(Self {
+            rpc: RpcClient::new(io, limits, credential, verifier)?,
+        })
     }
 
     pub async fn null(&mut self) -> Result<(), RpcError> {
@@ -83,8 +82,8 @@ where
 
     async fn call<C, R>(&mut self, proc: MOUNT_PROGRAM, args: C) -> Result<R, RpcError>
     where
-        R: Unpack,
-        C: Pack + Send + Sync,
+        R: Decode,
+        C: Encode + Send + Sync,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, &args)

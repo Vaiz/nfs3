@@ -51,7 +51,7 @@ pub enum PMAP_PROG {
 }
 
 impl std::convert::TryFrom<u32> for PMAP_PROG {
-    type Error = crate::xdr_codec::Error;
+    type Error = crate::xdr_codec::DecodeError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
@@ -61,7 +61,7 @@ impl std::convert::TryFrom<u32> for PMAP_PROG {
             3 => Ok(Self::PMAPPROC_GETPORT),
             4 => Ok(Self::PMAPPROC_DUMP),
             5 => Ok(Self::PMAPPROC_CALLIT),
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
+            _ => Err(crate::xdr_codec::DecodeError::InvalidTag(value)),
         }
     }
 }

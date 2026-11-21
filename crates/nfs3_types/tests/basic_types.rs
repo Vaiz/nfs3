@@ -1,9 +1,10 @@
 // Basic XDR codec tests for fundamental data types and structures
 
 use std::borrow::Cow;
-use std::io::Cursor;
 
-use nfs3_types::xdr_codec::{Opaque, Pack, Unpack, XdrCodec};
+use nfs3_types::xdr_codec::{Opaque, XdrCodec};
+mod support;
+use support::{decode, encode};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -37,37 +38,22 @@ struct TupleStruct(u32, u32);
 struct UnitStruct;
 
 #[test]
-fn enum_pack() {
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field1.pack(&mut bytes).unwrap();
-    assert_eq!(TestEnum::Field1.packed_size(), 4);
-    assert_eq!(len, 4);
+fn enum_encode() {
+    let bytes = encode(&TestEnum::Field1);
     assert_eq!(bytes, [0, 0, 0, 1]);
 
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field2.pack(&mut bytes).unwrap();
-    assert_eq!(TestEnum::Field2.packed_size(), 4);
-    assert_eq!(len, 4);
+    let bytes = encode(&TestEnum::Field2);
     assert_eq!(bytes, [0, 0, 0, 2]);
 
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field3.pack(&mut bytes).unwrap();
-    assert_eq!(TestEnum::Field3.packed_size(), 4);
-    assert_eq!(len, 4);
+    let bytes = encode(&TestEnum::Field3);
     assert_eq!(bytes, [0x12, 0x34, 0x56, 0x78]);
 }
 
 #[test]
-fn enum_unpack() {
-    fn unpack(buf: [u8; 4]) -> TestEnum {
-        let (e, len) = TestEnum::unpack(&mut Cursor::new(buf)).unwrap();
-        assert_eq!(len, 4);
-        e
-    }
-
-    assert_eq!(TestEnum::Field1, unpack([0, 0, 0, 1]));
-    assert_eq!(TestEnum::Field2, unpack([0, 0, 0, 2]));
-    assert_eq!(TestEnum::Field3, unpack([0x12, 0x34, 0x56, 0x78]));
+fn enum_decode() {
+    assert_eq!(TestEnum::Field1, decode(&[0, 0, 0, 1]).unwrap());
+    assert_eq!(TestEnum::Field2, decode(&[0, 0, 0, 2]).unwrap());
+    assert_eq!(TestEnum::Field3, decode(&[0x12, 0x34, 0x56, 0x78]).unwrap());
 }
 
 #[test]
@@ -75,13 +61,8 @@ fn enum_roundtrip() {
     let test_cases = [TestEnum::Field1, TestEnum::Field2, TestEnum::Field3];
 
     for original in test_cases {
-        let mut buffer = Vec::new();
-        let pack_len = original.pack(&mut buffer).unwrap();
-        assert_eq!(pack_len, original.packed_size());
-
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = TestEnum::unpack(&mut cursor).unwrap();
-        assert_eq!(pack_len, unpack_len);
+        let buffer = encode(&original);
+        let deserialized: TestEnum = decode(&buffer).unwrap();
         assert_eq!(original, deserialized);
     }
 }
@@ -90,15 +71,10 @@ fn enum_roundtrip() {
 fn simple_struct_serialization() {
     let original = SimpleStruct { a: 0x123, b: 0x456 };
 
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.packed_size(), 8);
-    assert_eq!(len, 8);
+    let buffer = encode(&original);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = SimpleStruct::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 8);
+    let deserialized: SimpleStruct = decode(&buffer).unwrap();
     assert_eq!(original, deserialized);
 }
 
@@ -112,10 +88,7 @@ fn nested_struct_serialization() {
         flag: true,
     };
 
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.packed_size(), 12);
-    assert_eq!(len, 12);
+    let buffer = encode(&original);
     assert_eq!(
         buffer,
         [
@@ -123,9 +96,7 @@ fn nested_struct_serialization() {
         ]
     );
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = NestedStruct::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 12);
+    let deserialized: NestedStruct = decode(&buffer).unwrap();
     assert_eq!(original, deserialized);
 }
 
@@ -135,16 +106,12 @@ fn struct_with_lifetime_serialization() {
         inner: Opaque(Cow::Borrowed(b"Hello")),
     };
 
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.packed_size(), 12);
-    assert_eq!(len, 12);
+    let buffer = encode(&original);
     assert_eq!(buffer[0..4], [0u8, 0, 0, 5]);
     assert_eq!(&buffer[4..], b"Hello\0\0\0");
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = StructWithLifetime::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 12);
+    let deserialized: StructWithLifetime<'static> = decode(&buffer).unwrap();
+    assert!(matches!(deserialized.inner.0, Cow::Owned(_)));
     assert_eq!(original, deserialized);
 }
 
@@ -152,15 +119,10 @@ fn struct_with_lifetime_serialization() {
 fn tuple_struct_serialization() {
     let original = TupleStruct(0x123, 0x456);
 
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.packed_size(), 8);
-    assert_eq!(len, 8);
+    let buffer = encode(&original);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = TupleStruct::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 8);
+    let deserialized: TupleStruct = decode(&buffer).unwrap();
     assert_eq!(original, deserialized);
 }
 
@@ -168,15 +130,10 @@ fn tuple_struct_serialization() {
 fn unit_struct_serialization() {
     let original = UnitStruct;
 
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
-    assert_eq!(original.packed_size(), 0);
-    assert_eq!(len, 0);
+    let buffer = encode(&original);
     assert_eq!(buffer, []);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = UnitStruct::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 0);
+    let deserialized: UnitStruct = decode(&buffer).unwrap();
     assert_eq!(original, deserialized);
 }
 
@@ -184,9 +141,7 @@ fn unit_struct_serialization() {
 fn struct_edge_cases() {
     // Test with zero values
     let zero_struct = SimpleStruct { a: 0, b: 0 };
-    let mut buffer = Vec::new();
-    let len = zero_struct.pack(&mut buffer).unwrap();
-    assert_eq!(len, 8);
+    let buffer = encode(&zero_struct);
     assert_eq!(buffer, [0, 0, 0, 0, 0, 0, 0, 0]);
 
     // Test with maximum values
@@ -194,9 +149,7 @@ fn struct_edge_cases() {
         a: u32::MAX,
         b: u32::MAX,
     };
-    let mut buffer = Vec::new();
-    let len = max_struct.pack(&mut buffer).unwrap();
-    assert_eq!(len, 8);
+    let buffer = encode(&max_struct);
     assert_eq!(buffer, [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
 }
 
@@ -204,15 +157,11 @@ fn struct_edge_cases() {
 fn opaque_data_edge_cases() {
     // Test empty opaque data
     let empty_opaque = Opaque(Cow::Borrowed(b""));
-    let mut buffer = Vec::new();
-    let len = empty_opaque.pack(&mut buffer).unwrap();
-    assert_eq!(len, 4); // Length field only
+    let buffer = encode(&empty_opaque);
     assert_eq!(buffer, [0, 0, 0, 0]);
 
     // Test opaque data requiring padding
     let unpadded_opaque = Opaque(Cow::Borrowed(b"ABC")); // 3 bytes, needs 1 byte padding
-    let mut buffer = Vec::new();
-    let len = unpadded_opaque.pack(&mut buffer).unwrap();
-    assert_eq!(len, 8); // 4 bytes length + 3 bytes data + 1 byte padding
+    let buffer = encode(&unpadded_opaque);
     assert_eq!(buffer, [0, 0, 0, 3, b'A', b'B', b'C', 0]);
 }

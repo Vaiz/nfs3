@@ -18,8 +18,7 @@ use nfs3_server::vfs::{
     VFSCapabilities,
 };
 use symbols_cache::SymbolsCache;
-use tokio::fs::{File, ReadDir};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::fs::ReadDir;
 use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
@@ -54,33 +53,12 @@ impl Fs {
         Ok(self.root.join(relative_path))
     }
 
-    async fn read(
-        &self,
-        path: PathBuf,
-        start: u64,
-        count: u32,
-    ) -> std::io::Result<(Vec<u8>, bool)> {
-        let mut f = File::open(&path).await?;
-        let len = f.metadata().await?.len();
-        if start >= len || count == 0 {
-            return Ok((Vec::new(), u64::from(count) >= len));
-        }
-
-        let count = u64::from(count).min(len - start);
-        f.seek(SeekFrom::Start(start)).await?;
-
-        let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
-        f.read_exact(&mut buf).await?;
-
-        Ok((buf, start + count >= len))
-    }
-
     async fn get_or_create_iterator(
         &self,
         dirid: FileHandleU64,
         cookie: u64,
     ) -> Result<MirrorFsIterator, nfsstat3> {
-        let (read_dir, cookie_value) = self.initialize_read_dir(dirid, cookie).await?;
+        let (read_dir, cookie_value, held) = self.initialize_read_dir(dirid, cookie).await?;
 
         Ok(MirrorFsIterator::new(
             self.root.clone(),
@@ -89,16 +67,17 @@ impl Fs {
             dirid,
             Some(read_dir),
             cookie_value,
+            held,
         ))
     }
 
     /// Initialize the `ReadDir` state based on the cookie value.
-    /// Returns (`ReadDir`, `actual_cookie`) tuple.
+    /// Returns the stream, resume position and at most one replayable entry.
     async fn initialize_read_dir(
         &self,
         dirid: FileHandleU64,
         cookie: u64,
-    ) -> Result<(ReadDir, u64), nfsstat3> {
+    ) -> Result<(ReadDir, u64, Option<iterator_cache::HeldEntry>), nfsstat3> {
         let dir_path = {
             let relative_path = self.cache.handle_to_path(dirid)?;
             self.root.join(&relative_path)
@@ -120,13 +99,13 @@ impl Fs {
                 .await
                 .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
             let base = self.iterator_cache.generate_base_cookie();
-            Ok((read_dir, base))
+            Ok((read_dir, base, None))
         } else if let Some(cached_info) = self.iterator_cache.pop_state(dirid, cookie) {
             debug!(
                 "Reusing cached ReadDir for directory: {} at cookie: {cookie}",
                 dir_path.display()
             );
-            Ok((cached_info.read_dir, cached_info.cookie))
+            Ok((cached_info.read_dir, cookie, cached_info.held))
         } else {
             debug!("No cached ReadDir found for cookie {cookie}, returning BAD_COOKIE error");
             Err(nfsstat3::NFS3ERR_BAD_COOKIE)
@@ -160,12 +139,10 @@ impl NfsReadFileSystem for Fs {
 
     async fn read(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let path = self.path(*id)?;
-        self.read(path, offset, count).await.map_err(map_io_error)
+        request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        let path = self.path(request.handle)?;
+        nfs3_server::fs_util::read_owned_file(request, path).await
     }
 
     async fn readdir(
@@ -232,36 +209,12 @@ impl NfsFileSystem for Fs {
 
     async fn write(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        data: &[u8],
-        _stable: stable_how,
+        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
-        let path = self.path(*id)?;
-
-        // Check if it's a regular file
-        let metadata = tokio::fs::symlink_metadata(&path)
-            .await
-            .map_err(map_io_error)?;
-
-        if !metadata.is_file() {
-            return Err(nfsstat3::NFS3ERR_INVAL);
-        }
-
-        async {
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .await?;
-            file.seek(SeekFrom::Start(offset)).await?;
-            file.write_all(data).await?;
-            file.flush().await
-        }
-        .await
-        .map_err(map_io_error)?;
-
-        let attr = self.getattr(id).await?;
-        Ok((attr, stable_how::FILE_SYNC))
+        let id = request.handle;
+        let path = self.path(id)?;
+        let (metadata, stable) = nfs3_server::fs_util::write_owned_file(request, path).await?;
+        Ok((metadata_to_fattr3(id.as_u64(), &metadata), stable))
     }
 
     async fn create(
@@ -461,9 +414,8 @@ impl NfsFileSystem for Fs {
         Ok((link_id, fattr))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
-        // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
-        Ok(())
+    async fn commit(&self, id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        nfs3_server::fs_util::commit_file(self.path(*id)?).await
     }
 }
 

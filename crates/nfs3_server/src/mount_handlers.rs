@@ -1,71 +1,14 @@
 use nfs3_types::mount::{
-    MOUNT_PROGRAM, VERSION, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok,
-    mountstat3,
+    dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok, mountstat3,
 };
-use nfs3_types::rpc::{accept_stat_data, auth_flavor};
+use nfs3_types::rpc::auth_flavor;
 use nfs3_types::xdr_codec::{List, Opaque, Void};
-use tracing::{debug, error, warn};
+use tracing::debug;
 
 use crate::context::RPCContext;
-use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
 use crate::vfs::NfsFileSystem;
 
-#[cfg_attr(
-    not(test),
-    expect(
-        clippy::enum_glob_use,
-        reason = "The dispatch table lists the mount procedure variants"
-    )
-)]
-pub async fn handle_mount<T>(
-    context: RPCContext<T>,
-    message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult>
-where
-    T: NfsFileSystem,
-{
-    use MOUNT_PROGRAM::*;
-
-    let call = message.body();
-    let xid = message.xid();
-
-    debug!("handle_nfs({xid}, {call:?}");
-    if call.vers != VERSION {
-        warn!("Invalid Mount Version number {} != {VERSION}", call.vers);
-        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
-            low: VERSION,
-            high: VERSION,
-        });
-    }
-
-    let Ok(proc) = MOUNT_PROGRAM::try_from(call.proc) else {
-        error!("invalid Mount Program number {}", call.proc);
-        return message.into_error_reply(accept_stat_data::PROC_UNAVAIL);
-    };
-
-    debug!("{proc}({})", message.xid());
-    match proc {
-        MOUNTPROC3_NULL => handle(context, message, mountproc3_null).await,
-        MOUNTPROC3_MNT => handle(context, message, mountproc3_mnt).await,
-        MOUNTPROC3_UMNT => handle(context, message, mountproc3_umnt).await,
-        MOUNTPROC3_UMNTALL => handle(context, message, mountproc3_umnt_all).await,
-        MOUNTPROC3_EXPORT => handle(context, message, mountproc3_export).await,
-        MOUNTPROC3_DUMP => {
-            warn!("Unimplemented message {proc}");
-            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
-        }
-    }
-}
-
-async fn mountproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
-where
-    T: crate::vfs::NfsFileSystem,
-{
-    Void
-}
-
-async fn mountproc3_mnt<T>(
+pub async fn mountproc3_mnt<T>(
     context: RPCContext<T>,
     xid: u32,
     path: dirpath<'_>,
@@ -99,9 +42,6 @@ where
                 auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
             };
             debug!("{xid} --> {response:?}");
-            if let Some(ref chan) = context.mount_signal {
-                let _ = chan.send(true).await;
-            }
             mountres3::Ok(response)
         }
         Err(e) => {
@@ -142,7 +82,15 @@ where
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> exports<'static, 'static>
+#[expect(
+    clippy::unused_async,
+    reason = "Uniform asynchronous metadata dispatch interface"
+)]
+pub async fn mountproc3_export<T>(
+    context: RPCContext<T>,
+    _: u32,
+    _: Void,
+) -> exports<'static, 'static>
 where
     T: crate::vfs::NfsFileSystem,
 {
@@ -153,7 +101,11 @@ where
     }])
 }
 
-async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void
+#[expect(
+    clippy::unused_async,
+    reason = "Uniform asynchronous metadata dispatch interface"
+)]
+pub async fn mountproc3_umnt<T>(_: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {
@@ -166,19 +118,17 @@ where
     };
 
     debug!("mountproc3_umnt({xid},{utf8path})");
-    if let Some(ref chan) = context.mount_signal {
-        let _ = chan.send(false).await;
-    }
     Void
 }
 
-pub async fn mountproc3_umnt_all<T>(context: RPCContext<T>, xid: u32, _: Void) -> Void
+#[expect(
+    clippy::unused_async,
+    reason = "Uniform asynchronous metadata dispatch interface"
+)]
+pub async fn mountproc3_umnt_all<T>(_: RPCContext<T>, xid: u32, _: Void) -> Void
 where
     T: crate::vfs::NfsFileSystem,
 {
     debug!("mountproc3_umnt_all({xid})");
-    if let Some(ref chan) = context.mount_signal {
-        let _ = chan.send(false).await;
-    }
     Void
 }

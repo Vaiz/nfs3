@@ -6,14 +6,13 @@ mod mount_handlers;
 pub(crate) mod nfs_ext;
 mod nfs_handlers;
 mod portmap_handlers;
-mod rpcwire;
 
 #[cfg(feature = "fs_util")]
 #[cfg_attr(docsrs, doc(cfg(feature = "fs_util")))]
 pub mod fs_util;
 
+mod bounded;
 pub mod tcp;
-mod transaction_tracker;
 pub(crate) mod units;
 pub mod vfs;
 
@@ -28,17 +27,5 @@ pub use nfs3_types;
 #[doc(hidden)]
 #[cfg(feature = "__test_reexports")]
 pub mod test_reexports {
-    pub use crate::context::RPCContext;
-    pub use crate::transaction_tracker::TransactionTracker;
-
-    pub async fn process_socket<IO, T>(
-        socket: IO,
-        context: RPCContext<T>,
-    ) -> Result<(), anyhow::Error>
-    where
-        IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
-        T: crate::vfs::NfsFileSystem + 'static,
-    {
-        crate::tcp::process_socket(socket, context).await
-    }
+    pub use crate::bounded::test_support::TestConnection;
 }

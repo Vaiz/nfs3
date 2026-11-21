@@ -3,7 +3,7 @@ use nfs3_client::nfs3_types::nfs3::{
     LOOKUP3args, READDIR3args, READDIRPLUS3args, cookieverf3, dirlist3, dirlistplus3, diropargs3,
     filename3, nfs_fh3,
 };
-use nfs3_client::nfs3_types::xdr_codec::{Opaque, Pack};
+use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::TestContext;
 use tracing::info;
 
@@ -111,7 +111,7 @@ async fn readdir<IO: AsyncRead + AsyncWrite>(
 
         let resok = client.readdir(&args).await?.unwrap();
         assert!(
-            resok.packed_size() <= count as usize,
+            nfs3_tests::rpc_tests::encode(&resok).len() <= count as usize,
             "packed size is larger than count"
         );
 
@@ -176,7 +176,7 @@ async fn readdir_plus<IO: AsyncRead + AsyncWrite>(
 
         let resok = client.readdirplus(&args).await?.unwrap();
         assert!(
-            resok.packed_size() <= maxcount as usize,
+            nfs3_tests::rpc_tests::encode(&resok).len() <= maxcount as usize,
             "packed size is larger than count"
         );
 

@@ -269,7 +269,7 @@ pub async fn assert_files_equal_ex(
         );
 
         assert_eq!(
-            &*nfs_data,
+            nfs_data.try_to_vec().unwrap(),
             &local_buffer[..local_bytes_read],
             "data mismatch between NFS and local file"
         );

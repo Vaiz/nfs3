@@ -77,6 +77,60 @@ pub fn setup_server(mode: ServerMode) -> Result<TestConfig> {
         .arg(bind_port.to_string())
         .arg("--log-level")
         .arg("warn")
+        // Explicit finite regression-fixture policy, not CLI defaults. Four
+        // simultaneous operations fit the listener-wide entitlement.
+        .args([
+            "--record-block-bytes",
+            "65536",
+            "--record-max-bytes",
+            "2097152",
+            "--record-max-fragments",
+            "4096",
+            "--decode-metadata-bytes",
+            "2097152",
+            "--decode-collection-elements",
+            "65536",
+            "--decode-depth",
+            "64",
+            "--decode-reservation-bytes",
+            "16777216",
+            "--encode-wire-bytes",
+            "2097152",
+            "--encode-metadata-bytes",
+            "2097152",
+            "--encode-chunks",
+            "256",
+            "--encode-depth",
+            "64",
+            "--encode-reservation-bytes",
+            "16777216",
+            "--read-max-bytes",
+            "1048576",
+            "--write-max-bytes",
+            "1048576",
+            "--directory-wire-bytes",
+            "1048576",
+            "--directory-entries",
+            "10000",
+            "--directory-name-bytes",
+            "4096",
+            "--directory-metadata-bytes",
+            "2097152",
+            "--max-connections",
+            "16",
+            "--max-operations",
+            "4",
+            "--backing-bytes",
+            "536870912",
+            "--idle-timeout-ms",
+            "30000",
+            "--progress-timeout-ms",
+            "5000",
+            "--receive-timeout-ms",
+            "30000",
+            "--send-timeout-ms",
+            "30000",
+        ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -108,7 +162,9 @@ pub async fn connect_client(
             nfs3_client::tokio::TokioConnector,
             "127.0.0.1",
             "/",
-        )
+            nfs3_tests::client_limits(),
+            1024 * 1024,
+        )?
         .nfs3_port(config.bind_port)
         .mount_port(config.bind_port)
         .connect_from_privileged_port(false)
