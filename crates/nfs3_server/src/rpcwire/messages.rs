@@ -11,11 +11,11 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
 
 /// Contains all RPC record payload bytes, without fragment markers.
 #[derive(Debug)]
-pub struct CompleteRpcMessage(Vec<u8>);
+pub(crate) struct CompleteRpcMessage(Vec<u8>);
 
 impl CompleteRpcMessage {
     /// Returns `None` only on clean EOF between records.
-    pub async fn recv(
+    pub(crate) async fn recv(
         input: &mut (impl AsyncBufRead + Unpin),
         max_rpc_record_size: Option<NonZeroUsize>,
     ) -> anyhow::Result<Option<Self>> {
@@ -63,12 +63,12 @@ impl CompleteRpcMessage {
         }
     }
 
-    pub fn into_inner(self) -> Vec<u8> {
+    pub(crate) fn into_inner(self) -> Vec<u8> {
         self.0
     }
 }
 
-pub struct IncomingRpcMessage {
+pub(crate) struct IncomingRpcMessage {
     xid: u32,
     body: call_body<'static>,
     data: Option<Vec<u8>>,
@@ -105,21 +105,21 @@ impl TryFrom<CompleteRpcMessage> for IncomingRpcMessage {
 }
 
 impl IncomingRpcMessage {
-    pub const fn xid(&self) -> u32 {
+    pub(crate) const fn xid(&self) -> u32 {
         self.xid
     }
-    pub const fn body(&self) -> &call_body<'static> {
+    pub(crate) const fn body(&self) -> &call_body<'static> {
         &self.body
     }
 
-    pub const fn take_data(&mut self) -> Cursor<Vec<u8>> {
+    pub(crate) const fn take_data(&mut self) -> Cursor<Vec<u8>> {
         let data = self.data.take().expect("Data already taken");
         let mut cursor = Cursor::new(data);
         cursor.set_position(self.message_start as u64);
         cursor
     }
 
-    pub fn into_success_reply<T>(self, message: &T) -> anyhow::Result<HandleResult>
+    pub(crate) fn into_success_reply<T>(self, message: &T) -> anyhow::Result<HandleResult>
     where
         T: Pack + 'static,
     {
@@ -134,7 +134,7 @@ impl IncomingRpcMessage {
         pack(&rpc, message).map(HandleResult::Reply)
     }
 
-    pub fn into_rpc_mismatch(self) -> anyhow::Result<HandleResult> {
+    pub(crate) fn into_rpc_mismatch(self) -> anyhow::Result<HandleResult> {
         use nfs3_types::rpc::RPC_VERSION_2;
 
         let reply =
@@ -147,7 +147,7 @@ impl IncomingRpcMessage {
         pack(&rpc, &Void).map(HandleResult::Reply)
     }
 
-    pub fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<HandleResult> {
+    pub(crate) fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<HandleResult> {
         let rpc = rpc_msg {
             xid: self.xid,
             body: msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::auth_error(stat))),
@@ -155,7 +155,7 @@ impl IncomingRpcMessage {
         pack(&rpc, &Void).map(HandleResult::Reply)
     }
 
-    pub fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
+    pub(crate) fn into_error_reply(self, err: accept_stat_data) -> anyhow::Result<HandleResult> {
         let rpc = rpc_msg {
             xid: self.xid,
             body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
@@ -167,7 +167,7 @@ impl IncomingRpcMessage {
     }
 }
 
-pub enum HandleResult {
+pub(crate) enum HandleResult {
     Reply(CompleteRpcMessage),
     NoReply,
 }

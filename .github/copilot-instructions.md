@@ -92,6 +92,7 @@ When working on code changes:
 This project follows strict code quality standards:
 
 - **Clippy**: All clippy warnings must be addressed
+- **Visibility**: Never use `pub` for crate-internal APIs to avoid accidental exposure
 - **Formatting**: Code must be formatted with rustfmt using nightly toolchain
 - **Tests**: All changes must maintain test coverage
 - **Documentation**: Public APIs must be documented

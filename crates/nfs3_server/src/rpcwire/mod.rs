@@ -18,7 +18,7 @@ use crate::transaction_tracker::{self, TransactionError, TransactionLock};
 use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
-pub mod messages;
+pub(crate) mod messages;
 
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
@@ -89,7 +89,7 @@ where
 }
 
 /// Handles the RPC message and returns a result. The handler is an async function
-pub async fn handle<I, O, T>(
+pub(crate) async fn handle<I, O, T>(
     context: RPCContext<T>,
     mut message: IncomingRpcMessage,
     handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
@@ -144,7 +144,7 @@ fn lock_transaction(
     clippy::cast_possible_truncation,
     reason = "The assertion bounds the length to the RPC fragment size"
 )]
-pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
+pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     socket: &mut IO,
     buf: CompleteRpcMessage,
 ) -> Result<(), anyhow::Error> {
@@ -159,11 +159,11 @@ pub async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
+pub(crate) type SocketMessageType = Result<CompleteRpcMessage, anyhow::Error>;
 
 /// Reads RPC records and dispatches each complete message in its own task.
 #[derive(Debug)]
-pub struct SocketMessageHandler<T: NfsFileSystem + 'static> {
+pub(crate) struct SocketMessageHandler<T: NfsFileSystem + 'static> {
     reply_send_channel: mpsc::UnboundedSender<SocketMessageType>,
     context: RPCContext<T>,
     max_rpc_record_size: Option<NonZeroUsize>,
@@ -174,7 +174,7 @@ where
     T: NfsFileSystem + 'static,
 {
     /// Creates a new `SocketMessageHandler` with the receiver for queued message replies
-    pub fn new(
+    pub(crate) fn new(
         context: RPCContext<T>,
         max_rpc_record_size: Option<NonZeroUsize>,
     ) -> (Self, mpsc::UnboundedReceiver<SocketMessageType>) {
@@ -189,7 +189,7 @@ where
         )
     }
 
-    pub async fn read_forever(
+    pub(crate) async fn read_forever(
         self,
         input: &mut (impl AsyncBufRead + Unpin),
     ) -> Result<(), anyhow::Error> {

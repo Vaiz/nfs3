@@ -9,7 +9,7 @@ use crate::units::KIBIBYTE;
 use crate::vfs::NfsFileSystem;
 
 /// processes an established socket
-pub async fn process_socket<IO, T>(
+pub(crate) async fn process_socket<IO, T>(
     socket: IO,
     context: RPCContext<T>,
     max_rpc_record_size: Option<NonZeroUsize>,
