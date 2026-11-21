@@ -1,5 +1,4 @@
 use std::io::Cursor;
-use std::sync::Arc;
 use std::time::Instant;
 
 use call::{RpcCall, RpcCallOutcome};
@@ -29,7 +28,7 @@ const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
-    mut context: RPCContext<T>,
+    context: RPCContext<T>,
     message: RpcRecord,
 ) -> anyhow::Result<RpcCallOutcome>
 where
@@ -45,18 +44,20 @@ where
         return message.into_rpc_mismatch();
     }
 
-    let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
-    if unix {
-        let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
-        context.auth = Arc::new(auth);
-    }
-    if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(context.auth.as_ref())) {
+    let auth = if call.cred.flavor == auth_flavor::AUTH_UNIX {
+        Some(auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0)
+    } else {
+        None
+    };
+    if prog != portmap::PROGRAM && !context.vfs.authorize(auth.as_ref()) {
         warn!(
             "refusing a call from uid {} on {}",
-            context.auth.uid, context.client_addr
+            auth.as_ref().map_or(0, |auth| auth.uid),
+            context.client_addr
         );
         return message.into_auth_error(auth_stat::AUTH_TOOWEAK);
     }
+    drop(auth);
 
     let transaction = lock_transaction(
         &context.transaction_tracker,
@@ -191,4 +192,118 @@ where
         });
     }
     Ok(())
+}
+
+#[cfg(all(test, feature = "__test_reexports", feature = "memfs"))]
+mod tests {
+    use std::sync::Arc;
+
+    use nfs3_types::nfs3::{NFS_PROGRAM, fattr3, filename3, nfspath3, nfsstat3};
+    use nfs3_types::rpc::{msg_body, opaque_auth, rejected_reply, reply_body, rpc_msg};
+
+    use super::*;
+    use crate::memfs::{MemFs, MemFsConfig};
+    use crate::vfs::adapters::ReadOnlyAdapter;
+    use crate::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirPlusIterator};
+
+    struct AuthFs(MemFs);
+
+    impl NfsReadFileSystem for AuthFs {
+        type Handle = FileHandleU64;
+
+        fn root_dir(&self) -> Self::Handle {
+            self.0.root_dir()
+        }
+
+        fn authorize(&self, auth: Option<&auth_unix>) -> bool {
+            auth.is_some_and(|auth| auth.uid == 1000 && auth.gids == [1001, 1002])
+        }
+
+        async fn lookup(
+            &self,
+            dirid: &Self::Handle,
+            filename: &filename3<'_>,
+        ) -> Result<Self::Handle, nfsstat3> {
+            self.0.lookup(dirid, filename).await
+        }
+
+        async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
+            self.0.getattr(id).await
+        }
+
+        async fn read(
+            &self,
+            id: &Self::Handle,
+            offset: u64,
+            count: u32,
+        ) -> Result<(Vec<u8>, bool), nfsstat3> {
+            self.0.read(id, offset, count).await
+        }
+
+        async fn readdirplus(
+            &self,
+            dirid: &Self::Handle,
+            cookie: u64,
+        ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
+            self.0.readdirplus(dirid, cookie).await
+        }
+
+        async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
+            self.0.readlink(id).await
+        }
+    }
+
+    #[tokio::test]
+    async fn calls_on_the_same_connection_use_only_their_own_credentials() -> anyhow::Result<()> {
+        let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+        let connection = RPCContext::test_ctx("/mnt", Arc::new(ReadOnlyAdapter::new(AuthFs(fs))));
+        let auth = |uid| {
+            opaque_auth::auth_unix(&auth_unix {
+                uid,
+                gids: vec![1001, 1002],
+                ..auth_unix::default()
+            })
+        };
+        for (xid, cred, authorized) in [
+            (1, auth(1000), true),
+            (2, opaque_auth::default(), false),
+            (3, auth(2000), false),
+            (4, auth(1000), true),
+        ] {
+            let call = rpc_msg {
+                xid,
+                body: msg_body::CALL(call_body {
+                    rpcvers: RPC_VERSION_2,
+                    prog: nfs::PROGRAM,
+                    vers: nfs::VERSION,
+                    proc: NFS_PROGRAM::NFSPROC3_NULL as u32,
+                    cred,
+                    verf: opaque_auth::default(),
+                }),
+            };
+            let mut bytes = Vec::new();
+            call.pack(&mut bytes)?;
+            let context = connection.clone();
+            assert!(Arc::ptr_eq(&context.client_addr, &connection.client_addr));
+            let RpcCallOutcome::Reply(reply) =
+                handle_rpc_message(context, RpcRecord::new(bytes)).await?
+            else {
+                anyhow::bail!("expected a reply to call {xid}");
+            };
+            let (reply, _) = rpc_msg::unpack(&mut Cursor::new(reply.into_inner()))?;
+            assert_eq!(reply.xid, xid);
+            match (authorized, reply.body) {
+                (true, msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)))
+                    if matches!(reply.reply_data, accept_stat_data::SUCCESS) => {}
+                (
+                    false,
+                    msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::AUTH_ERROR(
+                        auth_stat::AUTH_TOOWEAK,
+                    ))),
+                ) => {}
+                (_, body) => anyhow::bail!("unexpected reply to call {xid}: {body:?}"),
+            }
+        }
+        Ok(())
+    }
 }

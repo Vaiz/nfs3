@@ -278,7 +278,6 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                         .expect("failed to get peer address")
                         .to_string(),
                 ),
-                auth: Arc::default(),
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
                 export_name: Arc::clone(&self.export_name),
