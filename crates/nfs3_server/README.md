@@ -19,10 +19,6 @@ Examples
 
 The project includes a set of examples that can be run pretty much in the same way. You can find them in [examples](https://github.com/Vaiz/nfs3/tree/main/crates/nfs3_server/examples) folder.
 
-The server examples use `Builder::max_rpc_record_size` to cap incoming RPC
-records at 16 MiB. When embedding the library, set a cap appropriate for your
-deployment; the listener has no record size cap by default.
-
 `MemFs` example
 ---------------
 
