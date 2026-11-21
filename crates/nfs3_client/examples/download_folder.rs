@@ -171,7 +171,7 @@ async fn download_file(
             .await?
             .unwrap();
 
-        let read_data = read.data.0;
+        let read_data = read.data;
         file.write_all(&read_data)?;
         offset += read_data.len() as u64;
 

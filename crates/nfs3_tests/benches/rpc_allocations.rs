@@ -19,8 +19,8 @@ use tokio::runtime::{Builder, Runtime};
 
 const GROUP: &str = "tcp_connection";
 const FILE_NAME: &[u8] = b"file";
-const COUNT: u32 = 4096;
-const PAYLOAD: &[u8] = &[0xAB; COUNT as usize];
+const SMALL: u32 = 4 * 1024;
+const LARGE: u32 = 1024 * 1024;
 
 #[derive(Clone, Copy)]
 enum Operation {
@@ -30,13 +30,16 @@ enum Operation {
     Write,
 }
 
-type Workload = (Operation, usize);
+/// Operation, number of requests, and READ/WRITE payload size.
+type Workload = (Operation, usize, u32);
 
 struct Fixture {
     runtime: Runtime,
     server: Server<TcpStream, MemFs>,
     client: Nfs3Client<TokioIo<TcpStream>>,
     workload: Workload,
+    // Allocated during setup so the measured run only counts RPC allocations.
+    payload: Vec<u8>,
 }
 
 fn prepare(workload: Workload) -> Fixture {
@@ -53,8 +56,9 @@ fn prepare(workload: Workload) -> Fixture {
         client.set_nodelay(true).unwrap();
         (server, client)
     });
+    let payload = vec![0xAB; workload.2 as usize];
     let mut config = MemFsConfig::default();
-    config.add_file("/file", PAYLOAD);
+    config.add_file("/file", payload.clone());
     let server = Server::new(server, MemFs::new(config).unwrap()).unwrap();
     let client = Nfs3Client::new(TokioIo::new(client));
     Fixture {
@@ -62,21 +66,25 @@ fn prepare(workload: Workload) -> Fixture {
         server,
         client,
         workload,
+        payload,
     }
 }
 
 #[metabench::benchmark(RPC, GROUP, "rpc", gungraun_setup = prepare)]
-#[bench::one_null((Operation::Null, 1))]
-#[bench::hundred_nulls((Operation::Null, 100))]
-#[bench::hundred_lookups((Operation::Lookup, 100))]
-#[bench::hundred_reads((Operation::Read, 100))]
-#[bench::hundred_writes((Operation::Write, 100))]
+#[bench::one_null((Operation::Null, 1, SMALL))]
+#[bench::hundred_nulls((Operation::Null, 100, SMALL))]
+#[bench::hundred_lookups((Operation::Lookup, 100, SMALL))]
+#[bench::hundred_reads((Operation::Read, 100, SMALL))]
+#[bench::hundred_writes((Operation::Write, 100, SMALL))]
+#[bench::hundred_large_reads((Operation::Read, 100, LARGE))]
+#[bench::hundred_large_writes((Operation::Write, 100, LARGE))]
 fn measure(fixture: Fixture) -> Runtime {
     let Fixture {
         runtime,
         server,
         client,
         workload,
+        payload,
     } = fixture;
     let lookup = LOOKUP3args {
         what: diropargs3 {
@@ -86,7 +94,10 @@ fn measure(fixture: Fixture) -> Runtime {
     };
     runtime.block_on(async {
         tokio::time::timeout(Duration::from_secs(5), async {
-            let (result, ()) = tokio::join!(server.run(), run_client(client, &lookup, workload));
+            let (result, ()) = tokio::join!(
+                server.run(),
+                run_client(client, &lookup, workload, &payload)
+            );
             result.unwrap();
             // Let the base revision's detached parser observe the connection closing.
             tokio::task::yield_now().await;
@@ -100,7 +111,8 @@ fn measure(fixture: Fixture) -> Runtime {
 async fn run_client(
     mut client: Nfs3Client<TokioIo<TcpStream>>,
     lookup: &LOOKUP3args<'_>,
-    (operation, requests): Workload,
+    (operation, requests, count): Workload,
+    payload: &[u8],
 ) {
     match operation {
         Operation::Null => {
@@ -118,12 +130,12 @@ async fn run_client(
             let args = READ3args {
                 file,
                 offset: 0,
-                count: COUNT,
+                count,
             };
             for _ in 0..requests {
                 let reply = client.read(&args).await.unwrap().unwrap();
-                assert_eq!(reply.count, COUNT);
-                assert_eq!(&*reply.data, PAYLOAD);
+                assert_eq!(reply.count, count);
+                assert_eq!(&*reply.data, payload);
             }
         }
         Operation::Write => {
@@ -131,13 +143,13 @@ async fn run_client(
             let args = WRITE3args {
                 file,
                 offset: 0,
-                count: COUNT,
+                count,
                 stable: stable_how::UNSTABLE,
-                data: Opaque::borrowed(PAYLOAD),
+                data: Opaque::borrowed(payload),
             };
             for _ in 0..requests {
                 let reply = client.write(&args).await.unwrap().unwrap();
-                assert_eq!(reply.count, COUNT);
+                assert_eq!(reply.count, count);
             }
         }
     }
@@ -146,11 +158,13 @@ async fn run_client(
 fn criterion_benchmarks(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group(RPC.group_name());
     for (case, workload) in [
-        ("one_null", (Operation::Null, 1)),
-        ("hundred_nulls", (Operation::Null, 100)),
-        ("hundred_lookups", (Operation::Lookup, 100)),
-        ("hundred_reads", (Operation::Read, 100)),
-        ("hundred_writes", (Operation::Write, 100)),
+        ("one_null", (Operation::Null, 1, SMALL)),
+        ("hundred_nulls", (Operation::Null, 100, SMALL)),
+        ("hundred_lookups", (Operation::Lookup, 100, SMALL)),
+        ("hundred_reads", (Operation::Read, 100, SMALL)),
+        ("hundred_writes", (Operation::Write, 100, SMALL)),
+        ("hundred_large_reads", (Operation::Read, 100, LARGE)),
+        ("hundred_large_writes", (Operation::Write, 100, LARGE)),
     ] {
         group.bench_with_input(
             BenchmarkId::new(RPC.benchmark_name(), case),

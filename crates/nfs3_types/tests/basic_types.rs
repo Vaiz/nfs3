@@ -1,9 +1,6 @@
 // Basic XDR codec tests for fundamental data types and structures
 
-use std::borrow::Cow;
-use std::io::Cursor;
-
-use nfs3_types::xdr_codec::{Opaque, Pack, Unpack, XdrCodec};
+use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, decode, encode};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -38,20 +35,20 @@ struct UnitStruct;
 
 #[test]
 fn enum_pack() {
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field1.pack(&mut bytes).unwrap();
+    let bytes = encode(&TestEnum::Field1).unwrap().to_vec();
+    let len = bytes.len();
     assert_eq!(TestEnum::Field1.packed_size(), 4);
     assert_eq!(len, 4);
     assert_eq!(bytes, [0, 0, 0, 1]);
 
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field2.pack(&mut bytes).unwrap();
+    let bytes = encode(&TestEnum::Field2).unwrap().to_vec();
+    let len = bytes.len();
     assert_eq!(TestEnum::Field2.packed_size(), 4);
     assert_eq!(len, 4);
     assert_eq!(bytes, [0, 0, 0, 2]);
 
-    let mut bytes = Vec::new();
-    let len = TestEnum::Field3.pack(&mut bytes).unwrap();
+    let bytes = encode(&TestEnum::Field3).unwrap().to_vec();
+    let len = bytes.len();
     assert_eq!(TestEnum::Field3.packed_size(), 4);
     assert_eq!(len, 4);
     assert_eq!(bytes, [0x12, 0x34, 0x56, 0x78]);
@@ -60,9 +57,7 @@ fn enum_pack() {
 #[test]
 fn enum_unpack() {
     fn unpack(buf: [u8; 4]) -> TestEnum {
-        let (e, len) = TestEnum::unpack(&mut Cursor::new(buf)).unwrap();
-        assert_eq!(len, 4);
-        e
+        decode(buf.to_vec()).unwrap()
     }
 
     assert_eq!(TestEnum::Field1, unpack([0, 0, 0, 1]));
@@ -75,12 +70,13 @@ fn enum_roundtrip() {
     let test_cases = [TestEnum::Field1, TestEnum::Field2, TestEnum::Field3];
 
     for original in test_cases {
-        let mut buffer = Vec::new();
-        let pack_len = original.pack(&mut buffer).unwrap();
+        let buffer = encode(&original).unwrap().to_vec();
+        let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = TestEnum::unpack(&mut cursor).unwrap();
+        let mut cursor = Decoder::new_copying(buffer);
+        let deserialized = TestEnum::unpack(&mut cursor).unwrap();
+        let unpack_len = cursor.position();
         assert_eq!(pack_len, unpack_len);
         assert_eq!(original, deserialized);
     }
@@ -89,15 +85,15 @@ fn enum_roundtrip() {
 #[test]
 fn simple_struct_serialization() {
     let original = SimpleStruct { a: 0x123, b: 0x456 };
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 8);
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = SimpleStruct::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::new_copying(buffer);
+    let deserialized = SimpleStruct::unpack(&mut cursor).unwrap();
+    let len = cursor.position();
     assert_eq!(len, 8);
     assert_eq!(original, deserialized);
 }
@@ -111,9 +107,8 @@ fn nested_struct_serialization() {
         },
         flag: true,
     };
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 12);
     assert_eq!(len, 12);
     assert_eq!(
@@ -123,8 +118,9 @@ fn nested_struct_serialization() {
         ]
     );
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = NestedStruct::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::new_copying(buffer);
+    let deserialized = NestedStruct::unpack(&mut cursor).unwrap();
+    let len = cursor.position();
     assert_eq!(len, 12);
     assert_eq!(original, deserialized);
 }
@@ -132,18 +128,18 @@ fn nested_struct_serialization() {
 #[test]
 fn struct_with_lifetime_serialization() {
     let original = StructWithLifetime {
-        inner: Opaque(Cow::Borrowed(b"Hello")),
+        inner: Opaque::borrowed(b"Hello"),
     };
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 12);
     assert_eq!(len, 12);
     assert_eq!(buffer[0..4], [0u8, 0, 0, 5]);
     assert_eq!(&buffer[4..], b"Hello\0\0\0");
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = StructWithLifetime::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::new_copying(buffer);
+    let deserialized = StructWithLifetime::unpack(&mut cursor).unwrap();
+    let len = cursor.position();
     assert_eq!(len, 12);
     assert_eq!(original, deserialized);
 }
@@ -151,15 +147,15 @@ fn struct_with_lifetime_serialization() {
 #[test]
 fn tuple_struct_serialization() {
     let original = TupleStruct(0x123, 0x456);
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 8);
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = TupleStruct::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::new_copying(buffer);
+    let deserialized = TupleStruct::unpack(&mut cursor).unwrap();
+    let len = cursor.position();
     assert_eq!(len, 8);
     assert_eq!(original, deserialized);
 }
@@ -167,15 +163,15 @@ fn tuple_struct_serialization() {
 #[test]
 fn unit_struct_serialization() {
     let original = UnitStruct;
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 0);
     assert_eq!(len, 0);
     assert_eq!(buffer, []);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = UnitStruct::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::new_copying(buffer);
+    let deserialized = UnitStruct::unpack(&mut cursor).unwrap();
+    let len = cursor.position();
     assert_eq!(len, 0);
     assert_eq!(original, deserialized);
 }
@@ -184,8 +180,8 @@ fn unit_struct_serialization() {
 fn struct_edge_cases() {
     // Test with zero values
     let zero_struct = SimpleStruct { a: 0, b: 0 };
-    let mut buffer = Vec::new();
-    let len = zero_struct.pack(&mut buffer).unwrap();
+    let buffer = encode(&zero_struct).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8);
     assert_eq!(buffer, [0, 0, 0, 0, 0, 0, 0, 0]);
 
@@ -194,8 +190,8 @@ fn struct_edge_cases() {
         a: u32::MAX,
         b: u32::MAX,
     };
-    let mut buffer = Vec::new();
-    let len = max_struct.pack(&mut buffer).unwrap();
+    let buffer = encode(&max_struct).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8);
     assert_eq!(buffer, [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
 }
@@ -203,16 +199,16 @@ fn struct_edge_cases() {
 #[test]
 fn opaque_data_edge_cases() {
     // Test empty opaque data
-    let empty_opaque = Opaque(Cow::Borrowed(b""));
-    let mut buffer = Vec::new();
-    let len = empty_opaque.pack(&mut buffer).unwrap();
+    let empty_opaque = Opaque::borrowed(b"");
+    let buffer = encode(&empty_opaque).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4); // Length field only
     assert_eq!(buffer, [0, 0, 0, 0]);
 
     // Test opaque data requiring padding
-    let unpadded_opaque = Opaque(Cow::Borrowed(b"ABC")); // 3 bytes, needs 1 byte padding
-    let mut buffer = Vec::new();
-    let len = unpadded_opaque.pack(&mut buffer).unwrap();
+    let unpadded_opaque = Opaque::borrowed(b"ABC"); // 3 bytes, needs 1 byte padding
+    let buffer = encode(&unpadded_opaque).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes length + 3 bytes data + 1 byte padding
     assert_eq!(buffer, [0, 0, 0, 3, b'A', b'B', b'C', 0]);
 }

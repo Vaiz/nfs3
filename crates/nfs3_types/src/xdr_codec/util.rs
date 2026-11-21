@@ -10,7 +10,7 @@ pub const fn get_padding(len: usize) -> usize {
 
 #[inline]
 pub fn zero_padding(len: usize) -> &'static [u8] {
-    const ZEROES: [u8; 3] = [0, 0, 0];
+    static ZEROES: [u8; 3] = [0, 0, 0];
     let pad = get_padding(len);
     &ZEROES[..pad]
 }

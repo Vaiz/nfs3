@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use bytes::Bytes;
 use intaglio::Symbol;
 use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
@@ -453,7 +454,7 @@ impl NfsReadFileSystem for MirrorFs {
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let entry = fsmap.find_entry(id)?;
@@ -475,7 +476,7 @@ impl NfsReadFileSystem for MirrorFs {
             .or(Err(nfsstat3::NFS3ERR_IO))?;
         let mut buf = vec![0; (end - start) as usize];
         f.read_exact(&mut buf).await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok((buf, eof))
+        Ok((buf.into(), eof))
     }
 
     async fn readdirplus(
@@ -525,7 +526,7 @@ impl NfsFileSystem for MirrorFs {
         &self,
         id: &Self::Handle,
         offset: u64,
-        data: &[u8],
+        data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         let id = id.as_u64();
@@ -548,7 +549,7 @@ impl NfsFileSystem for MirrorFs {
             debug!("Unable to seek: {e}");
             nfsstat3::NFS3ERR_IO
         })?;
-        f.write_all(data).await.map_err(|e| {
+        f.write_all(&data).await.map_err(|e| {
             debug!("Unable to write: {e}");
             nfsstat3::NFS3ERR_IO
         })?;

@@ -3,7 +3,7 @@ use nfs3_client::nfs3_types::nfs3::nfs_fh3;
 use nfs3_client::nfs3_types::rpc::{
     accept_stat_data, fragment_header, msg_body, reply_body, rpc_msg,
 };
-use nfs3_client::nfs3_types::xdr_codec::{Pack, Unpack};
+use nfs3_client::nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack};
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
@@ -16,8 +16,6 @@ pub struct RpcTestContext {
 }
 
 impl RpcTestContext {
-    const EOF_FLAG: u32 = 0x8000_0000;
-
     #[must_use]
     pub fn setup() -> Self {
         let mut config = MemFsConfig::default();
@@ -77,17 +75,15 @@ impl RpcTestContext {
             anyhow::bail!("Total length is not a multiple of 4: {total_len}");
         }
 
-        let mut buf = Vec::with_capacity(total_len + 4);
-        let fragment_header = u32::try_from(total_len)? | Self::EOF_FLAG;
-        fragment_header.pack(&mut buf)?;
-        msg.pack(&mut buf)?;
-        args.pack(&mut buf)?;
-        if buf.len() - 4 != total_len {
-            anyhow::bail!(
-                "Buffer length does not match total length: {} != {total_len}",
-                buf.len() - 4
-            );
-        }
+        let mut out = Encoder::with_size_hint(total_len);
+        msg.pack(&mut out)?;
+        args.pack(&mut out)?;
+        anyhow::ensure!(
+            out.len() == total_len,
+            "Encoded length does not match total length: {} != {total_len}",
+            out.len()
+        );
+        let buf = out.finish_record()?.into_bytes();
         self.client_stream.write_all(&buf).await?;
         Ok(())
     }
@@ -108,8 +104,8 @@ impl RpcTestContext {
         let mut buf = vec![0u8; total_len as usize];
         self.client_stream.read_exact(&mut buf).await?;
 
-        let mut cursor = std::io::Cursor::new(buf);
-        let (resp_msg, _) = rpc_msg::unpack(&mut cursor)?;
+        let mut input = Decoder::new_copying(buf);
+        let resp_msg = rpc_msg::unpack(&mut input)?;
 
         let reply = match &resp_msg.body {
             msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
@@ -122,10 +118,10 @@ impl RpcTestContext {
             return Ok((resp_msg, None));
         }
 
-        let (final_value, _) = T::unpack(&mut cursor)?;
-        let pos = cursor.position();
-        if pos != u64::from(total_len) {
-            bail!("Cursor position does not match total length: {pos} != {total_len}");
+        let final_value = T::unpack(&mut input)?;
+        let pos = input.position();
+        if pos != total_len as usize {
+            bail!("Decoder position does not match total length: {pos} != {total_len}");
         }
         Ok((resp_msg, Some(final_value)))
     }

@@ -45,6 +45,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
+use bytes::Bytes;
 pub use config::MemFsConfig;
 use nfs3_types::nfs3::{
     self as nfs, cookie3, createverf3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3,
@@ -154,7 +155,7 @@ impl File {
         self.attr.used = size;
     }
 
-    fn read(&self, offset: u64, count: u32) -> (Vec<u8>, bool) {
+    fn read(&self, offset: u64, count: u32) -> (Bytes, bool) {
         let mut start = usize::try_from(offset).unwrap_or(usize::MAX);
         let mut end = start + count as usize;
         let bytes = &self.content;
@@ -165,7 +166,7 @@ impl File {
         if end > bytes.len() {
             end = bytes.len();
         }
-        (bytes[start..end].to_vec(), eof)
+        (Bytes::copy_from_slice(&bytes[start..end]), eof)
     }
 
     #[expect(
@@ -724,7 +725,7 @@ impl NfsReadFileSystem for MemFs {
         id: &FileHandleU64,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         let fs = self.fs.read().expect("lock is poisoned");
         let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
         let file = entry.as_file()?;
@@ -771,7 +772,7 @@ impl NfsFileSystem for MemFs {
         &self,
         id: &FileHandleU64,
         offset: u64,
-        data: &[u8],
+        data: Bytes,
         _stable: nfs::stable_how, // MemFs writes are always `FILE_SYNC`
     ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
@@ -780,7 +781,7 @@ impl NfsFileSystem for MemFs {
         let file = entry
             .as_file_mut()
             .map_err(|_status| nfsstat3::NFS3ERR_INVAL)?;
-        let attr = file.write(offset, data)?;
+        let attr = file.write(offset, &data)?;
         Ok((attr, nfs::stable_how::FILE_SYNC))
     }
 

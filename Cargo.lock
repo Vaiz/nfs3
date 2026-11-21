@@ -280,6 +280,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 name = "cargo-nfs3-server"
 version = "0.2.3"
 dependencies = [
+ "bytes",
  "clap",
  "ctrlc",
  "intaglio",
@@ -968,6 +969,7 @@ dependencies = [
 name = "nfs3_client"
 version = "0.9.1"
 dependencies = [
+ "bytes",
  "fastrand",
  "jiff 1.0.1",
  "nfs3_types",
@@ -990,6 +992,7 @@ name = "nfs3_server"
 version = "0.11.1"
 dependencies = [
  "anyhow",
+ "bytes",
  "filetime",
  "future_assert",
  "intaglio",
@@ -1004,6 +1007,7 @@ name = "nfs3_tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "criterion",
  "metabench",
  "nfs3_client",
@@ -1018,6 +1022,7 @@ dependencies = [
 name = "nfs3_types"
 version = "0.5.3"
 dependencies = [
+ "bytes",
  "nfs3_macros",
 ]
 
