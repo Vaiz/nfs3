@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.9.1...nfs3_client-v0.9.2) - 2026-11-21
+
+### Fixed
+
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+- remediate dependency advisories and define license policy ([#173](https://github.com/Vaiz/nfs3/pull/173))
+
 ## [0.9.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.9.0...nfs3_client-v0.9.1) - 2026-10-21
 
 ### Other
