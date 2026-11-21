@@ -8,7 +8,7 @@ use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::vfs::NfsFileSystem;
 
 #[cfg_attr(
@@ -18,10 +18,10 @@ use crate::vfs::NfsFileSystem;
         reason = "The dispatch table lists the mount procedure variants"
     )
 )]
-pub async fn handle_mount<T>(
+pub(crate) async fn handle_mount<T>(
     context: RPCContext<T>,
-    message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult>
+    message: RpcCall,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {

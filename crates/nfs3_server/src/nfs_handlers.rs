@@ -19,7 +19,7 @@ use tracing::{debug, error, trace, warn};
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 
@@ -30,10 +30,10 @@ use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
         reason = "The dispatch table lists the NFSv3 procedure variants"
     )
 )]
-pub async fn handle_nfs<T>(
+pub(crate) async fn handle_nfs<T>(
     context: RPCContext<T>,
-    message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult>
+    message: RpcCall,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {

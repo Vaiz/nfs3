@@ -52,15 +52,12 @@ where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
     T: NfsFileSystem + 'static,
 {
-    let (mut message_handler, mut socksend, mut msgrecvchan) =
+    let (message_handler, mut socksend, mut msgrecvchan) =
         SocketMessageHandler::new(context.clone());
 
     tokio::spawn(async move {
-        loop {
-            if let Err(e) = message_handler.read().await {
-                debug!("Message loop broken due to {e}");
-                break;
-            }
+        if let Err(e) = message_handler.read_and_dispatch().await {
+            debug!("Message loop broken due to {e}");
         }
     });
     let mut buf = vec![0u8; 128 * KIBIBYTE as usize].into_boxed_slice();
