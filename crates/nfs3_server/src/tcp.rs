@@ -9,7 +9,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use crate::context::RPCContext;
+use crate::context::{RPCContext, ServerState};
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::{read_and_dispatch_loop, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
@@ -23,12 +23,7 @@ const REPLY_QUEUE_CAPACITY: usize = 16;
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
-    port: u16,
-    arcfs: Arc<T>,
-    mount_signal: Option<mpsc::Sender<bool>>,
-    export_name: Arc<String>,
-    transaction_tracker: Arc<TransactionTracker>,
-    file_handle_converter: crate::vfs::handle::FileHandleConverter,
+    state: Arc<ServerState<T>>,
     stop_notify: Arc<tokio::sync::Notify>,
 }
 
@@ -195,13 +190,13 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
 
         Ok(Self {
             listener,
-            port,
-            arcfs,
-            mount_signal: None,
-            export_name: Arc::from("/".to_string()),
-            transaction_tracker: Self::new_transaction_tracker(),
+            state: Arc::new(ServerState::new(
+                port,
+                arcfs,
+                Self::new_transaction_tracker(),
+                file_handle_converter,
+            )),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
-            file_handle_converter,
         })
     }
 
@@ -224,7 +219,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// Example: Name `foo` results in the export path `/foo`.
     /// Default path is `/` if not set.
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
-        self.export_name = Arc::new(format!(
+        Arc::make_mut(&mut self.state).set_export_name(format!(
             "/{}",
             export_name
                 .as_ref()
@@ -255,13 +250,13 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Sets a mount listener. A "true" signal will be sent on a mount
     /// and a "false" will be sent on an unmount
     fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>) {
-        self.mount_signal = Some(signal);
+        Arc::make_mut(&mut self.state).set_mount_listener(signal);
     }
 
     /// Loops forever and never returns handling all incoming connections.
     async fn handle_forever(&self) -> io::Result<()> {
         let cleaner_future = Cleaner::new(
-            Arc::clone(&self.transaction_tracker),
+            self.state.clone_transaction_tracker(),
             Duration::from_secs(10),
             Arc::clone(&self.stop_notify),
         )
@@ -269,19 +264,8 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
         tokio::spawn(cleaner_future);
 
         loop {
-            let (socket, _) = self.listener.accept().await?;
-            let context = RPCContext::new(
-                self.port,
-                socket
-                    .peer_addr()
-                    .expect("failed to get peer address")
-                    .to_string(),
-                Arc::clone(&self.arcfs),
-                self.mount_signal.clone(),
-                Arc::clone(&self.export_name),
-                Arc::clone(&self.transaction_tracker),
-                self.file_handle_converter,
-            );
+            let (socket, client_addr) = self.listener.accept().await?;
+            let context = RPCContext::new(client_addr.to_string(), Arc::clone(&self.state));
             info!("Accepting connection from {}", context.client_addr());
             debug!("Accepting socket {:?} {:?}", socket, context);
             tokio::spawn(async move {
@@ -289,5 +273,40 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 let _ = process_socket(socket, context).await;
             });
         }
+    }
+}
+
+#[cfg(all(test, feature = "memfs"))]
+mod tests {
+    use super::*;
+    use crate::memfs::{MemFs, MemFsConfig};
+
+    #[tokio::test]
+    async fn listener_updates_preserve_existing_connection_settings() -> io::Result<()> {
+        let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+        let mut listener = NFSTcpListener::bind("127.0.0.1:0", fs).await?;
+        listener.with_export_name("old");
+        let (old_signal, _) = mpsc::channel(1);
+        listener.set_mount_listener(old_signal.clone());
+        let old = RPCContext::new("old peer".to_owned(), Arc::clone(&listener.state));
+
+        listener.with_export_name("/new/");
+        let (new_signal, _) = mpsc::channel(1);
+        listener.set_mount_listener(new_signal.clone());
+        let new = RPCContext::new("new peer".to_owned(), Arc::clone(&listener.state));
+
+        assert_eq!(old.export_name(), "/old");
+        assert_eq!(new.export_name(), "/new");
+        assert!(old.mount_signal().unwrap().same_channel(&old_signal));
+        assert!(new.mount_signal().unwrap().same_channel(&new_signal));
+        assert!(std::ptr::eq(
+            std::ptr::from_ref(old.vfs()),
+            std::ptr::from_ref(new.vfs()),
+        ));
+        assert!(std::ptr::eq(
+            std::ptr::from_ref(old.transaction_tracker()),
+            std::ptr::from_ref(new.transaction_tracker()),
+        ));
+        Ok(())
     }
 }
