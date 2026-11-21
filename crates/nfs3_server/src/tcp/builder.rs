@@ -84,7 +84,7 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
     /// syntax is only supported by the legacy string constructors.
     pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
         let listener = TcpListener::bind(addr).await?;
-        info!("Listening on {:?}", addr);
+        info!("Listening on {addr}");
         Ok(NFSTcpListener::from_listener(
             listener,
             self.fs,
