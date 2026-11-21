@@ -17,6 +17,9 @@
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
 //! use nfs3_server::tcp::{Builder, NFSTcp};
 //!
+//! const RPC_RECORD_LIMIT: NonZeroUsize =
+//!     NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit");
+//!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
 //!     config.add_file("/a.txt", "hello world\n".as_bytes());
@@ -27,7 +30,7 @@
 //!     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 11111));
 //!     let listener = Builder::new()
 //!         .filesystem(memfs)
-//!         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit"))
+//!         .max_rpc_record_size(RPC_RECORD_LIMIT)
 //!         .bind(addr)
 //!         .await?;
 //!     listener.handle_forever().await?;

@@ -33,6 +33,8 @@ use tracing::debug;
 use crate::string_ext::{FromOsString, IntoOsString};
 
 const HOSTPORT: u16 = 11111;
+const RPC_RECORD_LIMIT: NonZeroUsize =
+    NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit");
 
 // This example implements a simple NFS server that mirrors a directory from the host filesystem.
 // Usage:
@@ -65,7 +67,7 @@ async fn main() {
     let addr = SocketAddr::new(bind_ip.parse().expect("invalid bind IP address"), bind_port);
     let listener = Builder::new()
         .filesystem(fs)
-        .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit"))
+        .max_rpc_record_size(RPC_RECORD_LIMIT)
         .bind(addr)
         .await
         .unwrap();
