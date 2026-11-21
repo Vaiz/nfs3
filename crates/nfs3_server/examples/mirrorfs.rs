@@ -53,11 +53,16 @@ async fn main() {
 
     let args = std::env::args().collect::<Vec<_>>();
     let path = args.get(1).expect("must supply directory to mirror");
-    let bind_ip = args.get(2).map_or("0.0.0.0", std::string::String::as_str);
+    let bind_ip = args
+        .get(2)
+        .map_or("0.0.0.0", std::string::String::as_str)
+        .parse()
+        .unwrap();
     let bind_port = args
         .get(3)
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(HOSTPORT);
+    let bind_addr = SocketAddr::new(bind_ip, bind_port);
 
     let path = PathBuf::from(path);
 
@@ -65,10 +70,7 @@ async fn main() {
     let listener = Builder::new()
         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
         .filesystem(fs)
-        .bind(SocketAddr::new(
-            bind_ip.parse().expect("invalid bind IP address"),
-            bind_port,
-        ))
+        .bind(bind_addr)
         .await
         .unwrap();
     listener.handle_forever().await.unwrap();

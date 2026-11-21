@@ -18,19 +18,22 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = std::env::args().collect::<Vec<_>>();
-    let bind_ip = args.get(1).map_or("0.0.0.0", std::string::String::as_str);
-
+    let bind_ip = args
+        .get(1)
+        .map_or("0.0.0.0", std::string::String::as_str)
+        .parse()?;
     let bind_port = args
         .get(2)
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(HOSTPORT);
+    let bind_addr = SocketAddr::new(bind_ip, bind_port);
 
     let memfs =
         nfs3_server::memfs::MemFs::new(default_config()).expect("failed to create memfs instance");
     let listener = Builder::new()
         .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("16 MiB is nonzero"))
         .filesystem(memfs)
-        .bind(SocketAddr::new(bind_ip.parse()?, bind_port))
+        .bind(bind_addr)
         .await?;
     listener.handle_forever().await?;
 
