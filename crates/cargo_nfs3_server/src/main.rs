@@ -71,42 +71,28 @@ async fn main() {
         let memfs = MemFs::new(memfs::default_config(args.readonly))
             .expect("failed to create memfs instance");
         if args.readonly {
-            start_server(
-                bind_addr,
-                export_path,
-                builder.read_only_filesystem(memfs),
-                guards,
-            )
-            .await;
+            let builder = builder.read_only_filesystem(memfs);
+            start_server(bind_addr, export_path, builder, guards).await;
         } else {
-            start_server(bind_addr, export_path, builder.filesystem(memfs), guards).await;
+            let builder = builder.filesystem(memfs);
+            start_server(bind_addr, export_path, builder, guards).await;
         }
     } else {
         let path = args
             .path
             .as_deref()
-            .unwrap_or_else(|| panic!("--path is required when not using --memfs"));
+            .expect("--path is required when not using --memfs");
 
         assert!(Path::new(path).exists(), "path [{path}] does not exist");
 
         let mirror_fs = mirror::Fs::new(path);
         let builder = Builder::new().max_rpc_record_size(MIRROR_RECORD_LIMIT);
         if args.readonly {
-            start_server(
-                bind_addr,
-                export_path,
-                builder.read_only_filesystem(mirror_fs),
-                guards,
-            )
-            .await;
+            let builder = builder.read_only_filesystem(mirror_fs);
+            start_server(bind_addr, export_path, builder, guards).await;
         } else {
-            start_server(
-                bind_addr,
-                export_path,
-                builder.filesystem(mirror_fs),
-                guards,
-            )
-            .await;
+            let builder = builder.filesystem(mirror_fs);
+            start_server(bind_addr, export_path, builder, guards).await;
         }
     }
 }
