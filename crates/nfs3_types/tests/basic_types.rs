@@ -74,7 +74,7 @@ fn enum_roundtrip() {
         let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::new_copying(buffer);
         let deserialized = TestEnum::unpack(&mut cursor).unwrap();
         let unpack_len = cursor.position();
         assert_eq!(pack_len, unpack_len);
@@ -91,7 +91,7 @@ fn simple_struct_serialization() {
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = SimpleStruct::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 8);
@@ -118,7 +118,7 @@ fn nested_struct_serialization() {
         ]
     );
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = NestedStruct::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 12);
@@ -137,7 +137,7 @@ fn struct_with_lifetime_serialization() {
     assert_eq!(buffer[0..4], [0u8, 0, 0, 5]);
     assert_eq!(&buffer[4..], b"Hello\0\0\0");
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = StructWithLifetime::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 12);
@@ -153,7 +153,7 @@ fn tuple_struct_serialization() {
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x01, 0x23, 0x00, 0x00, 0x04, 0x56]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = TupleStruct::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 8);
@@ -169,7 +169,7 @@ fn unit_struct_serialization() {
     assert_eq!(len, 0);
     assert_eq!(buffer, []);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = UnitStruct::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 0);

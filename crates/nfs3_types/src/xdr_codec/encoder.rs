@@ -236,7 +236,7 @@ mod tests {
         let marker = u32::from_be_bytes(head[..4].try_into().unwrap());
         assert_eq!(marker, 0x8000_0000 | u32::try_from(len).unwrap());
 
-        let mut input = Decoder::new(encoded.into_bytes());
+        let mut input = Decoder::new_copying(encoded.into_bytes());
         input.read_array::<4>().unwrap();
         assert_eq!(u32::unpack(&mut input).unwrap(), 7);
         for _ in 0..2 {
