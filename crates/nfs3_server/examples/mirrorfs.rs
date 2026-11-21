@@ -8,6 +8,7 @@ use std::ffi::OsString;
 use std::fs::Metadata;
 use std::io::SeekFrom;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -62,7 +63,12 @@ async fn main() {
 
     let fs = MirrorFs::new(path);
     let addr = SocketAddr::new(bind_ip.parse().expect("invalid bind IP address"), bind_port);
-    let listener = Builder::new().filesystem(fs).bind(addr).await.unwrap();
+    let listener = Builder::new()
+        .filesystem(fs)
+        .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit"))
+        .bind(addr)
+        .await
+        .unwrap();
     listener.handle_forever().await.unwrap();
 }
 

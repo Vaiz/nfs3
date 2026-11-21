@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 
 use nfs3_server::tcp::{Builder, NFSTcp};
 
@@ -29,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::new(bind_ip.parse()?, bind_port);
     let listener = Builder::new()
         .read_only_filesystem(memfs)
+        .max_rpc_record_size(NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit"))
         .bind(addr)
         .await?;
     listener.handle_forever().await?;

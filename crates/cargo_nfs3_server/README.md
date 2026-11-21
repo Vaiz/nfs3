@@ -11,6 +11,12 @@
 - **Not Production-Ready**: This server is not designed for long-term or production use. Running it 24/7 may lead to unexpected issues.
 - **No Security**: NFSv3 is an insecure protocol. All data transmitted is unencrypted and vulnerable to interception.
 
+The CLI caps incoming RPC records at **16 MiB** with `--memfs` and **2 GiB** for
+directory exports, whether read-only or writable. The cap counts the combined
+payload across all fragments of a record, excluding fragment markers. The server
+closes the connection if a record exceeds the cap. The `nfs3_server` library
+has no record size cap unless configured with `Builder::max_rpc_record_size`.
+
 ## Usage
 
 ### Installation

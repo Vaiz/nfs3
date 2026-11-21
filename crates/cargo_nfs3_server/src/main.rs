@@ -1,4 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use clap::Parser;
@@ -12,6 +13,11 @@ mod memfs;
 mod mirror;
 mod string_ext;
 mod threshold_logger;
+
+const MEMFS_RPC_RECORD_LIMIT: NonZeroUsize =
+    NonZeroUsize::new(16 * 1024 * 1024).expect("nonzero record limit");
+const DIRECTORY_RPC_RECORD_LIMIT: NonZeroUsize =
+    NonZeroUsize::new(2 * 1024 * 1024 * 1024).expect("nonzero record limit");
 
 /// CLI tool for the `nfs3_server`
 #[derive(Parser, Debug)]
@@ -64,6 +70,7 @@ async fn main() {
     let builder = Builder::new().export_name(args.export_name);
 
     if args.memfs {
+        let builder = builder.max_rpc_record_size(MEMFS_RPC_RECORD_LIMIT);
         let memfs = MemFs::new(memfs::default_config(args.readonly))
             .expect("failed to create memfs instance");
         if args.readonly {
@@ -79,6 +86,7 @@ async fn main() {
 
         assert!(Path::new(path).exists(), "path [{path}] does not exist");
 
+        let builder = builder.max_rpc_record_size(DIRECTORY_RPC_RECORD_LIMIT);
         let mirror_fs = mirror::Fs::new(path);
         if args.readonly {
             start_server(bind_addr, builder.read_only_filesystem(mirror_fs), guards).await;
