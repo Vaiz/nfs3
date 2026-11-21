@@ -4,13 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::BufReader;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::context::RPCContext;
-use crate::rpcwire::{SocketMessageHandler, write_fragment};
+use crate::rpcwire::messages::RpcRecordReader;
+use crate::rpcwire::{read_and_dispatch, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
@@ -45,57 +46,30 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 
 /// processes an established socket
 pub(crate) async fn process_socket<IO, T>(
-    mut socket: IO,
+    socket: IO,
     context: RPCContext<T>,
 ) -> Result<(), anyhow::Error>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
     T: NfsFileSystem + 'static,
 {
-    let (message_handler, mut socksend, mut msgrecvchan) =
-        SocketMessageHandler::new(context.clone());
+    let (reader, mut writer) = tokio::io::split(socket);
+    let reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
+    let reader = RpcRecordReader::new(reader, None);
+    let (replies, mut pending_replies) = mpsc::unbounded_channel();
 
-    tokio::spawn(async move {
-        if let Err(e) = message_handler.read_and_dispatch().await {
-            debug!("Message loop broken due to {e}");
-        }
-    });
-    let mut buf = vec![0u8; 128 * KIBIBYTE as usize].into_boxed_slice();
-    loop {
-        tokio::select! {
-            result = socket.read(&mut buf) => {
-                match result {
-                    Ok(0) => {
-                        return Ok(());
-                    }
-                    Ok(n) => {
-                        let _ = socksend.write_all(&buf[..n]).await;
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                    Err(e) => {
-                        debug!("Message handling closed : {e}");
-                        return Err(e.into());
-                    }
-                }
-            },
-            reply = msgrecvchan.recv() => {
-                match reply {
-                    Some(Err(e)) => {
-                        debug!("Message handling closed : {e}");
-                        return Err(e);
-                    }
-                    Some(Ok(msg)) => {
-                        if let Err(e) = write_fragment(&mut socket, msg).await {
-                            error!("Write error {e}");
-                        }
-                    }
-                    None => {
-                        return Err(anyhow::anyhow!("Unexpected socket context termination"));
-                    }
-                }
+    // Race whole loops: a reply cannot cancel a partial read, but a framing
+    // error can cancel a blocked write and close the connection.
+    tokio::select! {
+        result = read_and_dispatch(reader, context, replies) => result,
+        result = async {
+            while let Some(reply) = pending_replies.recv().await {
+                write_fragment(&mut writer, reply?).await?;
             }
-        }
+            Ok(())
+        } => result,
     }
+    .inspect_err(|e| debug!("Message handling closed: {e}"))
 }
 
 pub trait NFSTcp: Send + Sync {

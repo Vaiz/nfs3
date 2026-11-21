@@ -1,9 +1,15 @@
+use std::io::{self, Cursor};
+use std::time::Duration;
+
 use anyhow::{Context, bail};
 use nfs3_client::nfs3_types;
-use nfs3_tests::RpcTestContext;
+use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_tests::{RpcTestContext, Server};
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
-use nfs3_types::rpc::{call_body, msg_body, opaque_auth, reply_body, rpc_msg};
-use nfs3_types::xdr_codec::Void;
+use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
+use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::timeout;
 
 fn nfs3_call(xid: u32, proc: NFS_PROGRAM) -> rpc_msg<'static, 'static> {
     rpc_msg {
@@ -65,6 +71,57 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
         },
         msg_body::CALL(_) => bail!("Expected REPLY message, got: {:?}", msg.body),
     }
+}
+
+#[tokio::test]
+async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
+    fn null_call_frame(xid: u32) -> anyhow::Result<Vec<u8>> {
+        let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
+        let marker = fragment_header::new(u32::try_from(call.packed_size())?, true);
+        let mut frame = marker.into_xdr_buf().to_vec();
+        call.pack(&mut frame)?;
+        Ok(frame)
+    }
+
+    // The one-byte capacity forces the server to consume part of any marker
+    // prefix written below before the client's write can complete.
+    let (server, mut client) = tokio::io::duplex(1);
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let server = tokio::spawn(Server::new(server, fs)?.run());
+    timeout(Duration::from_secs(5), async {
+        client.write_all(&null_call_frame(1)?).await?;
+        let second = null_call_frame(2)?;
+        client.write_all(&second[..3]).await?;
+
+        for xid in [1, 2] {
+            let mut marker = [0; 4];
+            client.read_exact(&mut marker).await?;
+            let marker = fragment_header::from(marker);
+            assert!(marker.eof());
+            let mut payload = vec![0; marker.fragment_length() as usize];
+            client.read_exact(&mut payload).await?;
+            let (reply, _) = rpc_msg::unpack(&mut Cursor::new(payload))?;
+            check_reply_header(xid, &reply)?;
+            if xid == 1 {
+                client.write_all(&second[3..]).await?;
+            }
+        }
+
+        client.write_all(&null_call_frame(3)?).await?;
+        // The writer has started the reply but cannot finish it while we stop
+        // reading after one byte. Half-close with an incomplete next marker.
+        client.read_u8().await?;
+        client.write_all(&second[..3]).await?;
+        client.shutdown().await?;
+        let err = server.await?.expect_err("a partial marker must fail");
+        assert_eq!(
+            err.downcast_ref::<io::Error>().map(io::Error::kind),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .context("socket made no progress")?
 }
 
 #[tokio::test]
