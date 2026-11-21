@@ -39,6 +39,6 @@ pub mod test_reexports {
         IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
         T: crate::vfs::NfsFileSystem + 'static,
     {
-        crate::tcp::process_socket(socket, context).await
+        crate::tcp::process_socket(socket, context, None).await
     }
 }

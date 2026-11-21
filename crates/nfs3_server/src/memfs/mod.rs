@@ -12,7 +12,7 @@
 //!
 //! ```no_run
 //! use nfs3_server::memfs::{MemFs, MemFsConfig};
-//! use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+//! use nfs3_server::tcp::{Builder, NFSTcp};
 //!
 //! async fn run() -> anyhow::Result<()> {
 //!     let mut config = MemFsConfig::default();
@@ -21,7 +21,10 @@
 //!     config.add_dir("/a directory");
 //!
 //!     let memfs = MemFs::new(config).unwrap();
-//!     let listener = NFSTcpListener::bind("0.0.0.0:11111", memfs).await?;
+//!     let listener = Builder::new()
+//!         .filesystem(memfs)
+//!         .bind("0.0.0.0:11111".parse()?)
+//!         .await?;
 //!     listener.handle_forever().await?;
 //!     Ok(())
 //! }

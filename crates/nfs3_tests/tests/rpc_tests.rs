@@ -1,14 +1,18 @@
 use std::io::{self, Cursor};
+use std::net::{Ipv4Addr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
 use nfs3_client::nfs3_types;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_tests::{RpcTestContext, Server};
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::time::timeout;
 
 fn nfs3_call(xid: u32, proc: NFS_PROGRAM) -> rpc_msg<'static, 'static> {
@@ -71,6 +75,58 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
         },
         msg_body::CALL(_) => bail!("Expected REPLY message, got: {:?}", msg.body),
     }
+}
+
+#[tokio::test]
+async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
+    let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
+    let mut payload = Vec::new();
+    call.pack(&mut payload)?;
+    let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let listener = Builder::new()
+        .max_rpc_record_size(limit)
+        .filesystem(fs)
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await?;
+    let addr = SocketAddr::new(listener.get_listen_ip(), listener.get_listen_port());
+
+    let client = async {
+        let mut stream = TcpStream::connect(addr).await?;
+        let (head, tail) = payload.split_at(payload.len() / 2);
+        for (fragment, last) in [(head, false), (tail, true)] {
+            let header = fragment_header::new(u32::try_from(fragment.len())?, last);
+            stream.write_all(&header.into_xdr_buf()).await?;
+            stream.write_all(fragment).await?;
+        }
+        let mut marker = [0; 4];
+        stream.read_exact(&mut marker).await?;
+        let reply_header = fragment_header::from(marker);
+        assert!(reply_header.eof());
+        let mut reply = vec![0; reply_header.fragment_length() as usize];
+        stream.read_exact(&mut reply).await?;
+        let (reply, _) = rpc_msg::unpack(&mut Cursor::new(reply))?;
+        check_reply_header(call.xid, &reply)?;
+
+        // The reader should close the connection as soon as the marker declares
+        // a record over the limit, without waiting for the payload.
+        let oversized = fragment_header::new(u32::try_from(limit.get())? + 1, true);
+        stream.write_all(&oversized.into_xdr_buf()).await?;
+        assert_eq!(stream.read(&mut marker).await?, 0);
+        Ok::<_, anyhow::Error>(())
+    };
+
+    timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = client => result,
+            result = listener.handle_forever() => {
+                result?;
+                bail!("TCP listener stopped early");
+            }
+        }
+    })
+    .await
+    .context("TCP listener did not enforce the record limit")?
 }
 
 #[tokio::test]

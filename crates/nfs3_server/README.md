@@ -48,11 +48,15 @@ Note that this example uses *writable* instance of `MemFs`.
 Usage
 =====
 
-You simply need to implement the `vfs::NfsReadFileSystem` and (optionaly) `vfs::NfsFileSystem`
-traits. See memfs.rs for an example and bin/main.rs for how to actually start
-a service. The interface generally not difficult to implement; demanding mainly
-the ability to associate every file system object (directory/file) with a 64-bit
-ID. Directory listing can be a bit complicated due to the pagination requirements.
+Use `tcp::Builder::new()` to configure a listener. Select a filesystem with `.filesystem(fs)`
+for a `vfs::NfsFileSystem` or `.read_only_filesystem(fs)` for a `vfs::NfsReadFileSystem`,
+then call `.bind(addr).await` with a `std::net::SocketAddr`. See the `memfs` and `ro_memfs`
+examples for complete servers.
+
+Before binding, you can set the export path with `.export_name(name)`, set a stable file-handle
+generation with `.generation_number(number)`, or cap the incoming RPC record payload with
+`.max_rpc_record_size(limit)` (a `NonZeroUsize` in bytes). The limit is off by default.
+The legacy `auto:port` address syntax is deprecated; use an explicit loopback address instead.
 
 Relevant RFCs
 =============
