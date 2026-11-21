@@ -137,10 +137,11 @@ impl<T> RPCContext<T>
 where
     T: NfsFileSystem + 'static,
 {
-    pub fn test_ctx(export_name: &str, vfs: Arc<T>) -> Self {
+    /// Creates a test context that owns the filesystem.
+    pub fn test_ctx(export_name: &str, vfs: T) -> Self {
         let mut server = ServerState::new(
             2049,
-            vfs,
+            Arc::new(vfs),
             Arc::new(TransactionTracker::new(
                 std::time::Duration::from_mins(1),
                 256,
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn clone_shares_connection_state() {
         let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
-        let context = RPCContext::test_ctx("/mnt", Arc::new(fs));
+        let context = RPCContext::test_ctx("/mnt", fs);
         assert!(Arc::ptr_eq(&context.0, &context.clone().0));
     }
 }

@@ -196,8 +196,6 @@ where
 
 #[cfg(all(test, feature = "__test_reexports", feature = "memfs"))]
 mod tests {
-    use std::sync::Arc;
-
     use nfs3_types::nfs3::{NFS_PROGRAM, fattr3, filename3, nfspath3, nfsstat3};
     use nfs3_types::rpc::{msg_body, opaque_auth, rejected_reply, reply_body, rpc_msg};
 
@@ -256,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn calls_on_the_same_connection_use_only_their_own_credentials() -> anyhow::Result<()> {
         let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
-        let connection = RPCContext::test_ctx("/mnt", Arc::new(ReadOnlyAdapter::new(AuthFs(fs))));
+        let connection = RPCContext::test_ctx("/mnt", ReadOnlyAdapter::new(AuthFs(fs)));
         let auth = |uid| {
             opaque_auth::auth_unix(&auth_unix {
                 uid,

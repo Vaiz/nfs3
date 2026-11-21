@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use nfs3_client::nfs3_types::nfs3::nfs_fh3;
 use nfs3_server::test_reexports::RPCContext;
 use nfs3_server::vfs::NfsFileSystem;
@@ -15,7 +13,7 @@ where
     FS: NfsFileSystem + 'static,
 {
     pub fn new(io: IO, memfs: FS) -> anyhow::Result<Self> {
-        let context = RPCContext::test_ctx("/mnt", Arc::new(memfs));
+        let context = RPCContext::test_ctx("/mnt", memfs);
         let this = Self { context, io };
         Ok(this)
     }
