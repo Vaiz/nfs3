@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
 use std::io::SeekFrom;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,7 +21,7 @@ use nfs3_server::nfs3_types::nfs3::{
     cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
     stable_how,
 };
-use nfs3_server::tcp::{NFSTcp, NFSTcpListener};
+use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_server::vfs::{
     DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
 };
@@ -60,9 +61,8 @@ async fn main() {
     let path = PathBuf::from(path);
 
     let fs = MirrorFs::new(path);
-    let listener = NFSTcpListener::bind(&format!("{bind_ip}:{bind_port}"), fs)
-        .await
-        .unwrap();
+    let addr = SocketAddr::new(bind_ip.parse().expect("invalid bind IP address"), bind_port);
+    let listener = Builder::new().filesystem(fs).bind(addr).await.unwrap();
     listener.handle_forever().await.unwrap();
 }
 

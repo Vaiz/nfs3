@@ -35,7 +35,7 @@ cargo-nfs3-server --path ./shared --bind-ip 0.0.0.0 --bind-port 11111
 
 ### Options
 - `--path`: Path to the directory to serve (required unless using `--memfs`).
-- `--bind-ip`: IP address to bind the server to (default: `0.0.0.0`).
+- `--bind-ip`: Numeric IPv4 or IPv6 address to bind the server to (default: `0.0.0.0`).
 - `--bind-port`: Port to bind the server to (default: `11111`).
 - `--readonly`: Serve the directory as read-only.
 - `--memfs`: Use an in-memory filesystem instead of a directory.

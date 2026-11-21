@@ -1,5 +1,6 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,20 +16,30 @@ use crate::rpcwire::{read_and_dispatch_loop, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
+use crate::vfs::handle::FileHandleConverter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
+
+mod builder;
+
+pub use builder::Builder;
 
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 
+fn normalized_export_name(name: &str) -> Arc<str> {
+    Arc::from(format!("/{}", name.trim_matches('/')))
+}
+
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
-    port: u16,
+    local_addr: SocketAddr,
     arcfs: Arc<T>,
     mount_signal: Option<mpsc::Sender<bool>>,
-    export_name: Arc<String>,
+    export_name: Arc<str>,
+    max_rpc_record_size: Option<NonZeroUsize>,
     transaction_tracker: Arc<TransactionTracker>,
-    file_handle_converter: crate::vfs::handle::FileHandleConverter,
+    file_handle_converter: FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
 }
 
@@ -51,6 +62,7 @@ pub fn generate_host_ip(hostnum: u16) -> String {
 pub(crate) async fn process_socket<IO, T>(
     socket: IO,
     context: RPCContext<T>,
+    max_rpc_record_size: Option<NonZeroUsize>,
 ) -> Result<(), anyhow::Error>
 where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
@@ -58,7 +70,7 @@ where
 {
     let (reader, mut writer) = tokio::io::split(socket);
     let reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
-    let reader = RpcRecordReader::new(reader, None);
+    let reader = RpcRecordReader::new(reader, max_rpc_record_size);
     let (replies, mut pending_replies) = mpsc::channel(REPLY_QUEUE_CAPACITY);
 
     // Race whole loops: a reply cannot cancel a partial read, but a framing
@@ -100,17 +112,51 @@ where
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsReadFileSystem`].
+    ///
+    /// `auto:port` is deprecated but still supported here.
+    #[deprecated(
+        note = "Use Builder::new().read_only_filesystem(fs).bind(addr); auto:port is deprecated"
+    )]
     pub async fn bind_ro(ipstr: &str, fs: RO) -> io::Result<Self> {
-        Self::bind(ipstr, ReadOnlyAdapter::new(fs)).await
+        Self::bind_inner(ipstr, ReadOnlyAdapter::new(fs), None).await
     }
 }
 
 impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
+    fn new(
+        listener: TcpListener,
+        fs: T,
+        export_name: Arc<str>,
+        generation_number: Option<u64>,
+        max_rpc_record_size: Option<NonZeroUsize>,
+    ) -> io::Result<Self> {
+        let local_addr = listener.local_addr()?;
+        let file_handle_converter = generation_number.map_or_else(
+            FileHandleConverter::new,
+            FileHandleConverter::with_generation_number,
+        );
+
+        Ok(Self {
+            listener,
+            local_addr,
+            arcfs: Arc::new(fs),
+            mount_signal: None,
+            export_name,
+            max_rpc_record_size,
+            transaction_tracker: Self::new_transaction_tracker(),
+            stop_notify: Arc::new(tokio::sync::Notify::new()),
+            file_handle_converter,
+        })
+    }
+
     /// Create a new `NFSTcpListener`.
     ///
     /// It binds to a ipstr of the form [ip address]:port. For instance,
     /// "127.0.0.1:12000". `fs` is an instance of an implementation
     /// of [`NfsFileSystem`].
+    ///
+    /// `auto:port` is deprecated but still supported here.
+    #[deprecated(note = "Use Builder::new().filesystem(fs).bind(addr); auto:port is deprecated")]
     pub async fn bind(ipstr: &str, fs: T) -> io::Result<Self> {
         Self::bind_inner(ipstr, fs, None).await
     }
@@ -121,6 +167,9 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// stale handles from previous server instances. When multiple NFS server
     /// instances share the same generation number, file handles remain valid
     /// across all instances (e.g. behind a load balancer).
+    ///
+    /// `auto:port` is deprecated but still supported here.
+    #[deprecated(note = "Use Builder::generation_number before binding; auto:port is deprecated")]
     pub async fn bind_with_generation(
         ipstr: &str,
         fs: T,
@@ -142,67 +191,37 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                 "Port not in range 0..=65535",
             )
         })?;
-
-        let arcfs: Arc<T> = Arc::new(fs);
-
-        if ip == "auto" {
+        let listener = if ip == "auto" {
             let mut num_tries_left = 32;
 
             for try_ip in 1u16.. {
                 let ip = generate_host_ip(try_ip);
 
-                let result =
-                    Self::bind_internal(&ip, port, Arc::clone(&arcfs), generation_number).await;
-
-                match result {
-                    Err(_) => {
+                match Self::bind_legacy_addr(&ip, port).await {
+                    Err(err) => {
                         if num_tries_left == 0 {
-                            return result;
+                            return Err(err);
                         }
                         num_tries_left -= 1;
                     }
-                    Ok(_) => {
-                        return result;
+                    Ok(listener) => {
+                        return Self::new(listener, fs, Arc::from("/"), generation_number, None);
                     }
                 }
             }
             unreachable!(); // Does not detect automatically that loop above never terminates.
         } else {
             // Otherwise, try this.
-            Self::bind_internal(ip, port, arcfs, generation_number).await
-        }
+            Self::bind_legacy_addr(ip, port).await?
+        };
+        Self::new(listener, fs, Arc::from("/"), generation_number, None)
     }
 
-    async fn bind_internal(
-        ip: &str,
-        port: u16,
-        arcfs: Arc<T>,
-        generation_number: Option<u64>,
-    ) -> io::Result<Self> {
+    async fn bind_legacy_addr(ip: &str, port: u16) -> io::Result<TcpListener> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
-        info!("Listening on {:?}", &ipstr);
-
-        let port = match listener.local_addr().expect("failed to get local address") {
-            SocketAddr::V4(s) => s.port(),
-            SocketAddr::V6(s) => s.port(),
-        };
-
-        let file_handle_converter = generation_number.map_or_else(
-            crate::vfs::handle::FileHandleConverter::new,
-            crate::vfs::handle::FileHandleConverter::with_generation_number,
-        );
-
-        Ok(Self {
-            listener,
-            port,
-            arcfs,
-            mount_signal: None,
-            export_name: Arc::from("/".to_string()),
-            transaction_tracker: Self::new_transaction_tracker(),
-            stop_notify: Arc::new(tokio::sync::Notify::new()),
-            file_handle_converter,
-        })
+        info!("Listening on {ipstr}");
+        Ok(listener)
     }
 
     fn new_transaction_tracker() -> Arc<TransactionTracker> {
@@ -223,33 +242,20 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     ///
     /// Example: Name `foo` results in the export path `/foo`.
     /// Default path is `/` if not set.
+    #[deprecated(note = "Use Builder::export_name before binding")]
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
-        self.export_name = Arc::new(format!(
-            "/{}",
-            export_name
-                .as_ref()
-                .trim_end_matches('/')
-                .trim_start_matches('/')
-        ));
+        self.export_name = normalized_export_name(export_name.as_ref());
     }
 }
 
 impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
     /// Gets the true listening port. Useful if the bound port number is 0
     fn get_listen_port(&self) -> u16 {
-        let addr = self
-            .listener
-            .local_addr()
-            .expect("failed to get local address");
-        addr.port()
+        self.local_addr.port()
     }
 
     fn get_listen_ip(&self) -> IpAddr {
-        let addr = self
-            .listener
-            .local_addr()
-            .expect("failed to get local address");
-        addr.ip()
+        self.local_addr.ip()
     }
 
     /// Sets a mount listener. A "true" signal will be sent on a mount
@@ -271,7 +277,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
         loop {
             let (socket, _) = self.listener.accept().await?;
             let context = RPCContext {
-                local_port: self.port,
+                local_port: self.local_addr.port(),
                 client_addr: socket
                     .peer_addr()
                     .expect("failed to get peer address")
@@ -285,9 +291,10 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
             };
             info!("Accepting connection from {}", context.client_addr);
             debug!("Accepting socket {:?} {:?}", socket, context);
+            let max_rpc_record_size = self.max_rpc_record_size;
             tokio::spawn(async move {
                 let _ = socket.set_nodelay(true);
-                let _ = process_socket(socket, context).await;
+                let _ = process_socket(socket, context, max_rpc_record_size).await;
             });
         }
     }
