@@ -92,12 +92,12 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
     pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on {addr}");
-        Ok(NFSTcpListener::from_listener(
+        NFSTcpListener::new(
             listener,
             self.fs,
             self.export_name,
             self.generation_number,
             self.max_rpc_record_size,
-        ))
+        )
     }
 }
