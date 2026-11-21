@@ -13,7 +13,7 @@ pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
     pub auth: auth_unix,
     pub vfs: Arc<T>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
-    pub export_name: Arc<String>,
+    pub export_name: Arc<str>,
     pub transaction_tracker: Arc<TransactionTracker>,
     pub(crate) file_handle_converter: FileHandleConverter,
 }
@@ -65,7 +65,7 @@ where
             auth: auth_unix::default(),
             vfs,
             mount_signal: None,
-            export_name: Arc::new(export_name.to_owned()),
+            export_name: Arc::from(export_name),
             transaction_tracker: Arc::new(TransactionTracker::new(
                 std::time::Duration::from_mins(1),
                 256,

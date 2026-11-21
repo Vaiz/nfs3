@@ -83,7 +83,7 @@ where
     };
 
     debug!("mountproc3_mnt({xid},{utf8path})");
-    let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_str()) {
+    let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_ref()) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export

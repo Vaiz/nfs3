@@ -1,11 +1,12 @@
 use std::io;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 use tracing::info;
 
-use super::{ListenerOptions, NFSTcpListener, normalized_export_name};
+use super::{NFSTcpListener, normalized_export_name};
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
@@ -13,14 +14,18 @@ use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 #[must_use]
 pub struct Builder<FS = ()> {
     fs: FS,
-    options: ListenerOptions,
+    export_name: Arc<str>,
+    generation_number: Option<u64>,
+    max_rpc_record_size: Option<NonZeroUsize>,
 }
 
 impl Default for Builder {
     fn default() -> Self {
         Self {
             fs: (),
-            options: ListenerOptions::default(),
+            export_name: Arc::from("/"),
+            generation_number: None,
+            max_rpc_record_size: None,
         }
     }
 }
@@ -35,7 +40,9 @@ impl Builder {
     pub fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
         Builder {
             fs,
-            options: self.options,
+            export_name: self.export_name,
+            generation_number: self.generation_number,
+            max_rpc_record_size: self.max_rpc_record_size,
         }
     }
 
@@ -54,7 +61,7 @@ impl<FS> Builder<FS> {
     /// Leading and trailing slashes are stripped before adding one leading slash.
     /// For example, `data` and `/data/` both export at `/data`.
     pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
-        self.options.export_name = Some(normalized_export_name(name.as_ref()));
+        self.export_name = normalized_export_name(name.as_ref());
         self
     }
 
@@ -63,7 +70,7 @@ impl<FS> Builder<FS> {
     /// By default a generation number is generated for each listener. Servers sharing the
     /// same filesystem can use the same generation number to keep handles valid across instances.
     pub const fn generation_number(mut self, generation_number: u64) -> Self {
-        self.options.generation_number = Some(generation_number);
+        self.generation_number = Some(generation_number);
         self
     }
 
@@ -72,7 +79,7 @@ impl<FS> Builder<FS> {
     /// Fragment markers do not count toward the limit. The server closes the connection if
     /// a record exceeds the limit. By default there is no limit.
     pub const fn max_rpc_record_size(mut self, limit: NonZeroUsize) -> Self {
-        self.options.max_rpc_record_size = Some(limit);
+        self.max_rpc_record_size = Some(limit);
         self
     }
 }
@@ -88,7 +95,9 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
         Ok(NFSTcpListener::from_listener(
             listener,
             self.fs,
-            self.options,
+            self.export_name,
+            self.generation_number,
+            self.max_rpc_record_size,
         ))
     }
 }

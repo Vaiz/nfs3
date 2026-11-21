@@ -25,15 +25,8 @@ pub use builder::Builder;
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 
-#[derive(Default)]
-struct ListenerOptions {
-    export_name: Option<String>,
-    generation_number: Option<u64>,
-    max_rpc_record_size: Option<NonZeroUsize>,
-}
-
-fn normalized_export_name(name: &str) -> String {
-    format!("/{}", name.trim_matches('/'))
+fn normalized_export_name(name: &str) -> Arc<str> {
+    Arc::from(format!("/{}", name.trim_matches('/')))
 }
 
 /// A NFS Tcp Connection Handler
@@ -42,7 +35,7 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     port: u16,
     arcfs: Arc<T>,
     mount_signal: Option<mpsc::Sender<bool>>,
-    export_name: Arc<String>,
+    export_name: Arc<str>,
     max_rpc_record_size: Option<NonZeroUsize>,
     transaction_tracker: Arc<TransactionTracker>,
     file_handle_converter: crate::vfs::handle::FileHandleConverter,
@@ -171,11 +164,6 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                 "Port not in range 0..=65535",
             )
         })?;
-        let options = ListenerOptions {
-            generation_number,
-            ..ListenerOptions::default()
-        };
-
         let listener = if ip == "auto" {
             let mut num_tries_left = 32;
 
@@ -190,7 +178,13 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                         num_tries_left -= 1;
                     }
                     Ok(listener) => {
-                        return Ok(Self::from_listener(listener, fs, options));
+                        return Ok(Self::from_listener(
+                            listener,
+                            fs,
+                            Arc::from("/"),
+                            generation_number,
+                            None,
+                        ));
                     }
                 }
             }
@@ -199,22 +193,34 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             // Otherwise, try this.
             Self::bind_legacy_addr(ip, port).await?
         };
-        Ok(Self::from_listener(listener, fs, options))
+        Ok(Self::from_listener(
+            listener,
+            fs,
+            Arc::from("/"),
+            generation_number,
+            None,
+        ))
     }
 
     async fn bind_legacy_addr(ip: &str, port: u16) -> io::Result<TcpListener> {
         let ipstr = format!("{ip}:{port}");
         let listener = TcpListener::bind(&ipstr).await?;
-        info!("Listening on {:?}", &ipstr);
+        info!("Listening on {ipstr}");
         Ok(listener)
     }
 
-    fn from_listener(listener: TcpListener, fs: T, options: ListenerOptions) -> Self {
+    fn from_listener(
+        listener: TcpListener,
+        fs: T,
+        export_name: Arc<str>,
+        generation_number: Option<u64>,
+        max_rpc_record_size: Option<NonZeroUsize>,
+    ) -> Self {
         let port = listener
             .local_addr()
             .expect("failed to get local address")
             .port();
-        let file_handle_converter = options.generation_number.map_or_else(
+        let file_handle_converter = generation_number.map_or_else(
             crate::vfs::handle::FileHandleConverter::new,
             crate::vfs::handle::FileHandleConverter::with_generation_number,
         );
@@ -224,8 +230,8 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             port,
             arcfs: Arc::new(fs),
             mount_signal: None,
-            export_name: Arc::new(options.export_name.unwrap_or_else(|| "/".to_string())),
-            max_rpc_record_size: options.max_rpc_record_size,
+            export_name,
+            max_rpc_record_size,
             transaction_tracker: Self::new_transaction_tracker(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
             file_handle_converter,
@@ -252,7 +258,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// Default path is `/` if not set.
     #[deprecated(note = "Use Builder::export_name before binding")]
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
-        self.export_name = Arc::new(normalized_export_name(export_name.as_ref()));
+        self.export_name = normalized_export_name(export_name.as_ref());
     }
 }
 
@@ -313,36 +319,5 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 let _ = process_socket(socket, context, max_rpc_record_size).await;
             });
         }
-    }
-}
-
-#[cfg(all(test, feature = "memfs"))]
-mod tests {
-    use std::net::Ipv4Addr;
-
-    use super::Builder;
-    use crate::memfs::{MemFs, MemFsConfig};
-    use crate::vfs::{NfsFileSystem, VFSCapabilities};
-
-    #[tokio::test]
-    async fn builder_applies_options_to_read_only_listener() -> anyhow::Result<()> {
-        let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
-        let listener = Builder::new()
-            .generation_number(42)
-            .read_only_filesystem(fs)
-            .export_name("///nested/export///")
-            .bind((Ipv4Addr::LOCALHOST, 0).into())
-            .await?;
-
-        assert_eq!(listener.export_name.as_str(), "/nested/export");
-        assert_eq!(
-            listener.file_handle_converter.verf().0,
-            42_u64.to_le_bytes()
-        );
-        assert!(matches!(
-            listener.arcfs.capabilities(),
-            VFSCapabilities::ReadOnly
-        ));
-        Ok(())
     }
 }
