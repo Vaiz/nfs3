@@ -7,8 +7,8 @@ use nfs3_types::xdr_codec::{List, Opaque, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
+use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::vfs::NfsFileSystem;
 
 #[cfg_attr(

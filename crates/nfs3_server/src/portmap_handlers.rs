@@ -4,8 +4,8 @@ use nfs3_types::xdr_codec::Void;
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
+use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
 use crate::rpcwire::handle;
-use crate::rpcwire::messages::{RpcCall, RpcCallOutcome};
 use crate::vfs::NfsFileSystem;
 
 pub(crate) async fn handle_portmap<T>(

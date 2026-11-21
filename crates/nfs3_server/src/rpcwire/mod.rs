@@ -2,7 +2,8 @@ use std::io::Cursor;
 use std::time::Instant;
 
 use anyhow::anyhow;
-use messages::{RpcCall, RpcCallOutcome, RpcRecord, RpcRecordReader};
+use call::{RpcCall, RpcCallOutcome};
+use messages::{RpcRecord, RpcRecordReader};
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
 };
@@ -17,6 +18,7 @@ use crate::transaction_tracker::{self, TransactionError, TransactionLock};
 use crate::vfs::NfsFileSystem;
 use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 
+pub(crate) mod call;
 pub(crate) mod messages;
 
 // Information from RFC 5531
