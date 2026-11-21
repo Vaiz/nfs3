@@ -8,6 +8,13 @@ use nfs3_types::rpc::{
 };
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
+use tokio::sync::{Semaphore, SemaphorePermit};
+
+use crate::units::MEBIBYTE;
+
+const MAX_EAGER_FRAGMENT_SIZE: usize = 16 * MEBIBYTE as usize;
+// Cap outstanding eager reservations at 64 MiB across connections.
+static EAGER_FRAGMENT_SLOTS: Semaphore = Semaphore::const_new(4);
 
 /// Contains all RPC record payload bytes, without fragment markers.
 #[derive(Debug)]
@@ -60,18 +67,20 @@ impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
                 ));
             }
 
-            self.append_fragment(&mut payload, fragment_len).await?;
+            self.read_full_fragment(&mut payload, fragment_len).await?;
             if header.eof() {
                 return Ok(Some(RpcRecord(payload)));
             }
         }
     }
 
-    async fn append_fragment(
+    async fn read_full_fragment(
         &mut self,
         payload: &mut Vec<u8>,
-        mut remaining: usize,
+        fragment_len: usize,
     ) -> io::Result<()> {
+        let _permit = try_reserve_fragment(payload, fragment_len, &EAGER_FRAGMENT_SLOTS)?;
+        let mut remaining = fragment_len;
         while remaining != 0 {
             let available = self.input.fill_buf().await?;
             if available.is_empty() {
@@ -88,6 +97,28 @@ impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
         }
         Ok(())
     }
+}
+
+fn try_reserve_fragment<'a>(
+    payload: &mut Vec<u8>,
+    fragment_len: usize,
+    slots: &'a Semaphore,
+) -> io::Result<Option<SemaphorePermit<'a>>> {
+    if fragment_len > MAX_EAGER_FRAGMENT_SIZE
+        // Eager growth must at least double the buffered payload to avoid repeated copying.
+        || fragment_len < payload.len()
+        || fragment_len <= payload.capacity() - payload.len()
+    {
+        return Ok(None);
+    }
+
+    let Ok(permit) = slots.try_acquire() else {
+        return Ok(None);
+    };
+    payload
+        .try_reserve_exact(fragment_len)
+        .map_err(io::Error::other)?;
+    Ok(Some(permit))
 }
 
 /// A decoded RPC call header and its still-encoded procedure arguments.
@@ -214,8 +245,40 @@ where
 mod tests {
     use future_assert::FutureTestExt;
     use tokio::io::BufReader;
+    use tokio::sync::Semaphore;
 
-    use super::{NonZeroUsize, RpcRecordReader, io};
+    use super::{MAX_EAGER_FRAGMENT_SIZE, NonZeroUsize, RpcRecordReader, io, try_reserve_fragment};
+
+    #[test]
+    fn eager_reservation_obeys_size_and_concurrency_limits() {
+        let slots = Semaphore::new(1);
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        let permit = try_reserve_fragment(&mut first, MAX_EAGER_FRAGMENT_SIZE, &slots)
+            .expect("reserve small fragment")
+            .expect("eager reservation");
+        assert!(first.capacity() >= MAX_EAGER_FRAGMENT_SIZE);
+        assert!(
+            try_reserve_fragment(&mut second, 8, &slots)
+                .expect("fall back with no slots available")
+                .is_none()
+        );
+        assert_eq!(second.capacity(), 0);
+
+        drop(permit);
+        assert!(
+            try_reserve_fragment(&mut second, MAX_EAGER_FRAGMENT_SIZE + 1, &slots)
+                .expect("fall back above the cutoff")
+                .is_none()
+        );
+        assert_eq!(second.capacity(), 0);
+        assert!(
+            try_reserve_fragment(&mut second, 8, &slots)
+                .expect("reserve after a slot is released")
+                .is_some()
+        );
+        assert!(second.capacity() >= 8);
+    }
 
     #[test]
     fn record_limit_counts_payload_across_fragments_and_resets() {
