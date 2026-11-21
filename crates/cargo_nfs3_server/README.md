@@ -14,8 +14,7 @@
 The CLI caps incoming RPC records at **16 MiB** with `--memfs` and **2 GiB** for
 directory exports, whether read-only or writable. The cap counts the combined
 payload across all fragments of a record, excluding fragment markers. The server
-closes the connection if a record exceeds the cap. The `nfs3_server` library
-has no record size cap unless configured with `Builder::max_rpc_record_size`.
+closes the connection if a record exceeds the cap.
 
 ## Usage
 
