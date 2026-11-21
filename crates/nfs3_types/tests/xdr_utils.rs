@@ -11,7 +11,7 @@ fn void_serialization() {
     assert_eq!(void_val.packed_size(), 0);
     assert_eq!(buffer, []);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = Void::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(unpack_len, 0);
@@ -28,7 +28,7 @@ fn boolean_serialization() {
     assert_eq!(true_val.packed_size(), 4);
     assert_eq!(buffer, [0, 0, 0, 1]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = bool::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(unpack_len, 4);
@@ -42,7 +42,7 @@ fn boolean_serialization() {
     assert_eq!(false_val.packed_size(), 4);
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = bool::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(unpack_len, 4);
@@ -60,7 +60,7 @@ fn integer_serialization() {
         assert_eq!(len, 4);
         assert_eq!(original.packed_size(), 4);
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::new_copying(buffer);
         let deserialized = u32::unpack(&mut cursor).unwrap();
         let unpack_len = cursor.position();
         assert_eq!(unpack_len, 4);
@@ -84,7 +84,7 @@ fn u64_serialization() {
         assert_eq!(len, 8);
         assert_eq!(original.packed_size(), 8);
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::new_copying(buffer);
         let deserialized = u64::unpack(&mut cursor).unwrap();
         let unpack_len = cursor.position();
         assert_eq!(unpack_len, 8);
@@ -148,7 +148,7 @@ fn large_data_serialization() {
     let len = buffer.len();
     assert_eq!(len, expected_size);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::new_copying(buffer);
     let deserialized = Opaque::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(unpack_len, expected_size);
@@ -170,12 +170,12 @@ fn endianness_verification() {
 #[test]
 fn truncated_data_handling() {
     // Test behavior with truncated data (should fail gracefully)
-    let mut cursor = Decoder::new(vec![0x00, 0x00]); // Only 2 bytes, need 4 for u32
+    let mut cursor = Decoder::new_copying(vec![0x00, 0x00]); // Only 2 bytes, need 4 for u32
     let result = u32::unpack(&mut cursor);
     assert!(result.is_err(), "Should fail when not enough data");
 
     // Test with opaque data that claims to be longer than available data
-    let mut cursor = Decoder::new(vec![0x00, 0x00, 0x00, 0x05, 0x41, 0x42]); // Claims 5 bytes, only has 2
+    let mut cursor = Decoder::new_copying(vec![0x00, 0x00, 0x00, 0x05, 0x41, 0x42]); // Claims 5 bytes, only has 2
     let result = Opaque::unpack(&mut cursor);
     assert!(result.is_err(), "Should fail when opaque data is truncated");
 }

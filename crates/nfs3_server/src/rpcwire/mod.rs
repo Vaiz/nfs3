@@ -46,7 +46,9 @@ where
 
     let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
     if unix {
-        let auth = auth_unix::unpack(&mut Decoder::new(call.cred.body.clone().into_bytes()))?;
+        let auth = auth_unix::unpack(&mut Decoder::new_copying(
+            call.cred.body.clone().into_bytes(),
+        ))?;
         context.auth = auth;
     }
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
