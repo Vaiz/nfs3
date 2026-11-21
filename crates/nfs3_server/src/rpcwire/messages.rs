@@ -49,10 +49,8 @@ impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
         }
 
         let mut payload = Vec::new();
-        let mut marker = [0; 4];
         loop {
-            self.input.read_exact(&mut marker).await?;
-            let header = fragment_header::from(marker);
+            let header = self.read_header().await?;
             let fragment_len = header.fragment_length() as usize;
             let total = payload.len().checked_add(fragment_len).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "RPC record size overflow")
@@ -69,6 +67,12 @@ impl<R: AsyncBufRead + Unpin> RpcRecordReader<R> {
                 return Ok(Some(RpcRecord(payload)));
             }
         }
+    }
+
+    async fn read_header(&mut self) -> io::Result<fragment_header> {
+        let mut marker = [0; 4];
+        self.input.read_exact(&mut marker).await?;
+        Ok(fragment_header::from(marker))
     }
 
     async fn read_full_fragment(
