@@ -48,33 +48,11 @@ Note that this example uses *writable* instance of `MemFs`.
 Usage
 =====
 
-To serve a filesystem that implements `NfsFileSystem`, bind it to a TCP address:
-
-```rust,no_run
-use std::net::{Ipv4Addr, SocketAddr};
-
-use nfs3_server::tcp::{Builder, NFSTcp};
-use nfs3_server::vfs::NfsFileSystem;
-
-async fn serve(fs: impl NfsFileSystem + 'static) -> std::io::Result<()> {
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 11111));
-    let listener = Builder::new().filesystem(fs).bind(addr).await?;
-    listener.handle_forever().await
-}
-```
-
-For a read-only export, use `.read_only_filesystem(fs)` instead. It only requires
-`NfsReadFileSystem`. See `memfs` and `ro_memfs` for complete examples.
-
-Set options before calling `.bind()`:
-
-| Option | Default |
-| --- | --- |
-| `export_name` | `/` |
-| `generation_number` | Generated when the listener is created |
-| `max_rpc_record_size` | Unlimited; set a `NonZeroUsize` to cap incoming RPC payload bytes per record |
-
-The legacy `auto:port` syntax is deprecated. Pass an explicit address instead, as above.
+You simply need to implement the `vfs::NfsReadFileSystem` and (optionaly) `vfs::NfsFileSystem`
+traits. See memfs.rs for an example and bin/main.rs for how to actually start
+a service. The interface generally not difficult to implement; demanding mainly
+the ability to associate every file system object (directory/file) with a 64-bit
+ID. Directory listing can be a bit complicated due to the pagination requirements.
 
 Relevant RFCs
 =============
