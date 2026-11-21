@@ -25,6 +25,17 @@ pub use builder::Builder;
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 
+#[derive(Default)]
+struct ListenerOptions {
+    export_name: Option<String>,
+    generation_number: Option<u64>,
+    max_rpc_record_size: Option<NonZeroUsize>,
+}
+
+fn normalized_export_name(name: &str) -> String {
+    format!("/{}", name.trim_matches('/'))
+}
+
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
@@ -36,17 +47,6 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     transaction_tracker: Arc<TransactionTracker>,
     file_handle_converter: crate::vfs::handle::FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
-}
-
-#[derive(Default)]
-struct ListenerOptions {
-    export_name: Option<String>,
-    generation_number: Option<u64>,
-    max_rpc_record_size: Option<NonZeroUsize>,
-}
-
-fn normalized_export_name(name: &str) -> String {
-    format!("/{}", name.trim_matches('/'))
 }
 
 impl<T: NfsFileSystem + 'static> Drop for NFSTcpListener<T> {
