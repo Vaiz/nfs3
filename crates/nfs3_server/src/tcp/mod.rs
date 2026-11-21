@@ -5,16 +5,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
-use tokio::io::BufReader;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::context::RPCContext;
 use crate::rpcwire::messages::RpcRecordReader;
-use crate::rpcwire::{read_and_dispatch_loop, write_fragment};
+use crate::rpcwire::{read_and_dispatch_loop, write_reply};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
-use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::handle::FileHandleConverter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
@@ -69,7 +67,6 @@ where
     T: NfsFileSystem + 'static,
 {
     let (reader, mut writer) = tokio::io::split(socket);
-    let reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
     let reader = RpcRecordReader::new(reader, max_rpc_record_size);
     let (replies, mut pending_replies) = mpsc::channel(REPLY_QUEUE_CAPACITY);
 
@@ -80,7 +77,7 @@ where
         result = async {
             while let Some(reply) = pending_replies.recv().await {
                 let Ok(reply) = reply else { anyhow::bail!("Error handling RPC message") };
-                write_fragment(&mut writer, reply).await?;
+                write_reply(&mut writer, &reply).await?;
             }
             Ok(())
         } => result,

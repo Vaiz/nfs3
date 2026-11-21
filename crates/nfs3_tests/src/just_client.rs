@@ -145,7 +145,7 @@ pub trait JustClientExt: JustClient {
 
             match read_result {
                 Nfs3Result::Ok(ok) => {
-                    result.extend_from_slice(&ok.data.0);
+                    result.extend_from_slice(&ok.data);
                     if ok.eof || ok.count == 0 {
                         break;
                     }

@@ -37,10 +37,8 @@ pub enum RpcError {
     UnexpectedXid,
     /// The reply was not fully consumed after decoding.
     NotFullyParsed {
-        /// Raw reply buffer.
-        buf: Vec<u8>,
-        /// Cursor position where parsing stopped.
-        pos: u64,
+        /// Unparsed bytes at the end of the reply.
+        remaining: bytes::Bytes,
     },
     /// The requested program is not available on the server.
     ProgUnavail,
@@ -55,12 +53,6 @@ pub enum RpcError {
     ProcUnavail,
     /// The server could not decode the procedure arguments.
     GarbageArgs,
-    /// The server sent a fragmented reply, which is not supported.
-    ///
-    /// Handling fragmented replies would require significant changes to the
-    /// receive logic because subsequent fragments are not guaranteed to arrive
-    /// immediately after the first one.
-    FragmentedReply,
     /// An unspecified server-side system error occurred.
     SystemErr,
 }
@@ -84,7 +76,6 @@ impl fmt::Display for RpcError {
             }
             Self::ProcUnavail => write!(f, "Procedure unavailable"),
             Self::GarbageArgs => write!(f, "Garbage arguments"),
-            Self::FragmentedReply => write!(f, "Fragmented replies are not supported"),
             Self::SystemErr => write!(f, "System error"),
         }
     }
@@ -140,18 +131,17 @@ impl RpcError {
     /// Returns `true` if the connection that produced this error is still in
     /// a clean state and may be reused for the next call.
     ///
-    /// Returns `false` only for [`Io`](Self::Io) (transport is dead) and
-    /// [`FragmentedReply`](Self::FragmentedReply) (unread fragment data left
-    /// in the socket).
+    /// Returns `false` only for [`Io`](Self::Io) (the transport is dead or
+    /// a reply was only partially read).
     ///
     /// All other errors — including [`Xdr`](Self::Xdr),
     /// [`WrongLength`](Self::WrongLength), [`NotFullyParsed`](Self::NotFullyParsed),
     /// and [`UnexpectedXid`](Self::UnexpectedXid) — are produced while
-    /// operating on in-memory buffers after the full fragment has already been
+    /// operating on in-memory buffers after the full record has already been
     /// consumed from the wire, so the transport remains at a clean message
     /// boundary.
     #[must_use]
     pub const fn is_connection_reusable(&self) -> bool {
-        !matches!(self, Self::Io(_) | Self::FragmentedReply)
+        !matches!(self, Self::Io(_))
     }
 }

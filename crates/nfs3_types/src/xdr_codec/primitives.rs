@@ -1,44 +1,29 @@
-use std::io::{Read, Write};
-
-use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
-use crate::xdr_codec::{Error, Pack, Result, Unpack};
+use crate::xdr_codec::util::add_padding;
+use crate::xdr_codec::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 impl Pack for Vec<u32> {
     fn packed_size(&self) -> usize {
         4 + self.len() * 4
     }
 
-    fn pack(&self, out: &mut impl Write) -> Result<usize> {
-        let mut bytes_written = 0;
-
-        bytes_written += u32::try_from(self.len())
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        u32::try_from(self.len())
             .map_err(|_overflow| Error::ObjectTooLarge(self.len()))?
             .pack(out)?;
-
         for item in self {
-            bytes_written += item.pack(out)?;
+            item.pack(out)?;
         }
-
-        Ok(bytes_written)
+        Ok(())
     }
 }
 
 impl Unpack for Vec<u32> {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
-        let mut bytes_read = 0;
-
-        let (len, len_bytes) = u32::unpack(input)?;
-        bytes_read += len_bytes;
-
-        let mut vec = Self::with_capacity(len as usize);
-
-        for _ in 0..len {
-            let (item, item_bytes) = u32::unpack(input)?;
-            bytes_read += item_bytes;
-            vec.push(item);
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let len = u32::unpack(input)? as usize;
+        if len > input.remaining() / 4 {
+            return Err(Error::InvalidLength(len));
         }
-
-        Ok((vec, bytes_read))
+        (0..len).map(|_| u32::unpack(input)).collect()
     }
 }
 
@@ -47,18 +32,15 @@ impl Pack for u32 {
         4
     }
 
-    fn pack(&self, out: &mut impl Write) -> Result<usize> {
-        let bytes = self.to_be_bytes();
-        out.write_all(&bytes).map_err(Error::Io)?;
-        Ok(4)
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        out.put_slice(&self.to_be_bytes());
+        Ok(())
     }
 }
 
 impl Unpack for u32 {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
-        let mut bytes = [0u8; 4];
-        input.read_exact(&mut bytes).map_err(Error::Io)?;
-        Ok((Self::from_be_bytes(bytes), 4))
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        input.read_array().map(Self::from_be_bytes)
     }
 }
 
@@ -67,18 +49,15 @@ impl Pack for u64 {
         8
     }
 
-    fn pack(&self, out: &mut impl Write) -> Result<usize> {
-        let bytes = self.to_be_bytes();
-        out.write_all(&bytes).map_err(Error::Io)?;
-        Ok(8)
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        out.put_slice(&self.to_be_bytes());
+        Ok(())
     }
 }
 
 impl Unpack for u64 {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
-        let mut bytes = [0u8; 8];
-        input.read_exact(&mut bytes).map_err(Error::Io)?;
-        Ok((Self::from_be_bytes(bytes), 8))
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        input.read_array().map(Self::from_be_bytes)
     }
 }
 
@@ -87,20 +66,17 @@ impl Pack for bool {
         4
     }
 
-    #[expect(clippy::bool_to_int_with_if, reason = "we want to be explicit")]
-    fn pack(&self, out: &mut impl Write) -> Result<usize> {
-        let val = if *self { 1u32 } else { 0u32 };
-        val.pack(out)
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        u32::from(*self).pack(out)
     }
 }
 
 impl Unpack for bool {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
-        let (val, bytes_read) = u32::unpack(input)?;
-        match val {
-            0 => Ok((false, bytes_read)),
-            1 => Ok((true, bytes_read)),
-            _ => Err(Error::InvalidEnumValue(val)),
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        match u32::unpack(input)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            val => Err(Error::InvalidEnumValue(val)),
         }
     }
 }
@@ -110,35 +86,16 @@ impl<const N: usize> Pack for [u8; N] {
         add_padding(N)
     }
 
-    fn pack(&self, out: &mut impl Write) -> Result<usize> {
-        let mut bytes_written = 0;
-        out.write_all(self).map_err(Error::Io)?;
-        bytes_written += N;
-
-        let padding = zero_padding(N);
-        out.write_all(padding).map_err(Error::Io)?;
-        bytes_written += padding.len();
-
-        Ok(bytes_written)
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        out.put_padded(self);
+        Ok(())
     }
 }
 
 impl<const N: usize> Unpack for [u8; N] {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize)> {
-        let mut bytes_read = 0;
-        let mut buf = [0u8; N];
-        input.read_exact(&mut buf).map_err(Error::Io)?;
-        bytes_read += N;
-
-        let padding = get_padding(N);
-        if padding > 0 {
-            let mut pad_buf = [0u8; 4];
-            input
-                .read_exact(&mut pad_buf[..padding])
-                .map_err(Error::Io)?;
-            bytes_read += padding;
-        }
-
-        Ok((buf, bytes_read))
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let buf = input.read_array()?;
+        input.skip_padding(N)?;
+        Ok(buf)
     }
 }

@@ -3,6 +3,7 @@
 mod iterator;
 
 pub use iterator::ReadDirPlusToReadDir;
+use nfs3_types::bytes::Bytes;
 use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3};
 
 use super::{
@@ -63,7 +64,7 @@ where
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         self.0.read(id, offset, count).await
     }
 
@@ -110,7 +111,7 @@ where
         &self,
         _id: &Self::Handle,
         _offset: u64,
-        _data: &[u8],
+        _data: Bytes,
         _stable: nfs3_types::nfs3::stable_how,
     ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)

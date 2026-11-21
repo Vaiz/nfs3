@@ -14,6 +14,7 @@ categories = ["encoding", "network-programming"]
 
 [dependencies]
 nfs3_macros.workspace = true
+bytes.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["byteorder"]

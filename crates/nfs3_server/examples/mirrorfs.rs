@@ -18,6 +18,7 @@ use intaglio::osstr::SymbolTable;
 use nfs3_server::fs_util::{
     exists_no_traverse, fattr3_differ, file_setattr, metadata_to_fattr3, path_setattr,
 };
+use nfs3_server::nfs3_types::bytes::Bytes;
 use nfs3_server::nfs3_types::nfs3::{
     cookie3, createverf3, fattr3, fileid3, filename3, ftype3, nfspath3, nfsstat3, sattr3,
     stable_how,
@@ -453,7 +454,7 @@ impl NfsReadFileSystem for MirrorFs {
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         let id = id.as_u64();
         let fsmap = self.fsmap.read().await;
         let entry = fsmap.find_entry(id)?;
@@ -475,7 +476,7 @@ impl NfsReadFileSystem for MirrorFs {
             .or(Err(nfsstat3::NFS3ERR_IO))?;
         let mut buf = vec![0; (end - start) as usize];
         f.read_exact(&mut buf).await.or(Err(nfsstat3::NFS3ERR_IO))?;
-        Ok((buf, eof))
+        Ok((buf.into(), eof))
     }
 
     async fn readdirplus(
@@ -525,7 +526,7 @@ impl NfsFileSystem for MirrorFs {
         &self,
         id: &Self::Handle,
         offset: u64,
-        data: &[u8],
+        data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         let id = id.as_u64();
@@ -548,7 +549,7 @@ impl NfsFileSystem for MirrorFs {
             debug!("Unable to seek: {e}");
             nfsstat3::NFS3ERR_IO
         })?;
-        f.write_all(data).await.map_err(|e| {
+        f.write_all(&data).await.map_err(|e| {
             debug!("Unable to write: {e}");
             nfsstat3::NFS3ERR_IO
         })?;

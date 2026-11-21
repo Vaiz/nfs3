@@ -1,3 +1,4 @@
+use nfs3_server::nfs3_types::bytes::Bytes;
 use nfs3_server::vfs::{FileHandleU64, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator};
 
 use crate::perf::nfs3_types::nfs3::{
@@ -48,7 +49,7 @@ impl NfsReadFileSystem for WriteFs {
         _id: &FileHandleU64,
         _offset: u64,
         _count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         Err(nfsstat3::NFS3ERR_INVAL)
     }
 
@@ -74,7 +75,7 @@ impl NfsFileSystem for WriteFs {
         &self,
         _id: &FileHandleU64,
         _offset: u64,
-        _data: &[u8],
+        _data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Ok((

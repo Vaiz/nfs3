@@ -968,6 +968,7 @@ dependencies = [
 name = "nfs3_client"
 version = "0.9.1"
 dependencies = [
+ "bytes",
  "fastrand",
  "jiff 1.0.1",
  "nfs3_types",
@@ -990,6 +991,7 @@ name = "nfs3_server"
 version = "0.11.1"
 dependencies = [
  "anyhow",
+ "bytes",
  "filetime",
  "future_assert",
  "intaglio",
@@ -1018,6 +1020,7 @@ dependencies = [
 name = "nfs3_types"
 version = "0.5.3"
 dependencies = [
+ "bytes",
  "nfs3_macros",
 ]
 
