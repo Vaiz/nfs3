@@ -104,7 +104,7 @@ impl RpcTestContext {
         let mut buf = vec![0u8; total_len as usize];
         self.client_stream.read_exact(&mut buf).await?;
 
-        let mut input = Decoder::new_copying(buf);
+        let mut input = Decoder::new(buf);
         let resp_msg = rpc_msg::unpack(&mut input)?;
 
         let reply = match &resp_msg.body {

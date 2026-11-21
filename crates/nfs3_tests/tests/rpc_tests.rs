@@ -104,7 +104,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         assert!(reply_header.eof());
         let mut reply = vec![0; reply_header.fragment_length() as usize];
         stream.read_exact(&mut reply).await?;
-        let reply = rpc_msg::unpack(&mut Decoder::new_copying(reply))?;
+        let reply = rpc_msg::unpack(&mut Decoder::new(reply))?;
         check_reply_header(call.xid, &reply)?;
 
         // The reader should close the connection as soon as the marker declares
@@ -155,7 +155,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
             assert!(marker.eof());
             let mut payload = vec![0; marker.fragment_length() as usize];
             client.read_exact(&mut payload).await?;
-            let reply = rpc_msg::unpack(&mut Decoder::new_copying(payload))?;
+            let reply = rpc_msg::unpack(&mut Decoder::new(payload))?;
             check_reply_header(xid, &reply)?;
             if xid == 1 {
                 client.write_all(&second[3..]).await?;

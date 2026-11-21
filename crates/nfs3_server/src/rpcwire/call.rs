@@ -48,7 +48,7 @@ impl RpcCall {
     ///
     /// Releases this call's reference to the record buffer.
     pub(crate) fn unpack_args<I: Unpack>(&mut self) -> Result<I, Error> {
-        let mut args = std::mem::replace(&mut self.args, Decoder::new_copying(Bytes::new()));
+        let mut args = std::mem::replace(&mut self.args, Decoder::new(Bytes::new()));
         let value = I::unpack(&mut args)?;
         if !args.is_empty() {
             return Err(Error::TrailingBytes(args.remaining()));
