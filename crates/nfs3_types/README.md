@@ -17,13 +17,15 @@ continues after caller admission using the same marker and reservation.
 `RecordLimits` is explicit. Runtime adapters own deadlines and connection-close
 policy; framing does not read ahead or acquire global credit.
 The [client](../nfs3_client/README.md) keeps IO compatibility reexports and the
-[bounded server](../nfs3_server/README.md#opt-in-bounded-listener) shares this core.
+[server](../nfs3_server/README.md#canonical-bounded-listener) shares this core.
 
 ## Owned segmented XDR input
 
-`xdr_codec::{Payload, PayloadLimits, ReceiveBuffer, RecordCursor, PayloadError,
-PayloadLimit}` provide an additive API; existing `Pack`, `Unpack`, `Opaque` and
-legacy transports are unchanged. Limits are explicit caller policy, with no defaults.
+`xdr_codec::{Payload, PayloadLimits, ReceiveBuffer, PayloadError, PayloadLimit}`
+provide owned storage. Limits are explicit caller policy, with no defaults.
+The checked codec pair replaces the removed streaming `Pack`/`Unpack` API.
+READ/WRITE structs are generic over their data representation. Relocated IO
+defaults handle zero/Interrupted/overreported progress rather than looping forever.
 
 `Payload::try_from_vec` and `try_from_chunks` adopt Vec backing without copying or
 shrinking. `try_clone`/`try_slice` share only selected chunks; `chunks` and
@@ -42,55 +44,28 @@ This is not a full OOM-recovery or process-memory guarantee.
 finite entitlement or fails without waiting. `ReceiveBuffer::try_new_charged`
 spends that entitlement before allocating. Actual accepted capacity must equal
 the requested initialized block length; excess capacity is rejected before
-publication. `RecordBuilder` moves received prefixes, descriptors and private
+publication. The private record builder moves received prefixes, descriptors and private
 charges incrementally, without rescanning old blocks or copying payload bytes.
-Its explicit reservation-work bound includes geometric descriptor allocations
-and known Chunk layouts; `reservation_bound(blocks)` computes a conservative
-envelope. Actual descriptor capacities above their requested targets are rejected.
-`finish` moves the record; `freeze(0, ...)` and error/drop release backing.
+Its derived reservation-work bound includes geometric descriptor allocations
+and known Chunk layouts; `async_io::record_reservation_bound(blocks)` supplies
+cross-crate sizing without exposing construction internals. Actual descriptor
+capacities above requested targets are rejected. `freeze(0, ...)` and error/drop release backing.
 Unused reservations plus live mutable/frozen tickets equal domain `used()`.
 Fields drop backing before releasing its ticket, with lock-free infallible
 release and no user callbacks. Slices/clones/send plans retain only selected
 origins and charges; uncharged constructors remain available. Arc headers,
 allocator usable size/transients and unlimited independent application-retained
-metadata are not accounted. See the [bounded client](../nfs3_client/README.md)
-for opt-in live use and cancellation/uncertain-WRITE policy.
+metadata are not accounted. See the [client](../nfs3_client/README.md)
+for live use and cancellation/uncertain-WRITE policy.
 
-`RecordCursor` reads big-endian scalars across chunks, validates opaque lengths
-and zero padding, and requires exact consumption with `finish`. `read_opaque`
-shares owned ranges under explicit logical/backing/segment bounds;
-`read_opaque_into` explicitly copies bounded metadata into caller storage. The
-latter is useful when sharing a tiny field would retain a large receive chunk.
-Errors preserve cursor state and caller output, contain no storage owner, and
-`finish` drops the record on success or error. Nonzero padding rejection is new to
-this API, not a change to legacy decoding.
-
-```rust
-use nfs3_types::xdr_codec::{Payload, PayloadError, PayloadLimits, RecordCursor};
-
-# fn main() -> Result<(), PayloadError> {
-// Example-specific bounds, not suggested production defaults.
-let limits = PayloadLimits {
-    max_logical_bytes: 8,
-    max_backing_capacity: 8,
-    max_segments: 2,
-};
-let record = Payload::try_from_chunks(
-    vec![vec![0, 0, 0, 3], vec![b'a', b'b', b'c', 0]],
-    limits,
-)?;
-let mut cursor = RecordCursor::new(record);
-let value = cursor.read_opaque(limits)?;
-cursor.finish()?; // Unselected record chunks can now drop.
-assert_eq!(value.as_contiguous(), Some(&b"abc"[..]));
-# Ok(())
-# }
-```
+The private cursor reads scalars across chunks, validates lengths/padding and
+shares selected bulk while copying bounded metadata. Use the public `Decoder`
+below, and `finish` it to require exact consumption and release unselected chunks.
 
 ## Owner-aware protocol decoding
 
-`Decode`, `Decoder`, `DecodeLimits`, `DecodeError` and `XdrDecode` are additive:
-the old streaming codecs and transports remain available. Construct a `Decoder`
+`Decode`, `Decoder`, `DecodeLimits`, `DecodeError` and `XdrDecode` provide checked
+record decoding. `XdrCodec` generates both directions. Construct a `Decoder`
 with a complete `Payload` record and explicit limits, call `decode::<T>()`, then
 `finish()` to require exact consumption. No default policy is supplied.
 
@@ -106,24 +81,24 @@ It excludes arbitrary allocations in user implementations; nesting must go throu
 `Decoder::decode`, not direct calls to the trait method.
 
 `Opaque<'a>` decodes to independent owned bytes for **every** lifetime. `Payload`
-decodes shared bulk without implementing `Unpack` or passing through `Read`.
-`nfs3::{Read3ResOk<D>, Write3Args<D>}` share field definitions between the old
-`READ3resok<'a>`/`WRITE3args<'a>` aliases and the new `READ3resokPayload`,
-`READ3resPayload` and `WRITE3argsPayload` forms. Legacy implementations have
-separate `D: Pack` and `D: Unpack` bounds, not declaration bounds.
+decodes shared bulk without passing through `Read`.
+`nfs3::{READ3resok<D>, WRITE3args<D>}` are the canonical structs;
+`READ3res<D>` is the corresponding result alias. Use `Payload` for shared bulk,
+`&Payload` for borrowed encoding, and `Opaque<'a>` for explicitly copied metadata.
+There are no declaration bounds, redundant bulk aliases or infallible payload clones.
 
 READ/WRITE decoding is structural: mismatched count/data lengths are preserved,
 not truncated or rejected. Exact operation validation (including authoritative
 WRITE wording and contextual READ counts) belongs to operation policy; the
-opt-in bounded client validates responses, and the bounded server applies its
-documented WRITE policy before backend work. Legacy decoding remains unchanged.
+client validates responses, and the server applies its documented WRITE policy
+before backend work.
 
 The first value-only error is sticky, even if custom code swallows a nested error;
 all subsequent operations and `finish` return it. Primitive cursor reads remain
 failure-atomic; an aggregate may have consumed prior fields. The decoder retains
 its input until `finish`/drop at latest, and errors retain no backing.
 
-New decoding intentionally differs on invalid inputs: strict zero padding,
+Decoding is strict on invalid inputs: strict zero padding,
 strict boolean/enum tags, validated `mknoddata3` default tags, caller aggregate
 limits and protocol bounds (auth body 400, `AUTH_SYS` machine name 255/groups 16,
 NFS handle 64 and mount constants). Wire-unbounded names/paths use caller policy.
@@ -133,7 +108,7 @@ permitted by extensible ONC RPC.
 ## Checked segmented output
 
 `Encode`, `Encoder`, `EncodeLimits`, `EncodeError`, `SendPlan` and `XdrEncode`
-add checked encoding without changing legacy `Pack` or activating transports.
+provide checked encoding, also generated by `XdrCodec`.
 Call `Encoder::encode(&value)`, then consume the builder with `finish()`.
 Only successful finish exposes output. The first value-only error is sticky,
 including swallowed nested errors. Custom implementations must nest through
@@ -147,8 +122,8 @@ position, so a later writer can retain it and a byte offset across short writes.
 `len()` is computed with checked additions during encoding, with no sizing pass
 or whole-record Vec. RPC record markers and fragmentation remain external.
 
-`Opaque` is **copied metadata**, even when borrowed. Select `READ3resokPayload`,
-`READ3resPayload` or `WRITE3argsPayload` for bulk: only descriptors/Arc owners are
+`Opaque` is **copied metadata**, even when borrowed. Select `READ3resok<Payload>`,
+`READ3res<Payload>` or `WRITE3args<Payload>` for bulk: only descriptors/Arc owners are
 cloned, without byte copies or retaining unselected origins. READ/WRITE counts
 and data lengths are preserved independently; operation validation remains
 outside the structural codec.
@@ -172,10 +147,10 @@ XDR lengths/counts must fit u32; padding is zero. Known field bounds match
 than assigned invented tags. No numeric defaults or performance claim is implied.
 
 ```rust
-use nfs3_types::nfs3::WRITE3argsPayload;
-use nfs3_types::xdr_codec::{EncodeLimits, EncodeResult, Encoder, SendPlan};
+use nfs3_types::nfs3::WRITE3args;
+use nfs3_types::xdr_codec::{EncodeLimits, EncodeResult, Encoder, Payload, SendPlan};
 
-fn prepare_write(value: &WRITE3argsPayload, policy: EncodeLimits) -> EncodeResult<SendPlan> {
+fn prepare_write(value: &WRITE3args<&Payload>, policy: EncodeLimits) -> EncodeResult<SendPlan> {
     let mut encoder = Encoder::new(policy);
     encoder.encode(value)?;
     encoder.finish()

@@ -9,8 +9,10 @@ use crate::xdr_codec::{
 
 /// Runtime adapters must report actual progress, including zero and short IO.
 pub trait AsyncRead: Send {
+    /// Read into initialized storage, returning actual progress (zero means EOF).
     fn async_read(&mut self, buf: &mut [u8])
     -> impl Future<Output = std::io::Result<usize>> + Send;
+    /// Fill the buffer, retrying interruptions; zero progress is `UnexpectedEof`.
     fn async_read_exact(
         &mut self,
         buf: &mut [u8],
@@ -19,8 +21,12 @@ pub trait AsyncRead: Send {
     }
 }
 
+/// Runtime-neutral writes. Implementations must not report more bytes than offered.
 pub trait AsyncWrite: Send {
+    /// Write some bytes, reporting actual progress.
     fn async_write(&mut self, buf: &[u8]) -> impl Future<Output = std::io::Result<usize>> + Send;
+    /// Write an ordered prefix of the slices. The default uses the first nonempty
+    /// slice without copying; runtime adapters may override with vectored IO.
     fn async_write_vectored(
         &mut self,
         bufs: &[IoSlice<'_>],
@@ -32,6 +38,7 @@ pub trait AsyncWrite: Send {
             }
         }
     }
+    /// Write every byte, retrying interruptions; zero progress is `WriteZero`.
     fn async_write_all(
         &mut self,
         mut buf: &[u8],
@@ -58,13 +65,39 @@ pub enum FramingError {
     Storage(PayloadError),
 }
 
+impl std::fmt::Display for FramingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(f, "record IO: {error}"),
+            Self::Limit => f.write_str("record framing limit exceeded or invalid policy"),
+            Self::Storage(error) => write!(f, "record storage: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for FramingError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Storage(error) => Some(error),
+            Self::Limit => None,
+        }
+    }
+}
+
 /// Explicit framing policy; validate before starting IO.
 #[derive(Debug, Copy, Clone)]
 pub struct RecordLimits {
     pub block_bytes: usize,
     pub max_record_bytes: usize,
     pub max_fragments: usize,
-    pub max_builder_reservation_bytes: usize,
+}
+
+/// Checked descriptor/control reservation work for up to `blocks` received origins.
+/// Shared by framing admission and owned-buffer completion; allocates no storage.
+#[must_use]
+pub fn record_reservation_bound(blocks: usize) -> Option<usize> {
+    RecordBuilder::reservation_bound(blocks)
 }
 
 impl RecordLimits {
@@ -74,11 +107,19 @@ impl RecordLimits {
             && self.max_record_bytes != 0
             && self.max_record_bytes <= 0x7fff_ffff
             && self.max_fragments != 0
-            && RecordBuilder::reservation_bound(self.max_record_bytes.div_ceil(self.block_bytes))
-                .is_some_and(|n| n <= self.max_builder_reservation_bytes)
+            && self.builder_reservation_bound().is_some()
     }
+    /// Checked descriptor/control work for incremental record construction.
+    /// This is reservation entitlement, not an eager allocation or process-memory bound.
     #[must_use]
-    pub const fn payload(self) -> PayloadLimits {
+    pub fn builder_reservation_bound(self) -> Option<usize> {
+        if self.block_bytes == 0 {
+            return None;
+        }
+        record_reservation_bound(self.max_record_bytes.div_ceil(self.block_bytes))
+    }
+
+    const fn payload(self) -> PayloadLimits {
         PayloadLimits {
             max_logical_bytes: self.max_record_bytes,
             max_backing_capacity: self.max_record_bytes,
@@ -120,11 +161,16 @@ pub async fn first_marker<IO: AsyncRead>(io: &mut IO) -> std::io::Result<Option<
     }
 }
 
+/// Validate policy before reading any marker bytes, then receive one record.
+/// Storage grows incrementally under the supplied backing reservation.
 pub async fn receive<IO: AsyncRead>(
     io: &mut IO,
     limits: RecordLimits,
     reservation: &mut BackingReservation,
 ) -> Result<Payload, FramingError> {
+    if !limits.validate() {
+        return Err(FramingError::Limit);
+    }
     let marker = first_marker(io)
         .await
         .map_err(FramingError::Io)?
@@ -142,7 +188,10 @@ pub async fn receive_with_marker<IO: AsyncRead>(
     if !limits.validate() {
         return Err(FramingError::Limit);
     }
-    let mut builder = RecordBuilder::new(limits.payload(), limits.max_builder_reservation_bytes);
+    let work = limits
+        .builder_reservation_bound()
+        .ok_or(FramingError::Limit)?;
+    let mut builder = RecordBuilder::new(limits.payload(), work);
     let mut buffer: Option<ReceiveBuffer> = None;
     let mut filled = 0;
     let mut allocated = 0;
@@ -203,7 +252,7 @@ pub async fn receive_with_marker<IO: AsyncRead>(
 /// Fixed stack batch, cached iterator and exact offsets. Bulk is never copied.
 pub async fn send<IO: AsyncWrite>(io: &mut IO, plan: &SendPlan) -> std::io::Result<()> {
     let mut prefix = [0_u8; 1024];
-    let len = u32::try_from(plan.len()).map_err(|_| ErrorKind::InvalidInput)?;
+    let len = u32::try_from(plan.len()).map_err(|_overflow| ErrorKind::InvalidInput)?;
     if len > 0x7fff_ffff {
         return Err(ErrorKind::InvalidInput.into());
     }

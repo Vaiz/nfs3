@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::PayloadError;
 
+#[derive(Debug)]
 struct Domain {
     limit: usize,
     used: AtomicUsize,
@@ -13,7 +14,7 @@ struct Domain {
 /// Accounts unused reservations plus live mutable/frozen Vec capacity tickets.
 /// Release is lock-free and infallible. Allocator usable size, Arc overhead and
 /// independent application metadata are excluded.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BackingBudget(Arc<Domain>);
 
 impl BackingBudget {
@@ -39,7 +40,7 @@ impl BackingBudget {
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                 used.checked_add(bytes).filter(|sum| *sum <= self.0.limit)
             })
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         Ok(BackingReservation {
             ticket: Ticket {
                 domain: Arc::clone(&self.0),
@@ -50,6 +51,7 @@ impl BackingBudget {
 }
 
 /// Unused entitlement; dropping it returns only its unspent bytes.
+#[derive(Debug)]
 pub struct BackingReservation {
     ticket: Ticket,
 }
@@ -74,6 +76,7 @@ impl BackingReservation {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Ticket {
     domain: Arc<Domain>,
     bytes: usize,

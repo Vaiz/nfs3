@@ -1,5 +1,3 @@
-#![allow(clippy::unwrap_used)]
-
 use nfs3_types::xdr_codec::{Payload, PayloadError, PayloadLimit, PayloadLimits, ReceiveBuffer};
 
 const fn limits() -> PayloadLimits {
@@ -135,26 +133,22 @@ fn initialized_prefix_freeze_preserves_backing() {
     assert_eq!(payload.as_contiguous().unwrap(), b"abc");
     assert_eq!(payload.as_contiguous().unwrap().as_ptr(), ptr);
     assert_eq!(payload.retained_capacity(), capacity);
-    assert!(ReceiveBuffer::try_new(2, 1).is_err());
-    assert!(ReceiveBuffer::try_new(usize::MAX, usize::MAX).is_err());
-    assert!(
-        ReceiveBuffer::try_new(2, 2)
-            .unwrap()
-            .freeze(3, limits())
-            .is_err()
-    );
-    assert!(
-        ReceiveBuffer::try_new(16, 16)
-            .unwrap()
-            .freeze(
-                1,
-                PayloadLimits {
-                    max_backing_capacity: 15,
-                    ..limits()
-                }
-            )
-            .is_err()
-    );
+    ReceiveBuffer::try_new(2, 1).unwrap_err();
+    ReceiveBuffer::try_new(usize::MAX, usize::MAX).unwrap_err();
+    ReceiveBuffer::try_new(2, 2)
+        .unwrap()
+        .freeze(3, limits())
+        .unwrap_err();
+    ReceiveBuffer::try_new(16, 16)
+        .unwrap()
+        .freeze(
+            1,
+            PayloadLimits {
+                max_backing_capacity: 15,
+                ..limits()
+            },
+        )
+        .unwrap_err();
     let empty = ReceiveBuffer::try_new(16, 16)
         .unwrap()
         .freeze(

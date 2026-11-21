@@ -14,12 +14,13 @@ This project provides a Rust-based implementation of an NFS3 protocol. It includ
 - `crates/nfs3_server`: Async NFS3 server implementation.
 - `crates/nfs3_client`: Async NFS3 client implementation.
 
-## Opt-in bounded IO
+## Bounded IO
 
-The [client](crates/nfs3_client/README.md#opt-in-bounded-client) and
-[server](crates/nfs3_server/README.md#opt-in-bounded-listener) expose opt-in bounded
-RPC paths using the [owned payload and codec APIs](crates/nfs3_types/README.md).
-Existing clients and listeners remain available. Limits are explicit, with no
+The [client](crates/nfs3_client/README.md#checked-rpc-and-nfs-clients) and
+[server](crates/nfs3_server/README.md#canonical-bounded-listener)
+use one checked bounded transport each and owned VFS methods, using the
+[owned payload and codec APIs](crates/nfs3_types/README.md).
+The streaming codec and duplicate client APIs are removed. Limits are explicit, with no
 default profile; managed allocation bounds are not total-process memory bounds.
 See the crate docs for retention, backend ownership and uncertain mutation outcomes.
 Correctness validation does not establish a copy, memory or performance target pass.

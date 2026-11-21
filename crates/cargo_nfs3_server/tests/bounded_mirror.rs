@@ -1,4 +1,11 @@
-#![allow(clippy::unwrap_used, dead_code)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Mirror fixture helpers abort on setup and RPC failures"
+)]
+#![allow(
+    dead_code,
+    reason = "Included mirror module exposes more operations than this fixture uses"
+)]
 #[path = "../src/mirror/mod.rs"]
 mod mirror;
 #[path = "../src/string_ext.rs"]
@@ -9,11 +16,13 @@ mod threshold_logger;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use nfs3_server::bounded::{BoundedListener, DirectoryLimits, ServerLimits};
 use nfs3_server::nfs3_types::async_io::RecordLimits;
 use nfs3_server::nfs3_types::nfs3::*;
 use nfs3_server::nfs3_types::rpc::*;
 use nfs3_server::nfs3_types::xdr_codec::*;
+use nfs3_server::tcp::{
+    DecodePolicy, DirectoryLimits, EncodePolicy, NFSTcpListener as BoundedListener, ServerLimits,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -60,33 +69,61 @@ async fn mirror_lookahead_resume_aliases_are_single_use_and_last_yielded_continu
     }
 }
 
-async fn call<A: Pack + Sync, R: Unpack>(socket: &mut TcpStream, proc: u32, args: &A) -> R {
-    let mut request = Vec::new();
-    rpc_msg {
-        xid: 1,
-        body: msg_body::CALL(call_body {
-            rpcvers: 2,
-            prog: PROGRAM,
-            vers: VERSION,
-            proc,
-            cred: opaque_auth::default(),
-            verf: opaque_auth::default(),
-        }),
-    }
-    .pack(&mut request)
-    .unwrap();
-    args.pack(&mut request).unwrap();
+fn decoder(bytes: Vec<u8>) -> Decoder {
+    let payload = PayloadLimits {
+        max_logical_bytes: 8192,
+        max_backing_capacity: 8192,
+        max_segments: 256,
+    };
+    Decoder::new(
+        Payload::try_from_vec(bytes, payload).unwrap(),
+        DecodeLimits {
+            max_metadata_bytes: 8192,
+            max_collection_elements: 256,
+            max_depth: 32,
+            max_reservation_bytes: 65536,
+            payload,
+        },
+    )
+}
+
+async fn call<A: Encode + Sync, R: Decode>(socket: &mut TcpStream, proc: u32, args: &A) -> R {
+    let mut encoder = Encoder::new(EncodeLimits {
+        max_wire_bytes: 8192,
+        max_metadata_bytes: 8192,
+        max_chunks: 256,
+        max_retained_capacity: 8192,
+        max_depth: 32,
+        max_reservation_bytes: 65536,
+    });
+    encoder
+        .encode(&rpc_msg {
+            xid: 1,
+            body: msg_body::CALL(call_body {
+                rpcvers: 2,
+                prog: PROGRAM,
+                vers: VERSION,
+                proc,
+                cred: opaque_auth::default(),
+                verf: opaque_auth::default(),
+            }),
+        })
+        .unwrap();
+    encoder.encode(args).unwrap();
+    let plan = encoder.finish().unwrap();
     socket
-        .write_u32(0x8000_0000 | u32::try_from(request.len()).unwrap())
+        .write_u32(0x8000_0000 | u32::try_from(plan.len()).unwrap())
         .await
         .unwrap();
-    socket.write_all(&request).await.unwrap();
+    for chunk in plan.chunks() {
+        socket.write_all(chunk).await.unwrap();
+    }
     let len = socket.read_u32().await.unwrap() & 0x7fff_ffff;
     assert!(len <= 8192);
     let mut reply = vec![0; len as usize];
     socket.read_exact(&mut reply).await.unwrap();
-    let mut input = reply.as_slice();
-    let (header, _) = rpc_msg::unpack(&mut input).unwrap();
+    let mut input = decoder(reply);
+    let header: rpc_msg<'static, 'static> = input.decode().unwrap();
     assert!(matches!(
         header.body,
         msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
@@ -94,13 +131,16 @@ async fn call<A: Pack + Sync, R: Unpack>(socket: &mut TcpStream, proc: u32, args
             ..
         }))
     ));
-    let (result, _) = R::unpack(&mut input).unwrap();
-    assert!(input.is_empty());
+    let result = input.decode().unwrap();
+    input.finish().unwrap();
     result
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines)] // One pagination oracle shared by READDIR and READDIRPLUS.
+#[expect(
+    clippy::too_many_lines,
+    reason = "One pagination oracle shared by READDIR and READDIRPLUS"
+)]
 async fn bounded_mirror_paginates_host_and_wire_caps_without_lost_or_duplicate_names() {
     // Both procedures consume one entry of lookahead when the page fills.
     for (plus, wire_cap) in [(false, 4096), (true, 4096), (false, 200), (true, 360)] {
@@ -111,30 +151,22 @@ async fn bounded_mirror_paginates_host_and_wire_caps_without_lost_or_duplicate_n
         for name in &expected {
             std::fs::write(temp.path().join(std::str::from_utf8(name).unwrap()), b"").unwrap();
         }
-        let payload = PayloadLimits {
-            max_logical_bytes: 4096,
-            max_backing_capacity: 8192,
-            max_segments: 128,
-        };
         let limits = ServerLimits {
             record: RecordLimits {
                 block_bytes: 128,
                 max_record_bytes: 8192,
                 max_fragments: 256,
-                max_builder_reservation_bytes: 65536,
             },
-            decode: DecodeLimits {
+            decode: DecodePolicy {
                 max_metadata_bytes: 4096,
                 max_collection_elements: 128,
                 max_depth: 32,
                 max_reservation_bytes: 65536,
-                payload,
             },
-            encode: EncodeLimits {
+            encode: EncodePolicy {
                 max_wire_bytes: 8192,
                 max_metadata_bytes: 8192,
                 max_chunks: 256,
-                max_retained_capacity: 8192,
                 max_depth: 32,
                 max_reservation_bytes: 65536,
             },
@@ -149,7 +181,6 @@ async fn bounded_mirror_paginates_host_and_wire_caps_without_lost_or_duplicate_n
             max_connections: 2,
             max_operations: 1,
             backing_bytes: 1024 * 1024,
-            control_bytes: 16384,
             idle_timeout: Duration::from_secs(2),
             progress_timeout: Duration::from_secs(1),
             receive_timeout: Duration::from_secs(2),
@@ -183,8 +214,9 @@ async fn bounded_mirror_paginates_host_and_wire_caps_without_lost_or_duplicate_n
         assert!(len < 1024);
         let mut reply = vec![0; len as usize];
         socket.read_exact(&mut reply).await.unwrap();
-        let mut input = &reply[24..];
-        let (mount, _) = nfs3_server::nfs3_types::mount::mountres3::unpack(&mut input).unwrap();
+        let mut input = decoder(reply[24..].to_vec());
+        let mount: nfs3_server::nfs3_types::mount::mountres3<'static> = input.decode().unwrap();
+        input.finish().unwrap();
         let nfs3_server::nfs3_types::mount::mountres3::Ok(mount) = mount else {
             panic!()
         };

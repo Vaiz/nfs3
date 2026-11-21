@@ -1,4 +1,4 @@
-//! Opt-in finite listener. XIDs correlate replies only; repeated records may
+//! Canonical finite listener. XIDs correlate replies only; repeated records may
 //! execute again. Lost mutation replies are uncertain, not retry-safe failures.
 
 mod dispatch;
@@ -9,14 +9,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nfs3_types::async_io::{self, AsyncRead, AsyncWrite, RecordLimits};
-use nfs3_types::xdr_codec::{BackingBudget, DecodeLimits, EncodeLimits};
+use nfs3_types::xdr_codec::{BackingBudget, DecodeLimits, EncodeLimits, PayloadLimits};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, oneshot, watch};
 use tokio::time::timeout;
 
 use crate::context::RPCContext;
-use crate::transaction_tracker::TransactionTracker;
-use crate::vfs::NfsOwnedIo;
+use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
 use crate::vfs::owned::{Lease, WorkLease};
 
@@ -104,21 +103,39 @@ impl DirectoryLimits {
     }
 }
 
-/// No numeric defaults: every policy is chosen by the caller.
+/// Independent request decode policy. Bulk allowance is derived from the admitted
+/// record, not the semantic WRITE limit, so oversized valid WRITE reaches INVAL.
+#[derive(Debug, Copy, Clone)]
+pub struct DecodePolicy {
+    pub max_metadata_bytes: usize,
+    pub max_collection_elements: usize,
+    pub max_depth: usize,
+    pub max_reservation_bytes: usize,
+}
+
+/// Independent reply encode policy. Retained bulk capacity is derived from the
+/// supplied READ storage; wire, metadata, chunk, nesting and work caps remain policy.
+#[derive(Debug, Copy, Clone)]
+pub struct EncodePolicy {
+    pub max_wire_bytes: usize,
+    pub max_metadata_bytes: usize,
+    pub max_chunks: usize,
+    pub max_depth: usize,
+    pub max_reservation_bytes: usize,
+}
+
+/// No numeric defaults: every independent policy is chosen by the caller.
 #[derive(Debug, Copy, Clone)]
 pub struct ServerLimits {
     pub record: RecordLimits,
-    pub decode: DecodeLimits,
-    pub encode: EncodeLimits,
+    pub decode: DecodePolicy,
+    pub encode: EncodePolicy,
     pub max_read_bytes: u32,
     pub max_write_bytes: u32,
     pub directory: DirectoryLimits,
     pub max_connections: u32,
     pub max_operations: u32,
     pub backing_bytes: usize,
-    /// Additional known control entitlement, retained until work/reply drop.
-    /// Runtime task/allocator overhead is not an exact process-memory bound.
-    pub control_bytes: usize,
     pub idle_timeout: Duration,
     pub progress_timeout: Duration,
     pub receive_timeout: Duration,
@@ -126,11 +143,32 @@ pub struct ServerLimits {
 }
 
 impl ServerLimits {
-    /// Derived fixed RPC/auth/error/read-owner control floor, not a default
-    /// policy. Callers must still supply all limits and the global domain size.
-    #[must_use]
-    pub fn minimum_control_bytes() -> usize {
-        dispatch::control_size()
+    const fn decode_limits(self) -> DecodeLimits {
+        DecodeLimits {
+            max_metadata_bytes: self.decode.max_metadata_bytes,
+            max_collection_elements: self.decode.max_collection_elements,
+            max_depth: self.decode.max_depth,
+            max_reservation_bytes: self.decode.max_reservation_bytes,
+            payload: PayloadLimits {
+                max_logical_bytes: self.record.max_record_bytes,
+                max_backing_capacity: self.record.max_record_bytes,
+                max_segments: self
+                    .record
+                    .max_record_bytes
+                    .div_ceil(self.record.block_bytes),
+            },
+        }
+    }
+
+    const fn encode_limits(self) -> EncodeLimits {
+        EncodeLimits {
+            max_wire_bytes: self.encode.max_wire_bytes,
+            max_metadata_bytes: self.encode.max_metadata_bytes,
+            max_chunks: self.encode.max_chunks,
+            max_depth: self.encode.max_depth,
+            max_reservation_bytes: self.encode.max_reservation_bytes,
+            max_retained_capacity: self.max_read_bytes as usize,
+        }
     }
 
     #[must_use]
@@ -138,13 +176,13 @@ impl ServerLimits {
         self.record
             .max_record_bytes
             .checked_add(self.max_read_bytes as usize)?
-            .checked_add(self.record.max_builder_reservation_bytes)?
+            .checked_add(self.record.builder_reservation_bound()?)?
             .checked_add(self.decode.max_reservation_bytes)?
             .checked_add(self.decode.max_metadata_bytes)?
             .checked_add(self.encode.max_reservation_bytes)?
             .checked_add(self.encode.max_metadata_bytes)?
             .checked_add(self.directory.envelope()?)?
-            .checked_add(self.control_bytes)
+            .checked_add(dispatch::control_size())
     }
 
     pub fn validate(self) -> io::Result<Self> {
@@ -170,16 +208,8 @@ impl ServerLimits {
             || self.encode.max_chunks == 0
             || self.encode.max_depth == 0
             || self.encode.max_reservation_bytes == 0
-            || self.encode.max_retained_capacity < self.max_read_bytes as usize
             || self.decode.max_depth == 0
             || self.decode.max_reservation_bytes == 0
-            || self.decode.payload.max_logical_bytes < self.max_write_bytes as usize
-            || self.decode.payload.max_backing_capacity < self.record.max_record_bytes
-            || self.decode.payload.max_segments
-                < self
-                    .record
-                    .max_record_bytes
-                    .div_ceil(self.record.block_bytes)
             || self.directory.max_entries == 0
             || self.directory.max_name_bytes == 0
             || self.directory.max_wire_bytes == 0
@@ -188,7 +218,6 @@ impl ServerLimits {
                 .checked_add(24)
                 .is_none_or(|n| n > self.encode.max_wire_bytes)
             || self.directory.max_metadata_bytes < self.directory.max_name_bytes
-            || self.control_bytes < Self::minimum_control_bytes()
             || [
                 self.idle_timeout,
                 self.progress_timeout,
@@ -222,7 +251,7 @@ impl ServerLimits {
     }
 }
 
-struct Shared<T: NfsOwnedIo> {
+struct Shared<T: NfsFileSystem> {
     vfs: Arc<T>,
     limits: ServerLimits,
     budget: BackingBudget,
@@ -231,45 +260,111 @@ struct Shared<T: NfsOwnedIo> {
     stop: watch::Sender<bool>,
     converter: FileHandleConverter,
     export: Arc<String>,
-    tracker: Arc<TransactionTracker>,
     port: u16,
 }
 
-/// Drop signals readers, but never aborts admitted operations.
-pub struct BoundedListener<T: NfsOwnedIo> {
+impl<T: NfsFileSystem> Shared<T> {
+    fn new(vfs: T, export: &str, port: u16, limits: ServerLimits) -> io::Result<Self> {
+        let limits = limits.validate()?;
+        // Normalize before checking/allocating, matching with_export_name.
+        let export = export.trim_matches('/');
+        if export
+            .len()
+            .checked_add(1)
+            .is_none_or(|len| len > limits.decode.max_metadata_bytes)
+        {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let (stop, _) = watch::channel(false);
+        Ok(Self {
+            vfs: Arc::new(vfs),
+            limits,
+            budget: BackingBudget::new(limits.backing_bytes),
+            connections: Arc::new(Semaphore::new(limits.max_connections as usize)),
+            operations: Arc::new(Semaphore::new(limits.max_operations as usize)),
+            stop,
+            converter: FileHandleConverter::new(),
+            export: Arc::new(format!("/{export}")),
+            port,
+        })
+    }
+}
+
+#[cfg(feature = "__test_reexports")]
+pub mod test_support {
+    use super::{Arc, NfsFileSystem, ServerLimits, Shared, connection_io, io};
+
+    /// Controlled streams exercise the production connection loop, not a
+    /// second RPC implementation. Reachable only through hidden test exports.
+    pub struct TestConnection<T: NfsFileSystem> {
+        shared: Arc<Shared<T>>,
+    }
+
+    impl<T: NfsFileSystem + 'static> TestConnection<T> {
+        pub fn new(vfs: T, export: &str, limits: ServerLimits) -> io::Result<Self> {
+            Ok(Self {
+                shared: Arc::new(Shared::new(vfs, export, 2049, limits)?),
+            })
+        }
+
+        #[must_use]
+        pub fn root_dir(&self) -> nfs3_types::nfs3::nfs_fh3 {
+            self.shared.converter.fh_to_nfs(&self.shared.vfs.root_dir())
+        }
+
+        /// # Panics
+        ///
+        /// Panics if the controlled connection's reserved slot is unavailable.
+        pub async fn run<S>(self, stream: S)
+        where
+            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+        {
+            let _slot = Arc::clone(&self.shared.connections)
+                .try_acquire_owned()
+                .expect("one controlled connection");
+            connection_io(stream, Arc::clone(&self.shared), "controlled".to_owned()).await;
+            // Disconnect ends the reply path, not detached work. Make test
+            // shutdown a completion barrier just like listener drain.
+            self.shared.stop.send_replace(true);
+            let _operations = self
+                .shared
+                .operations
+                .acquire_many(self.shared.limits.max_operations)
+                .await;
+        }
+    }
+
+    impl<T: NfsFileSystem> Drop for TestConnection<T> {
+        fn drop(&mut self) {
+            self.shared.stop.send_replace(true);
+        }
+    }
+}
+
+/// Serial per-connection RPC listener with explicit finite resource policy.
+///
+/// Every admitted call executes, including repeated XIDs; there is no duplicate
+/// suppression or exactly-once guarantee. Malformed input is rejected strictly.
+/// Dropping the listener signals readers but never aborts admitted operations.
+pub struct NFSTcpListener<T: NfsFileSystem> {
     listener: TcpListener,
     shared: Arc<Shared<T>>,
 }
 
-impl<T: NfsOwnedIo + 'static> BoundedListener<T> {
+impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     pub async fn bind(
         address: &str,
         vfs: T,
         export: String,
         limits: ServerLimits,
     ) -> io::Result<Self> {
-        let limits = limits.validate()?;
-        if export.len() > limits.decode.max_metadata_bytes {
-            return Err(io::ErrorKind::InvalidInput.into());
-        }
+        let mut shared = Shared::new(vfs, &export, 0, limits)?;
         let listener = TcpListener::bind(address).await?;
         let port = listener.local_addr()?.port();
-        let (stop, _) = watch::channel(false);
+        shared.port = port;
         Ok(Self {
             listener,
-            shared: Arc::new(Shared {
-                vfs: Arc::new(vfs),
-                limits,
-                budget: BackingBudget::new(limits.backing_bytes),
-                connections: Arc::new(Semaphore::new(limits.max_connections as usize)),
-                operations: Arc::new(Semaphore::new(limits.max_operations as usize)),
-                stop,
-                converter: FileHandleConverter::new(),
-                export: Arc::new(export),
-                // Compatibility only: no bounded-path tracker calls or cleaner.
-                tracker: Arc::new(TransactionTracker::new(Duration::from_secs(1), 0, 0)),
-                port,
-            }),
+            shared: Arc::new(shared),
         })
     }
     pub fn local_addr(&self) -> io::Result<std::net::SocketAddr> {
@@ -296,6 +391,7 @@ impl<T: NfsOwnedIo + 'static> BoundedListener<T> {
         if *stop.borrow_and_update() {
             return Err(io::ErrorKind::Interrupted.into());
         }
+        socket.set_nodelay(true)?;
         let Ok(slot) = Arc::clone(&self.shared.connections).try_acquire_owned() else {
             return Ok(None);
         };
@@ -307,6 +403,8 @@ impl<T: NfsOwnedIo + 'static> BoundedListener<T> {
         Ok(Some(task))
     }
 
+    /// Accept until shutdown or an IO error; shutdown returns `Interrupted`.
+    /// Use [`Self::drain`] to stop admissions and await admitted work/replies.
     pub async fn run(&self) -> io::Result<()> {
         loop {
             self.accept().await?;
@@ -330,14 +428,14 @@ impl<T: NfsOwnedIo + 'static> BoundedListener<T> {
     }
 }
 
-impl<T: NfsOwnedIo> Drop for BoundedListener<T> {
+impl<T: NfsFileSystem> Drop for NFSTcpListener<T> {
     fn drop(&mut self) {
         self.shared.stop.send_replace(true);
     }
 }
 
-impl<T: crate::vfs::NfsOwnedRead + 'static>
-    BoundedListener<crate::vfs::adapters::ReadOnlyAdapter<T>>
+impl<T: crate::vfs::NfsReadFileSystem + 'static>
+    NFSTcpListener<crate::vfs::adapters::ReadOnlyAdapter<T>>
 {
     pub async fn bind_ro(
         address: &str,
@@ -374,7 +472,7 @@ impl<S: tokio::io::AsyncRead + Unpin + Send> AsyncRead for Socket<S> {
             tokio::io::AsyncReadExt::read(&mut self.stream, buf),
         )
         .await
-        .map_err(|_| io::ErrorKind::TimedOut)??;
+        .map_err(|_elapsed| io::ErrorKind::TimedOut)??;
         if count != 0 && self.receive_started.is_none() {
             self.receive_started = Some(tokio::time::Instant::now());
         }
@@ -388,19 +486,19 @@ impl<S: tokio::io::AsyncWrite + Unpin + Send> AsyncWrite for Socket<S> {
             tokio::io::AsyncWriteExt::write(&mut self.stream, buf),
         )
         .await
-        .map_err(|_| io::ErrorKind::TimedOut)?
+        .map_err(|_elapsed| io::ErrorKind::TimedOut)?
     }
-    async fn async_write_vectored(&mut self, buf: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    async fn async_write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
         timeout(
             self.progress,
-            tokio::io::AsyncWriteExt::write_vectored(&mut self.stream, buf),
+            tokio::io::AsyncWriteExt::write_vectored(&mut self.stream, bufs),
         )
         .await
-        .map_err(|_| io::ErrorKind::TimedOut)?
+        .map_err(|_elapsed| io::ErrorKind::TimedOut)?
     }
 }
 
-async fn connection<T: NfsOwnedIo + 'static>(stream: TcpStream, shared: Arc<Shared<T>>) {
+async fn connection<T: NfsFileSystem + 'static>(stream: TcpStream, shared: Arc<Shared<T>>) {
     let peer = stream
         .peer_addr()
         .map(|a| a.to_string())
@@ -410,7 +508,7 @@ async fn connection<T: NfsOwnedIo + 'static>(stream: TcpStream, shared: Arc<Shar
 
 // The same receive/dispatch/send loop accepts controlled IO in deadline tests.
 async fn connection_io<
-    T: NfsOwnedIo + 'static,
+    T: NfsFileSystem + 'static,
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 >(
     stream: S,
@@ -465,12 +563,10 @@ async fn connection_io<
             client_addr: peer.clone(),
             auth: decoded.auth.unwrap_or_default(),
             vfs: Arc::clone(&shared.vfs),
-            mount_signal: None,
             export_name: Arc::clone(&shared.export),
-            transaction_tracker: Arc::clone(&shared.tracker),
             file_handle_converter: shared.converter,
-            directory_limits: Some(limits.directory),
-            reply_metadata_limit: Some(limits.encode.max_metadata_bytes),
+            directory_limits: limits.directory,
+            reply_metadata_limit: limits.encode.max_metadata_bytes,
         };
         let read_buffer = if let Some(count) = decoded.work.read_count() {
             match nfs3_types::xdr_codec::ReceiveBuffer::try_new_charged(

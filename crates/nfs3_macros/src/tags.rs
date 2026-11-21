@@ -22,8 +22,7 @@ fn literal(expr: &Expr) -> syn::Result<u32> {
     Err(syn::Error::new(expr.span(), "expected a u32 integer tag"))
 }
 
-// One validated interpretation shared by the new derives only. Legacy derives
-// deliberately keep their original parsing and diagnostics.
+// One validated schema for the combined and directional derives.
 pub fn parse(input: &DeriveInput) -> syn::Result<Vec<u32>> {
     reject_tags(&input.attrs)?;
     let data = match &input.data {

@@ -1,11 +1,10 @@
-#![allow(clippy::unwrap_used)]
 use super::*;
 use crate::xdr_codec::BackingBudget;
 
 struct Input(std::io::Cursor<Vec<u8>>);
 impl AsyncRead for Input {
-    async fn async_read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-        std::io::Read::read(&mut self.0, bytes)
+    async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        std::io::Read::read(&mut self.0, buf)
     }
 }
 
@@ -18,8 +17,42 @@ fn no_body_header_one_byte_and_terminal_allocation_bounds() {
             block_bytes: 64,
             max_record_bytes: 1024,
             max_fragments: 128,
-            max_builder_reservation_bytes: 65536,
         };
+        assert!(record_reservation_bound(usize::MAX).is_none());
+        for invalid in [
+            RecordLimits {
+                block_bytes: 0,
+                ..policy
+            },
+            RecordLimits {
+                max_record_bytes: 0,
+                ..policy
+            },
+            RecordLimits {
+                max_record_bytes: 0x8000_0000,
+                ..policy
+            },
+            RecordLimits {
+                max_fragments: 0,
+                ..policy
+            },
+        ] {
+            let budget = BackingBudget::new(1024);
+            let mut reservation = budget.try_reserve(1024).unwrap();
+            let mut input = Input(std::io::Cursor::new(vec![0x80, 0, 0, 0]));
+            assert!(matches!(
+                receive(&mut input, invalid, &mut reservation).await,
+                Err(FramingError::Limit)
+            ));
+            assert_eq!(
+                input.0.position(),
+                0,
+                "invalid policy must not consume the marker"
+            );
+            assert_eq!(reservation.remaining(), 1024);
+            drop(reservation);
+            assert_eq!(budget.used(), 0);
+        }
         for (marker, body, expected) in [
             (0x8000_0000_u32, vec![], (0, 0)),
             (1024, vec![1], (1, 64)),

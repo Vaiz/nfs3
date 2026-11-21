@@ -1,10 +1,11 @@
 use nfs3_types::portmap::{PMAP_PROG, PROGRAM, VERSION, mapping, pmaplist};
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use nfs3_types::rpc::opaque_auth;
+use nfs3_types::xdr_codec::{Decode, Encode, Void};
 
-use crate::RpcError;
 use crate::error::PortmapError;
 use crate::io::{AsyncRead, AsyncWrite};
-use crate::rpc::RpcClient;
+use crate::rpc::{RpcClient, RpcLimits};
+use crate::{RpcError, RpcErrorKind};
 
 /// Client for the portmapper service
 #[derive(Debug)]
@@ -16,10 +17,10 @@ impl<IO> PortmapperClient<IO>
 where
     IO: AsyncRead + AsyncWrite + Send,
 {
-    pub fn new(io: IO) -> Self {
-        Self {
-            rpc: RpcClient::new(io),
-        }
+    pub fn new(io: IO, limits: RpcLimits) -> Result<Self, RpcErrorKind> {
+        Ok(Self {
+            rpc: RpcClient::new(io, limits, opaque_auth::default(), opaque_auth::default())?,
+        })
     }
 
     /// A null procedure that does nothing. Can be used to check if the portmapper is responsive.
@@ -65,8 +66,8 @@ where
 
     async fn call<C, R>(&mut self, proc: PMAP_PROG, args: C) -> Result<R, RpcError>
     where
-        R: Unpack,
-        C: Pack + Send + Sync,
+        R: Decode,
+        C: Encode + Send + Sync,
     {
         self.rpc
             .call::<C, R>(PROGRAM, VERSION, proc as u32, &args)

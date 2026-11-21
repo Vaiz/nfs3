@@ -3,6 +3,10 @@ use std::ops::Range;
 
 use super::{Payload, PayloadError, PayloadLimit, PayloadLimits};
 
+#[cfg(test)]
+#[path = "cursor_tests.rs"]
+mod tests;
+
 #[derive(Copy, Clone, Default)]
 struct Position {
     byte: usize,
@@ -78,6 +82,7 @@ impl RecordCursor {
     }
 
     /// Copy exactly the output slice length; errors leave output untouched.
+    #[cfg(test)]
     pub fn read_exact(&mut self, output: &mut [u8]) -> Result<(), PayloadError> {
         self.require(self.position, output.len())?;
         self.position = self.copy_at(self.position, output);
@@ -89,6 +94,7 @@ impl RecordCursor {
     /// Checks length, full wire availability, zero padding and all per-view limits
     /// before descriptor allocation or committing progress. Small values in large
     /// backing chunks may exceed the backing bound; no copying fallback occurs.
+    #[cfg(test)]
     pub fn read_opaque(&mut self, limits: PayloadLimits) -> Result<Payload, PayloadError> {
         self.read_opaque_charged(limits, |_| Ok(()))
     }
@@ -200,7 +206,7 @@ impl RecordCursor {
         max_logical_bytes: usize,
     ) -> Result<(Range<usize>, Position), PayloadError> {
         let (wire_len, data_position) = self.peek_u32()?;
-        let len = usize::try_from(wire_len).map_err(|_| PayloadError::Overflow)?;
+        let len = usize::try_from(wire_len).map_err(|_overflow| PayloadError::Overflow)?;
         if len > max_logical_bytes {
             return Err(PayloadError::LimitExceeded {
                 kind: PayloadLimit::LogicalBytes,

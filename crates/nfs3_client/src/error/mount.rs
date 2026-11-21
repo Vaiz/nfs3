@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use super::RpcError;
+use crate::RpcError;
 
 /// Error from mount operations.
 ///

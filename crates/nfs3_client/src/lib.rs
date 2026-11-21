@@ -1,8 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
-pub mod bounded;
-pub mod bounded_nfs;
 pub(crate) mod connect;
 mod error;
 pub mod io;
@@ -21,9 +19,10 @@ pub mod tokio;
 pub mod smol;
 
 pub use connect::*;
-pub use error::{ConnectError, MountError, PortmapError, RpcError};
+pub use error::{ConnectError, MountError, PortmapError};
 pub use mount::*;
 pub use nfs::*;
 /// Re-export of `nfs3_types` for convenience
 pub use nfs3_types;
 pub use portmapper::*;
+pub use rpc::{RpcError, RpcErrorKind};

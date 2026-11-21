@@ -1,4 +1,5 @@
 use std::env;
+mod support;
 
 use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::nfs3_types::nfs3;
@@ -23,13 +24,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             gid: 0xffff_fffe,
             gids: vec![],
         };
-        let credential = opaque_auth::auth_unix(&auth_unix);
+        let credential = opaque_auth::auth_unix(&auth_unix, support::limits().encode)?;
 
-        let mut connection = Nfs3ConnectionBuilder::new(SmolConnector, ip, mount_path)
-            .portmapper_port(portmaper_port)
-            .credential(credential)
-            .mount()
-            .await?;
+        let mut connection = Nfs3ConnectionBuilder::new(
+            SmolConnector,
+            ip,
+            mount_path,
+            support::limits(),
+            1024 * 1024,
+        )?
+        .portmapper_port(portmaper_port)
+        .credential(credential)
+        .mount()
+        .await?;
 
         println!("Mount result: {:?}", connection.mount_resok);
 

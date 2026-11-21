@@ -73,6 +73,12 @@ pub trait Encode {
     fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()>;
 }
 
+impl<T: Encode + ?Sized> Encode for &T {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        T::encode(self, encoder)
+    }
+}
+
 enum Part {
     Metadata(Range<usize>),
     Bulk(Payload),
@@ -89,10 +95,21 @@ pub struct SendPlan {
     chunks: usize,
 }
 
+impl fmt::Debug for SendPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SendPlan")
+            .field("len", &self.len)
+            .field("metadata_bytes", &self.metadata.len())
+            .field("metadata_capacity", &self.metadata.capacity())
+            .field("chunks", &self.chunks)
+            .finish_non_exhaustive()
+    }
+}
+
 impl SendPlan {
     /// Leading metadata only (never bulk), suitable for bounded stack batching.
     #[must_use]
-    pub fn leading_metadata(&self) -> &[u8] {
+    pub(crate) fn leading_metadata(&self) -> &[u8] {
         match self.parts.first() {
             Some(Part::Metadata(range)) => &self.metadata[range.clone()],
             _ => &[],
@@ -114,7 +131,9 @@ impl SendPlan {
     /// The iterator caches part/chunk position. A writer can keep it and a byte
     /// offset across short writes, rather than restart a whole-plan scan.
     #[must_use]
-    pub const fn chunks(&self) -> SendChunks<'_> {
+    pub const fn chunks(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &[u8]> + std::iter::FusedIterator + Clone {
         SendChunks {
             plan: self,
             part: 0,
@@ -126,7 +145,7 @@ impl SendPlan {
 
 /// Resumable, allocation-free borrowed traversal of a `SendPlan`.
 #[derive(Clone)]
-pub struct SendChunks<'a> {
+struct SendChunks<'a> {
     plan: &'a SendPlan,
     part: usize,
     chunk: usize,
@@ -195,7 +214,7 @@ const fn check(actual: usize, limit: usize, kind: EncodeLimit) -> EncodeResult<(
 }
 
 fn opaque_length(len: usize) -> EncodeResult<u32> {
-    u32::try_from(len).map_err(|_| EncodeError::UnrepresentableLength(len))
+    u32::try_from(len).map_err(|_overflow| EncodeError::UnrepresentableLength(len))
 }
 
 fn charge(counter: &mut usize, amount: usize, limit: usize, kind: EncodeLimit) -> EncodeResult<()> {
@@ -225,7 +244,7 @@ fn grow<T>(
         charge(reservation, bytes, limit, EncodeLimit::ReservationBytes)?;
         items
             .try_reserve_exact(next - items.len())
-            .map_err(|_| EncodeError::Allocation)?;
+            .map_err(|_allocation_error| EncodeError::Allocation)?;
         *target = next;
     }
     Ok(())
@@ -396,7 +415,7 @@ impl Encoder {
         self.ready()?;
         let result = (|| {
             let count = u32::try_from(items.len())
-                .map_err(|_| EncodeError::UnrepresentableCount(items.len()))?;
+                .map_err(|_overflow| EncodeError::UnrepresentableCount(items.len()))?;
             check(items.len(), max, EncodeLimit::FieldElements)?;
             self.encode(&count)?;
             for item in items {
@@ -456,59 +475,58 @@ impl Encoder {
 }
 
 impl Encode for u32 {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.metadata(&self.to_be_bytes())
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.metadata(&self.to_be_bytes())
     }
 }
 impl Encode for u64 {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.metadata(&self.to_be_bytes())
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.metadata(&self.to_be_bytes())
     }
 }
 impl Encode for bool {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.encode(&u32::from(*self))
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.encode(&u32::from(*self))
     }
 }
 impl<const N: usize> Encode for [u8; N] {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.metadata(self)?;
-        e.padding(N)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.metadata(self)?;
+        encoder.padding(N)
     }
 }
 impl Encode for Opaque<'_> {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.opaque(self.as_ref(), usize::MAX)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.opaque(self.as_ref(), usize::MAX)
     }
 }
 impl Encode for Payload {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.payload(self)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.payload(self)
     }
 }
 impl<T: Encode> Encode for Vec<T> {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.collection(self, usize::MAX)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.collection(self, usize::MAX)
     }
 }
 impl<T: Encode> Encode for List<T> {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
         for item in &self.0 {
-            e.encode(&true)?;
-            e.encode(item)?;
+            encoder.encode(&true)?;
+            encoder.encode(item)?;
         }
-        e.encode(&false)
+        encoder.encode(&false)
     }
 }
 impl Encode for Void {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.ready()
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.ready()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::*;
 
     fn limits() -> EncodeLimits {
@@ -585,7 +603,7 @@ mod tests {
         );
         assert_eq!(e.plan.parts.len(), 1);
         assert_eq!(e.reservation, prefix_work + part_work);
-        assert!(e.finish().is_err());
+        e.finish().unwrap_err();
         policy.max_reservation_bytes = required;
         let mut e = Encoder::new(policy);
         e.encode(&payload).unwrap();

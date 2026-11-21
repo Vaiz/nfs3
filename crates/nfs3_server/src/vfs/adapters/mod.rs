@@ -19,24 +19,6 @@ use crate::vfs::FileHandle;
 /// [1]: crate::tcp::NFSTcpListener::bind_ro
 pub struct ReadOnlyAdapter<T>(T);
 
-impl<T: super::NfsOwnedRead> super::NfsOwnedRead for ReadOnlyAdapter<T> {
-    async fn read_owned(
-        &self,
-        request: super::OwnedRead<Self::Handle>,
-    ) -> Result<super::OwnedReadResult, nfsstat3> {
-        self.0.read_owned(request).await
-    }
-}
-
-impl<T: super::NfsOwnedRead> super::NfsOwnedIo for ReadOnlyAdapter<T> {
-    async fn write_owned(
-        &self,
-        _request: super::OwnedWrite<Self::Handle>,
-    ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
-    }
-}
-
 impl<T> ReadOnlyAdapter<T>
 where
     T: NfsReadFileSystem,
@@ -78,11 +60,9 @@ where
 
     async fn read(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        self.0.read(id, offset, count).await
+        request: super::OwnedRead<Self::Handle>,
+    ) -> Result<super::OwnedReadResult, nfsstat3> {
+        self.0.read(request).await
     }
 
     async fn readdir(
@@ -126,10 +106,7 @@ where
 
     async fn write(
         &self,
-        _id: &Self::Handle,
-        _offset: u64,
-        _data: &[u8],
-        _stable: nfs3_types::nfs3::stable_how,
+        _request: super::OwnedWrite<Self::Handle>,
     ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }

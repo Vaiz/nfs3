@@ -9,33 +9,10 @@ use crate::perf::{EmptyDirIter, FILE_HANDLE, ROOT_HANDLE, dir_attr, file_attr};
 
 /// Read-only VFS that always returns a prefilled buffer.
 ///
-/// Every `read` call returns a slice of the same pre-allocated data.
+/// Every `read` call fills the supplied storage from pre-allocated data.
 /// All lookups resolve to a single file handle — no handle acquisition needed.
 pub struct ReadFs {
     data: Vec<u8>,
-}
-
-impl nfs3_server::vfs::NfsOwnedRead for ReadFs {
-    async fn read_owned(
-        &self,
-        mut request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
-    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
-        let start = usize::try_from(request.offset)
-            .unwrap_or(usize::MAX)
-            .min(self.data.len());
-        let count = request.buffer().len().min(self.data.len() - start);
-        request.buffer()[..count].copy_from_slice(&self.data[start..start + count]);
-        request.complete(count, start + count == self.data.len())
-    }
-}
-
-impl nfs3_server::vfs::NfsOwnedIo for ReadFs {
-    async fn write_owned(
-        &self,
-        _request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
-    ) -> Result<(fattr3, stable_how), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
-    }
 }
 
 impl ReadFs {
@@ -72,16 +49,14 @@ impl NfsReadFileSystem for ReadFs {
 
     async fn read(
         &self,
-        _id: &FileHandleU64,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let start = usize::try_from(offset)
+        mut request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        let start = usize::try_from(request.offset)
             .unwrap_or(usize::MAX)
             .min(self.data.len());
-        let end = start.saturating_add(count as usize).min(self.data.len());
-        let eof = end >= self.data.len();
-        Ok((self.data[start..end].to_vec(), eof))
+        let count = request.buffer().len().min(self.data.len() - start);
+        request.buffer()[..count].copy_from_slice(&self.data[start..start + count]);
+        request.complete(count, start + count == self.data.len())
     }
 
     async fn readdirplus(
@@ -108,10 +83,7 @@ impl NfsFileSystem for ReadFs {
 
     async fn write(
         &self,
-        _id: &FileHandleU64,
-        _offset: u64,
-        _data: &[u8],
-        _stable: stable_how,
+        _request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
     }

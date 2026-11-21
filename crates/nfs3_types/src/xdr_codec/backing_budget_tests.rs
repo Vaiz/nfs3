@@ -1,6 +1,4 @@
-#![allow(clippy::unwrap_used)]
-
-use nfs3_types::xdr_codec::{
+use crate::xdr_codec::{
     BackingBudget, EncodeLimits, Encoder, PayloadLimits, ReceiveBuffer, RecordBuilder, RecordCursor,
 };
 
@@ -63,7 +61,7 @@ fn builder_work_and_descriptor_failure_drop_charges() {
 fn admission_and_selected_final_drop() {
     let domain = BackingBudget::new(16);
     let mut reservation = domain.try_reserve(16).unwrap();
-    assert!(domain.try_reserve(1).is_err());
+    domain.try_reserve(1).unwrap_err();
     let limits = PayloadLimits {
         max_logical_bytes: 16,
         max_backing_capacity: 16,
@@ -92,7 +90,7 @@ fn admission_and_selected_final_drop() {
     assert_eq!(domain.used(), 3);
     drop(clone);
     assert_eq!(domain.used(), 0);
-    assert!(domain.try_reserve(16).is_ok());
+    domain.try_reserve(16).unwrap();
 }
 
 #[test]

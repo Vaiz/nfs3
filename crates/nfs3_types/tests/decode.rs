@@ -1,4 +1,7 @@
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Test fixture helpers abort on codec failure"
+)]
 
 use nfs3_types::xdr_codec::*;
 use nfs3_types::{mount, nfs3, rpc};
@@ -154,11 +157,8 @@ fn decoded<T: Decode>(bytes: &[u8], split: usize) -> T {
     value
 }
 
-fn legacy_bytes<T: Pack + Unpack + Encode>(bytes: &[u8]) -> Vec<u8> {
-    let (value, count) = T::unpack(&mut &*bytes).unwrap();
-    assert_eq!(count, bytes.len());
-    let mut result = Vec::new();
-    value.pack(&mut result).unwrap();
+fn fixture_bytes<T: Decode + Encode>(bytes: &[u8]) -> Vec<u8> {
+    let value: T = decoded(bytes, 0);
     let mut e = Encoder::new(EncodeLimits {
         max_wire_bytes: 4096,
         max_metadata_bytes: 4096,
@@ -171,7 +171,7 @@ fn legacy_bytes<T: Pack + Unpack + Encode>(bytes: &[u8]) -> Vec<u8> {
     let plan = e.finish().unwrap();
     assert_eq!(plan.len(), bytes.len());
     assert_eq!(plan.chunks().flatten().copied().collect::<Vec<_>>(), bytes);
-    result
+    plan.chunks().flatten().copied().collect()
 }
 
 #[test]
@@ -186,12 +186,26 @@ fn rpc_and_manual_union_wire_fixtures_at_every_split() {
         words(&[21, 1, 1, 1, 5]),    // rejected AUTH_TOOWEAK
     ];
     for bytes in &fixtures {
-        assert_eq!(legacy_bytes::<rpc::rpc_msg<'_, '_>>(bytes), *bytes);
+        assert_eq!(fixture_bytes::<rpc::rpc_msg<'_, '_>>(bytes), *bytes);
         for split in 0..=bytes.len() {
             let value: rpc::rpc_msg<'_, '_> = decoded(bytes, split);
-            let mut encoded = Vec::new();
-            value.pack(&mut encoded).unwrap();
-            assert_eq!(encoded, *bytes);
+            let mut encoder = Encoder::new(EncodeLimits {
+                max_wire_bytes: 4096,
+                max_metadata_bytes: 4096,
+                max_chunks: 100,
+                max_retained_capacity: 16384,
+                max_depth: 64,
+                max_reservation_bytes: 65536,
+            });
+            encoder.encode(&value).unwrap();
+            let wire: Vec<_> = encoder
+                .finish()
+                .unwrap()
+                .chunks()
+                .flatten()
+                .copied()
+                .collect();
+            assert_eq!(wire, *bytes);
         }
     }
     for (bytes, ok) in [(words(&[0, 0, 1, 1]), true), (words(&[13]), false)] {
@@ -199,7 +213,7 @@ fn rpc_and_manual_union_wire_fixtures_at_every_split() {
             let result: mount::mountres3<'_> = decoded(&bytes, split);
             assert_eq!(matches!(result, mount::mountres3::Ok(_)), ok);
         }
-        assert_eq!(legacy_bytes::<mount::mountres3<'_>>(&bytes), bytes);
+        assert_eq!(fixture_bytes::<mount::mountres3<'_>>(&bytes), bytes);
     }
     for tag in [1, 2, 5] {
         let value: nfs3::mknoddata3 = decoded(&words(&[tag]), 2);
@@ -211,11 +225,11 @@ fn rpc_and_manual_union_wire_fixtures_at_every_split() {
         let mut fixture = vec![0; if tag <= 4 { 9 } else { 7 }];
         fixture[0] = tag;
         let bytes = words(&fixture);
-        assert_eq!(legacy_bytes::<nfs3::mknoddata3>(&bytes), bytes);
+        assert_eq!(fixture_bytes::<nfs3::mknoddata3>(&bytes), bytes);
     }
     let failure = words(&[13, 0]);
-    assert_eq!(legacy_bytes::<nfs3::READ3res<'_>>(&failure), failure);
-    let result: nfs3::READ3resPayload = decoded(&failure, 3);
+    assert_eq!(fixture_bytes::<nfs3::READ3res<Payload>>(&failure), failure);
+    let result: nfs3::READ3res<Payload> = decoded(&failure, 3);
     assert!(matches!(
         result,
         nfs3::Nfs3Result::Err((nfs3::nfsstat3::NFS3ERR_ACCES, _))
@@ -247,12 +261,12 @@ fn assert_shared(source: &Payload, offset: usize, output: &Payload) {
 fn read_write_bulk_fixture_identity_and_count_preservation() {
     let read = words(&[0, 0, 9, 1, 3, 0x6162_6300]);
     let write = words(&[3, 0x6668_2100, 0, 7, 9, 2, 3, 0x6162_6300]);
-    assert_eq!(legacy_bytes::<nfs3::READ3res<'_>>(&read), read);
-    assert_eq!(legacy_bytes::<nfs3::WRITE3args<'_>>(&write), write);
+    assert_eq!(fixture_bytes::<nfs3::READ3res<Payload>>(&read), read);
+    assert_eq!(fixture_bytes::<nfs3::WRITE3args<Payload>>(&write), write);
     for split in 0..=read.len() {
         let source = split_record(&read, split);
         let mut d = Decoder::new(source.try_clone().unwrap(), limits());
-        let nfs3::Nfs3Result::Ok(value): nfs3::READ3resPayload = d.decode().unwrap() else {
+        let nfs3::Nfs3Result::Ok(value): nfs3::READ3res<Payload> = d.decode().unwrap() else {
             panic!()
         };
         assert_eq!(value.count, 9); // deliberately differs from opaque length
@@ -260,13 +274,13 @@ fn read_write_bulk_fixture_identity_and_count_preservation() {
         assert_eq!(value.data.try_to_vec().unwrap(), b"abc");
         assert_shared(&source, 20, &value.data);
         d.finish().unwrap();
-        let legacy_form: nfs3::READ3res<'_> = decoded(&read, split);
-        assert_eq!(legacy_form.unwrap().data.as_ref(), b"abc");
+        let metadata_form: nfs3::READ3res<Opaque<'_>> = decoded(&read, split);
+        assert_eq!(metadata_form.unwrap().data.as_ref(), b"abc");
     }
     for split in 0..=write.len() {
         let source = split_record(&write, split);
         let mut d = Decoder::new(source.try_clone().unwrap(), limits());
-        let value: nfs3::WRITE3argsPayload = d.decode().unwrap();
+        let value: nfs3::WRITE3args<Payload> = d.decode().unwrap();
         assert_eq!(value.count, 9);
         assert_eq!(value.offset, 7);
         assert_eq!(value.file.data.as_ref(), b"fh!");
@@ -283,8 +297,11 @@ fn metadata_and_directory_fixtures() {
     let lookup = words(&[3, 0x6668_2100, 3, 0x6162_6300]);
     // READDIR success: absent attrs, verifier, one entry, eof.
     let directory = words(&[0, 0, 0, 4, 1, 0, 7, 3, 0x6162_6300, 0, 8, 0, 1]);
-    assert_eq!(legacy_bytes::<nfs3::LOOKUP3args<'_>>(&lookup), lookup);
-    assert_eq!(legacy_bytes::<nfs3::READDIR3res<'_>>(&directory), directory);
+    assert_eq!(fixture_bytes::<nfs3::LOOKUP3args<'_>>(&lookup), lookup);
+    assert_eq!(
+        fixture_bytes::<nfs3::READDIR3res<'_>>(&directory),
+        directory
+    );
     for split in 0..=lookup.len() {
         let value: nfs3::LOOKUP3args<'_> = decoded(&lookup, split);
         assert_eq!(value.what.dir.data.as_ref(), b"fh!");
@@ -304,8 +321,8 @@ fn metadata_and_directory_fixtures() {
 #[derive(Debug)]
 struct Swallows;
 impl Decode for Swallows {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        let _ = d.decode::<bool>();
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        let _ = decoder.decode::<bool>();
         Ok(Self)
     }
 }
@@ -327,7 +344,7 @@ fn strict_errors_sticky_even_when_nested_error_swallowed() {
     assert_eq!(d.finish(), Err(error));
     for bytes in [words(&[1, 0x6101_0000]), words(&[u32::MAX])] {
         let mut d = Decoder::new(record(&bytes), limits());
-        assert!(d.decode::<Opaque<'_>>().is_err());
+        d.decode::<Opaque<'_>>().unwrap_err();
     }
     let mut d = Decoder::new(record(&[1, 0, 2, 0]), limits());
     assert!(matches!(

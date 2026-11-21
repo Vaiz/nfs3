@@ -3,11 +3,12 @@ use std::sync::Arc;
 use nfs3_types::nfs3::{
     ACCESS3args, COMMIT3args, CREATE3args, CREATE3res, FSINFO3args, FSSTAT3args, GETATTR3args,
     LOOKUP3args, LOOKUP3res, MKDIR3args, MKDIR3res, Nfs3Result, PATHCONF3args, PROGRAM, READ3args,
-    READ3resPayload, READ3resfail, READDIR3args, READDIRPLUS3args, READDIRPLUS3res,
-    READDIRPLUS3resok, READLINK3args, REMOVE3args, REMOVE3res, RENAME3args, RENAME3res, Read3ResOk,
-    SETATTR3args, SYMLINK3args, SYMLINK3res, VERSION, WRITE3res, WRITE3resfail, WRITE3resok,
-    Write3Args, cookieverf3, dirlistplus3, entryplus3, fattr3, ftype3, nfs_fh3, nfsstat3, nfstime3,
-    post_op_attr, post_op_fh3, pre_op_attr, specdata3, stable_how, wcc_attr, wcc_data, writeverf3,
+    READ3res, READ3resfail, READ3resok, READDIR3args, READDIRPLUS3args, READDIRPLUS3res,
+    READDIRPLUS3resok, READLINK3args, REMOVE3args, REMOVE3res, RENAME3args, RENAME3res,
+    SETATTR3args, SYMLINK3args, SYMLINK3res, VERSION, WRITE3args, WRITE3res, WRITE3resfail,
+    WRITE3resok, cookieverf3, dirlistplus3, entryplus3, fattr3, ftype3, nfs_fh3, nfsstat3,
+    nfstime3, post_op_attr, post_op_fh3, pre_op_attr, specdata3, stable_how, wcc_attr, wcc_data,
+    writeverf3,
 };
 use nfs3_types::rpc::{
     RPC_VERSION_2, accept_stat_data, accepted_reply, auth_flavor, auth_stat, auth_unix, call_body,
@@ -21,7 +22,7 @@ use nfs3_types::{mount, portmap};
 use super::ServerLimits;
 use crate::context::RPCContext;
 use crate::vfs::owned::WorkLease;
-use crate::vfs::{NfsOwnedIo, OwnedRead, OwnedWrite, VFSCapabilities};
+use crate::vfs::{NfsFileSystem, OwnedRead, OwnedWrite, VFSCapabilities};
 use crate::{mount_handlers as m, nfs_handlers as n, portmap_handlers as p};
 
 const AUTH_WORK_BYTES: usize = 4096;
@@ -33,7 +34,7 @@ pub(super) enum Work {
     Getattr(GETATTR3args),
     Lookup(LOOKUP3args<'static>),
     Read(READ3args),
-    Write(Write3Args<Payload>),
+    Write(WRITE3args<Payload>),
     Fsinfo(FSINFO3args),
     Access(ACCESS3args),
     Pathconf(PATHCONF3args),
@@ -67,7 +68,7 @@ pub(super) fn control_size() -> usize {
         + 400
         + std::mem::size_of::<Payload>()
         + Payload::descriptor_reservation_cost(1).unwrap_or(usize::MAX)
-        + nfs3_types::xdr_codec::RecordBuilder::reservation_bound(1).unwrap_or(usize::MAX)
+        + nfs3_types::async_io::record_reservation_bound(1).unwrap_or(usize::MAX)
         + std::mem::size_of::<ReceiveBuffer>()
         + AUTH_WORK_BYTES
         + FALLBACK_WORK_BYTES
@@ -104,7 +105,7 @@ pub(super) fn bulk_reply_limits_fit(limits: &ServerLimits) -> bool {
     let Ok(data) = buffer.freeze(1, payload_limits) else {
         return false;
     };
-    let read: READ3resPayload = Nfs3Result::Ok(Read3ResOk {
+    let read: READ3res<Payload> = Nfs3Result::Ok(READ3resok {
         file_attributes: post_op_attr::Some(attr.clone()),
         count: 1,
         eof: false,
@@ -235,7 +236,7 @@ const fn bad_auth(stat: auth_stat) -> Work {
 }
 
 fn args<D: Decode>(decoder: &mut Decoder, wrap: impl FnOnce(D) -> Work) -> Result<Work, ()> {
-    decoder.decode().map(wrap).map_err(|_| ())
+    decoder.decode().map(wrap).map_err(|_decode_error| ())
 }
 
 fn procedure(decoder: &mut Decoder, call: &call_body<'_>) -> Result<Work, ()> {
@@ -269,7 +270,7 @@ fn procedure(decoder: &mut Decoder, call: &call_body<'_>) -> Result<Work, ()> {
         (PROGRAM, 4) => a!(ACCESS3args, Access),
         (PROGRAM, 5) => a!(READLINK3args, Readlink),
         (PROGRAM, 6) => a!(READ3args, Read),
-        (PROGRAM, 7) => a!(Write3Args<Payload>, Write),
+        (PROGRAM, 7) => a!(WRITE3args<Payload>, Write),
         (PROGRAM, 8) => a!(CREATE3args<'static>, Create),
         (PROGRAM, 9) => a!(MKDIR3args<'static>, Mkdir),
         (PROGRAM, 10) => a!(SYMLINK3args<'static>, Symlink),
@@ -290,9 +291,12 @@ fn procedure(decoder: &mut Decoder, call: &call_body<'_>) -> Result<Work, ()> {
     }
 }
 
-#[allow(clippy::too_many_lines)] // Keep RPC/auth validation and record release ordered together.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep RPC/auth validation and record release ordered together"
+)]
 pub(super) fn decode(record: Payload, limits: &ServerLimits) -> Option<Decoded> {
-    let mut decoder = Decoder::new(record, limits.decode);
+    let mut decoder = Decoder::new(record, limits.decode_limits());
     let xid = decoder.decode::<u32>().ok()?;
     let kind = decoder.decode::<u32>().ok()?;
     if kind != 0 {
@@ -425,12 +429,15 @@ fn success<R: Encode>(xid: u32, value: &R, limits: &ServerLimits) -> Option<Send
         xid,
         accepted(accept_stat_data::SUCCESS),
         value,
-        limits.encode,
+        limits.encode_limits(),
     )
 }
 
-#[allow(clippy::too_many_lines)] // Single procedure dispatch; no additional allocation or policy layer.
-pub(super) async fn execute<T: NfsOwnedIo>(
+#[expect(
+    clippy::too_many_lines,
+    reason = "Single procedure dispatch; no additional allocation or policy layer"
+)]
+pub(super) async fn execute<T: NfsFileSystem>(
     context: RPCContext<T>,
     xid: u32,
     work: Work,
@@ -474,8 +481,8 @@ pub(super) async fn execute<T: NfsOwnedIo>(
         };
     }
     let result = match work {
-        Work::Error(error) => encode(xid, error, &Void, limits.encode),
-        Work::Null => shared!(n, nfsproc3_null, Void),
+        Work::Error(error) => encode(xid, error, &Void, limits.encode_limits()),
+        Work::Null => success(xid, &Void, limits),
         Work::Getattr(args) => shared!(n, nfsproc3_getattr, args),
         Work::Lookup(args) => shared!(n, nfsproc3_lookup, args),
         Work::Access(args) => shared!(n, nfsproc3_access, args),
@@ -553,12 +560,12 @@ pub(super) async fn execute<T: NfsOwnedIo>(
     )
 }
 
-async fn read<T: NfsOwnedIo>(
+async fn read<T: NfsFileSystem>(
     context: &RPCContext<T>,
     args: READ3args,
     buffer: ReceiveBuffer,
     lease: WorkLease,
-) -> Nfs3Result<Read3ResOk<Payload>, READ3resfail> {
+) -> Nfs3Result<READ3resok<Payload>, READ3resfail> {
     let id = match context.file_handle_converter.fh_from_nfs(&args.file) {
         Ok(id) => id,
         Err(stat) => return Nfs3Result::Err((stat, READ3resfail::default())),
@@ -580,8 +587,8 @@ async fn read<T: NfsOwnedIo>(
         },
         lease,
     );
-    match context.vfs.read_owned(request).await {
-        Ok(result) => Nfs3Result::Ok(Read3ResOk {
+    match context.vfs.read(request).await {
+        Ok(result) => Nfs3Result::Ok(READ3resok {
             file_attributes,
             // Supplied READ storage is capped by the validated u32 transfer limit.
             count: u32::try_from(result.payload.len()).expect("validated READ capacity"),
@@ -592,9 +599,9 @@ async fn read<T: NfsOwnedIo>(
     }
 }
 
-async fn write<T: NfsOwnedIo>(
+async fn write<T: NfsFileSystem>(
     context: &RPCContext<T>,
-    args: Write3Args<Payload>,
+    args: WRITE3args<Payload>,
     limits: &ServerLimits,
     lease: WorkLease,
 ) -> WRITE3res {
@@ -618,7 +625,7 @@ async fn write<T: NfsOwnedIo>(
         data: args.data,
         _lease: Arc::clone(&lease),
     };
-    match context.vfs.write_owned(request).await {
+    match context.vfs.write(request).await {
         Ok((attr, committed)) => WRITE3res::Ok(WRITE3resok {
             file_wcc: wcc_data {
                 before,

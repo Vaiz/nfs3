@@ -24,10 +24,10 @@
 pub mod adapters;
 pub(crate) mod handle;
 mod iterator;
-pub mod owned;
+pub(crate) mod owned;
 pub use handle::{FileHandle, FileHandleU64};
 pub use iterator::*;
-pub use owned::{NfsOwnedIo, NfsOwnedRead, OwnedRead, OwnedReadResult, OwnedWrite};
+pub use owned::{OwnedRead, OwnedReadResult, OwnedWrite};
 
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
@@ -101,16 +101,16 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// This method should be fast as it is used very frequently.
     fn getattr(&self, id: &Self::Handle) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send;
 
-    /// Reads the contents of a file returning (bytes, EOF)
-    /// Note that offset/count may go past the end of the file and that
-    /// in that case, all bytes till the end of file are returned.
+    /// Reads directly into the request's initialized storage, returning its checked prefix.
+    /// The request offset/supplied storage may extend past the end of the file; in
+    /// that case, only bytes through the end of the file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
+    /// Move the whole request into actual work, including blocking closures, so
+    /// cancellation cannot release the private work lease while IO is live.
     fn read(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        count: u32,
-    ) -> impl Future<Output = Result<(Vec<u8>, bool), nfsstat3>> + Send;
+        request: OwnedRead<Self::Handle>,
+    ) -> impl Future<Output = Result<OwnedReadResult, nfsstat3>> + Send;
 
     /// Simple version of readdir. Only need to return filename and id
     ///
@@ -206,9 +206,9 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// On success, returns `(fattr3, stable_how)` where:
     /// - [`fattr3`] contains the updated file attributes after the write.
     /// - [`stable_how`] reflects the level of stability actually achieved, which must be equal to
-    ///   or greater than the requested `stable` level.
+    ///   or greater than the requested `request.stable` level.
     ///
-    /// # `stable` parameter
+    /// # Requested stability
     ///
     /// - [`stable_how::FILE_SYNC`]: all data and metadata must be committed to stable storage
     ///   before returning. Any other behavior is a protocol violation.
@@ -226,12 +226,13 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// incorrectly returned `NFSERR_ISDIR` if the file system
     /// object type was not a regular file. The correct return
     /// value for the NFS version 3 protocol is `NFS3ERR_INVAL`.
+    ///
+    /// Write every supplied byte or return an error; success has no short-write count.
+    /// Move the whole request into actual work, including blocking closures, and
+    /// retain it through IO and required synchronization on every exit path.
     fn write(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        data: &[u8],
-        stable: stable_how,
+        request: OwnedWrite<Self::Handle>,
     ) -> impl Future<Output = Result<(fattr3, stable_how), nfsstat3>> + Send;
 
     /// Creates a file with the following attributes.

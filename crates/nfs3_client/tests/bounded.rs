@@ -1,23 +1,28 @@
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Test fixture helpers abort on setup and RPC failures"
+)]
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, IoSlice};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
-use nfs3_client::bounded::{BoundedErrorKind, BoundedRpcClient, RpcLimits};
-use nfs3_client::bounded_nfs::BoundedNfsClient;
+use nfs3_client::Nfs3Client;
 use nfs3_client::io::{AsyncRead, AsyncWrite};
+use nfs3_client::rpc::{RpcClient, RpcErrorKind, RpcLimits};
+use nfs3_types::async_io::RecordLimits;
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{DecodeLimits, EncodeLimits, Payload, PayloadLimits, Void};
 
 const fn limits() -> RpcLimits {
     RpcLimits {
-        block_bytes: 8,
-        max_record_bytes: 2048,
-        max_fragments: 4096,
+        record: RecordLimits {
+            block_bytes: 8,
+            max_record_bytes: 2048,
+            max_fragments: 4096,
+        },
         backing_bytes: 2048,
-        max_builder_reservation_bytes: 65536,
         decode: DecodeLimits {
             max_metadata_bytes: 2048,
             max_collection_elements: 1024,
@@ -96,7 +101,7 @@ impl Script {
 }
 
 impl AsyncRead for Script {
-    async fn async_read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+    async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.pending_receive {
             std::future::pending::<()>().await;
         }
@@ -109,10 +114,8 @@ impl AsyncRead for Script {
         }
         let mut state = self.state.lock().unwrap();
         state.reads += 1;
-        state.read_sizes.push(bytes.len());
-        state
-            .read_pointers
-            .push((bytes.as_ptr() as usize, bytes.len()));
+        state.read_sizes.push(buf.len());
+        state.read_pointers.push((buf.as_ptr() as usize, buf.len()));
         if self.input.is_empty() {
             if let Some(mut reply) = self.replies.pop_front() {
                 // Fixture XID is the only dynamic field; all other wire bytes
@@ -154,8 +157,8 @@ impl AsyncRead for Script {
                 self.input.extend(reply);
             }
         }
-        let n = bytes.len().min(self.read_step).min(self.input.len());
-        for byte in &mut bytes[..n] {
+        let n = buf.len().min(self.read_step).min(self.input.len());
+        for byte in &mut buf[..n] {
             *byte = self.input.pop_front().unwrap();
         }
         self.bytes_read += n;
@@ -164,7 +167,7 @@ impl AsyncRead for Script {
 }
 
 impl AsyncWrite for Script {
-    async fn async_write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+    async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.pending_send {
             std::future::pending::<()>().await;
         }
@@ -177,10 +180,10 @@ impl AsyncWrite for Script {
         if self.zero_write {
             return Ok(0);
         }
-        let n = bytes.len().min(self.write_step);
+        let n = buf.len().min(self.write_step);
         let mut state = self.state.lock().unwrap();
         state.writes += 1;
-        state.sent.extend_from_slice(&bytes[..n]);
+        state.sent.extend_from_slice(&buf[..n]);
         Ok(n)
     }
 }
@@ -196,8 +199,8 @@ fn success(body: &[u8]) -> Vec<u8> {
     reply
 }
 
-fn client(io: Script) -> BoundedRpcClient<Script> {
-    BoundedRpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default()).unwrap()
+fn client(io: Script) -> RpcClient<Script> {
+    RpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default()).unwrap()
 }
 
 #[tokio::test]
@@ -207,7 +210,7 @@ async fn every_short_split_and_fallback_small_request() {
         io.read_step = step;
         io.write_step = step;
         io.interrupted = true;
-        let state = io.state.clone();
+        let state = Arc::clone(&io.state);
         let mut rpc = client(io);
         let value: Payload = rpc.call(1, 2, 3, &Void).await.unwrap();
         assert_eq!(value.try_to_vec().unwrap(), b"abc");
@@ -217,7 +220,7 @@ async fn every_short_split_and_fallback_small_request() {
         assert_eq!(state.lock().unwrap().sent.len(), 44);
     }
     let io = Script::new(vec![success(&[])]);
-    let state = io.state.clone();
+    let state = Arc::clone(&io.state);
     let mut rpc = client(io);
     rpc.call::<_, Void>(1, 2, 3, &Void).await.unwrap();
     assert_eq!(state.lock().unwrap().writes, 1);
@@ -229,12 +232,12 @@ async fn retained_output_admission_then_success_and_client_drop() {
         success(&[0, 0, 0, 3, b'a', b'b', b'c', 0]),
         success(&[]),
     ]);
-    let state = io.state.clone();
+    let state = Arc::clone(&io.state);
     let mut rpc = client(io);
     let value: Payload = rpc.call(1, 2, 3, &Void).await.unwrap();
     let writes = state.lock().unwrap().writes;
     let error = rpc.call::<_, Void>(1, 2, 3, &Void).await.unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Admission));
+    assert!(matches!(error.kind, RpcErrorKind::Admission));
     assert!(!error.io_started && error.connection_usable);
     assert_eq!(state.lock().unwrap().writes, writes);
     drop(value);
@@ -252,7 +255,7 @@ fn cancellation_unpolled_and_started() {
         let mut io = Script::new(vec![]);
         io.pending_send = send;
         io.pending_receive = !send;
-        let state = io.state.clone();
+        let state = Arc::clone(&io.state);
         let mut rpc = client(io);
         drop(rpc.call::<_, Void>(1, 2, 3, &Void));
         assert!(rpc.is_usable());
@@ -281,7 +284,7 @@ fn cancellation_after_partial_send_refuses_next_call_before_io() {
         let mut io = Script::new(vec![]);
         io.write_step = 1;
         io.stop_write_after = Some(stop);
-        let state = io.state.clone();
+        let state = Arc::clone(&io.state);
         let mut rpc = client(io);
         let mut future = Box::pin(rpc.call::<_, Void>(1, 2, 3, &Void));
         let waker = Waker::noop();
@@ -323,19 +326,19 @@ async fn malformed_and_zero_progress_poison() {
         .call::<_, Void>(1, 2, 3, &Void)
         .await
         .unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Io(ref e) if e.kind() == ErrorKind::WriteZero));
+    assert!(matches!(error.kind, RpcErrorKind::Io(ref e) if e.kind() == ErrorKind::WriteZero));
 }
 
 // Keep a real vectored custom transport to test advancement across chunk edges.
 struct Vectored(Script);
 impl AsyncRead for Vectored {
-    async fn async_read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-        self.0.async_read(bytes).await
+    async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.async_read(buf).await
     }
 }
 impl AsyncWrite for Vectored {
-    async fn async_write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.async_write(bytes).await
+    async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.async_write(buf).await
     }
     async fn async_write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> std::io::Result<usize> {
         if self.0.interrupted {
@@ -362,7 +365,7 @@ async fn fragments_do_not_create_blocks_and_empty_fragments_count() {
         io.empty_fragments = 3;
         io.final_empty = true;
         io.read_step = 1;
-        let state = io.state.clone();
+        let state = Arc::clone(&io.state);
         let mut rpc = client(io);
         let data: Payload = rpc.call(1, 2, 3, &Void).await.unwrap();
         assert_eq!(data.try_to_vec().unwrap(), b"abc");
@@ -386,7 +389,7 @@ async fn fragments_do_not_create_blocks_and_empty_fragments_count() {
         .call::<_, Void>(1, 2, 3, &Void)
         .await
         .unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Framing));
+    assert!(matches!(error.kind, RpcErrorKind::Framing));
 }
 
 #[test]
@@ -414,7 +417,7 @@ fn cancellation_after_partial_marker_and_body_releases_reservation() {
 async fn preio_encode_errors_reuse_and_reply_header_errors_poison() {
     use nfs3_types::xdr_codec::Opaque;
     let io = Script::new(vec![success(&[])]);
-    let state = io.state.clone();
+    let state = Arc::clone(&io.state);
     let mut rpc = client(io);
     let too_large = Opaque::owned(vec![0; 4096]);
     let error = rpc.call::<_, Void>(1, 2, 3, &too_large).await.unwrap_err();
@@ -454,7 +457,7 @@ async fn preio_encode_errors_reuse_and_reply_header_errors_poison() {
 async fn bounded_metadata_prefix_larger_than_stack_is_not_truncated() {
     use nfs3_types::xdr_codec::Opaque;
     let io = Script::new(vec![success(&[])]);
-    let state = io.state.clone();
+    let state = Arc::clone(&io.state);
     let mut rpc = client(io);
     rpc.call::<_, Void>(1, 2, 3, &Opaque::owned(vec![0x51; 1200]))
         .await
@@ -476,11 +479,10 @@ async fn vectored_partial_send_is_byte_exact_without_bulk_copy() {
         let mut script = Script::new(vec![success(&[])]);
         script.write_step = step;
         script.interrupted = true;
-        let state = script.state.clone();
+        let state = Arc::clone(&script.state);
         let io = Vectored(script);
         let mut rpc =
-            BoundedRpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default())
-                .unwrap();
+            RpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default()).unwrap();
         rpc.call::<_, Void>(1, 2, 3, &payload).await.unwrap();
         let sent = &state.lock().unwrap().sent;
         let mut encoder = Encoder::new(limits().encode);
@@ -504,7 +506,7 @@ async fn complete_rpc_errors_reuse_but_trailing_or_policy_errors_poison() {
         .collect();
     let mut rpc = client(Script::new(vec![denied, success(&[])]));
     let error = rpc.call::<_, Void>(1, 2, 3, &Void).await.unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Rejected(_)));
+    assert!(matches!(error.kind, RpcErrorKind::Rejected(_)));
     assert!(error.io_started && error.connection_usable);
     assert_eq!(rpc.backing_used(), 0);
     rpc.call::<_, Void>(1, 2, 3, &Void).await.unwrap();
@@ -530,9 +532,9 @@ async fn complete_rpc_errors_reuse_but_trailing_or_policy_errors_poison() {
     let mut policy = limits();
     policy.decode.payload.max_logical_bytes = 2;
     let mut rpc =
-        BoundedRpcClient::new(io, policy, opaque_auth::default(), opaque_auth::default()).unwrap();
+        RpcClient::new(io, policy, opaque_auth::default(), opaque_auth::default()).unwrap();
     let error = rpc.call::<_, Payload>(1, 2, 3, &Void).await.unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Decode(_)));
+    assert!(matches!(error.kind, RpcErrorKind::Decode(_)));
     assert!(error.io_started && !error.connection_usable);
 }
 
@@ -542,7 +544,7 @@ async fn truncated_marker_body_padding_and_excess_record() {
         let mut reply = success(&[0, 0, 0, 3, b'a', b'b', b'c', 0]);
         reply.truncate(length);
         let mut rpc = client(Script::new(vec![reply]));
-        assert!(rpc.call::<_, Payload>(1, 2, 3, &Void).await.is_err());
+        rpc.call::<_, Payload>(1, 2, 3, &Void).await.unwrap_err();
         assert!(!rpc.is_usable());
         assert_eq!(rpc.backing_used(), 0);
     }
@@ -561,7 +563,7 @@ async fn truncated_marker_body_padding_and_excess_record() {
     let mut rpc = client(Script::new(vec![vec![0xff, 0xff, 0xff, 0xff]]));
     assert!(matches!(
         rpc.call::<_, Void>(1, 2, 3, &Void).await.unwrap_err().kind,
-        BoundedErrorKind::Framing
+        RpcErrorKind::Framing
     ));
 }
 
@@ -635,17 +637,14 @@ fn full_write_reply(failure: bool) -> Vec<u8> {
 #[tokio::test]
 async fn nfs_tight_reply_envelopes_and_preio_one_below() {
     use nfs3_types::nfs3::{Nfs3Option, Nfs3Result, READ3args, stable_how};
-    use nfs3_types::xdr_codec::RecordBuilder;
     for (bulk, record_bytes, segments) in [(0_u32, 560, 0), (1, 560, 2), (1001, 1532, 144)] {
         let data = vec![0x71; bulk as usize];
         let read = full_read_reply(&data);
         assert_eq!(read.len() - 4, 528 + data.len().div_ceil(4) * 4);
         let mut p = limits();
-        p.block_bytes = 7; // payload starts at offset 528, three bytes into a block
-        p.max_record_bytes = record_bytes;
+        p.record.block_bytes = 7; // payload starts at offset 528, three bytes into a block
+        p.record.max_record_bytes = record_bytes;
         p.backing_bytes = record_bytes;
-        p.max_builder_reservation_bytes =
-            RecordBuilder::reservation_bound(record_bytes.div_ceil(7)).unwrap();
         p.encode.max_wire_bytes = record_bytes;
         p.decode.max_metadata_bytes = 400;
         p.decode.max_collection_elements = 0;
@@ -658,9 +657,8 @@ async fn nfs_tight_reply_envelopes_and_preio_one_below() {
             max_segments: segments,
         };
         let io = Script::new(vec![read, full_write_reply(false), full_write_reply(true)]);
-        let rpc =
-            BoundedRpcClient::new(io, p, opaque_auth::default(), opaque_auth::default()).unwrap();
-        let mut nfs = BoundedNfsClient::new(rpc, bulk).unwrap();
+        let rpc = RpcClient::new(io, p, opaque_auth::default(), opaque_auth::default()).unwrap();
+        let mut nfs = Nfs3Client::new(rpc, bulk).unwrap();
         let Nfs3Result::Ok(value) = nfs
             .read(&READ3args {
                 file: handle(),
@@ -688,7 +686,7 @@ async fn nfs_tight_reply_envelopes_and_preio_one_below() {
         assert_eq!(nfs.rpc().backing_used(), 0);
         for failure in [false, true] {
             let result = nfs
-                .write(handle(), 0, stable_how::FILE_SYNC, Payload::empty())
+                .write(handle(), 0, stable_how::FILE_SYNC, &Payload::empty())
                 .await
                 .unwrap();
             let wcc = match result {
@@ -712,16 +710,16 @@ async fn nfs_tight_reply_envelopes_and_preio_one_below() {
             |p: &mut RpcLimits| p.decode.max_reservation_bytes -= 1,
             |p: &mut RpcLimits| p.decode.max_reservation_bytes = 399,
             |p: &mut RpcLimits| {
-                p.max_record_bytes -= 1;
+                p.record.max_record_bytes -= 1;
                 p.encode.max_wire_bytes -= 1;
             },
         ] {
             let mut insufficient = p;
             mutate(&mut insufficient);
             let io = Script::new(vec![]);
-            let state = io.state.clone();
+            let state = Arc::clone(&io.state);
             // Generic RPC deliberately still accepts these explicit smaller limits.
-            let rpc = BoundedRpcClient::new(
+            let rpc = RpcClient::new(
                 io,
                 insufficient,
                 opaque_auth::default(),
@@ -729,8 +727,8 @@ async fn nfs_tight_reply_envelopes_and_preio_one_below() {
             )
             .unwrap();
             assert!(matches!(
-                BoundedNfsClient::new(rpc, bulk),
-                Err(BoundedErrorKind::Configuration)
+                Nfs3Client::new(rpc, bulk),
+                Err(RpcErrorKind::Configuration)
             ));
             let state = state.lock().unwrap();
             assert_eq!((state.reads, state.writes), (0, 0));
@@ -740,7 +738,7 @@ async fn nfs_tight_reply_envelopes_and_preio_one_below() {
 
 #[test]
 fn nfs_protocol_reply_depth_is_tight() {
-    use nfs3_types::nfs3::{READ3resPayload, WRITE3res};
+    use nfs3_types::nfs3::{READ3res, WRITE3res};
     use nfs3_types::rpc::rpc_msg;
     use nfs3_types::xdr_codec::{DecodeError, DecodeLimit, Decoder};
     assert_eq!(full_write_reply(false).len() - 4, 560);
@@ -769,7 +767,7 @@ fn nfs_protocol_reply_depth_is_tight() {
                     if write {
                         decoder.decode::<WRITE3res>().map(drop)
                     } else {
-                        decoder.decode::<READ3resPayload>().map(drop)
+                        decoder.decode::<READ3res<Payload>>().map(drop)
                     }
                 });
                 if depth == minimum {
@@ -791,8 +789,8 @@ async fn nfs_exact_max_derived_write_count_and_semantic_errors() {
     const BULK: u32 = 1001; // deliberately unaligned
     let bytes = vec![0x5a; BULK as usize];
     let io = Script::new(vec![nfs_read_reply(BULK, &bytes), nfs_write_reply(BULK)]);
-    let state = io.state.clone();
-    let mut nfs = BoundedNfsClient::new(client(io), BULK).unwrap();
+    let state = Arc::clone(&io.state);
+    let mut nfs = Nfs3Client::new(client(io), BULK).unwrap();
     let args = READ3args {
         file: handle(),
         offset: 7,
@@ -805,7 +803,7 @@ async fn nfs_exact_max_derived_write_count_and_semantic_errors() {
     drop(read);
     let data = Payload::try_from_vec(bytes.clone(), limits().decode.payload).unwrap();
     assert!(matches!(
-        nfs.write(handle(), 7, stable_how::FILE_SYNC, data)
+        nfs.write(handle(), 7, stable_how::FILE_SYNC, &data)
             .await
             .unwrap(),
         Nfs3Result::Ok(_)
@@ -817,7 +815,7 @@ async fn nfs_exact_max_derived_write_count_and_semantic_errors() {
     assert_eq!(u32::from_be_bytes(write[56..60].try_into().unwrap()), BULK);
 
     for (count, data_len) in [(BULK - 1, BULK), (BULK + 1, BULK), (BULK + 1, BULK + 1)] {
-        let mut nfs = BoundedNfsClient::new(
+        let mut nfs = Nfs3Client::new(
             client(Script::new(vec![nfs_read_reply(
                 count,
                 &vec![0; data_len as usize],
@@ -829,24 +827,35 @@ async fn nfs_exact_max_derived_write_count_and_semantic_errors() {
         assert!(error.io_started && !error.connection_usable);
     }
     let mut nfs =
-        BoundedNfsClient::new(client(Script::new(vec![nfs_write_reply(BULK + 1)])), BULK).unwrap();
+        Nfs3Client::new(client(Script::new(vec![nfs_write_reply(BULK + 1)])), BULK).unwrap();
     let data = Payload::try_from_vec(bytes, limits().decode.payload).unwrap();
     let error = nfs
-        .write(handle(), 0, stable_how::FILE_SYNC, data)
+        .write(handle(), 0, stable_how::FILE_SYNC, &data)
         .await
         .unwrap_err();
-    assert!(matches!(error.kind, BoundedErrorKind::Semantic));
+    assert!(matches!(error.kind, RpcErrorKind::Semantic));
     assert!(error.io_started && !error.connection_usable);
 }
 
 #[tokio::test]
 async fn nfs_preio_argument_and_complete_error_reuse() {
-    use nfs3_types::nfs3::{Nfs3Result, READ3args, nfsstat3};
+    use nfs3_types::nfs3::{Nfs3Result, READ3args, nfsstat3, stable_how};
     let mut body = (nfsstat3::NFS3ERR_IO as u32).to_be_bytes().to_vec();
     body.extend_from_slice(&[0; 4]);
     let io = Script::new(vec![success(&body), nfs_read_reply(0, &[])]);
-    let state = io.state.clone();
-    let mut nfs = BoundedNfsClient::new(client(io), 1001).unwrap();
+    let state = Arc::clone(&io.state);
+    let mut nfs = Nfs3Client::new(client(io), 1001).unwrap();
+    let data = Payload::try_from_vec(vec![0x5a; 1002], limits().decode.payload).unwrap();
+    let pointer = data.chunks().next().unwrap().as_ptr();
+    drop(nfs.write(handle(), 0, stable_how::FILE_SYNC, &data));
+    let error = nfs
+        .write(handle(), 0, stable_how::FILE_SYNC, &data)
+        .await
+        .unwrap_err();
+    assert!(!error.io_started && error.connection_usable);
+    assert_eq!(data.len(), 1002);
+    assert_eq!(data.chunks().next().unwrap().as_ptr(), pointer);
+    assert_eq!(state.lock().unwrap().reads, 0);
     let mut args = READ3args {
         file: handle(),
         offset: 0,
@@ -864,36 +873,87 @@ async fn nfs_preio_argument_and_complete_error_reuse() {
 #[test]
 fn invalid_configuration_checked_math_and_nfs_unaligned_envelope() {
     for mutate in [
-        |p: &mut RpcLimits| p.block_bytes = 0,
-        |p: &mut RpcLimits| p.block_bytes = usize::MAX,
-        |p: &mut RpcLimits| p.max_record_bytes = 0x8000_0000,
-        |p: &mut RpcLimits| p.max_fragments = 0,
+        |p: &mut RpcLimits| p.record.block_bytes = 0,
+        |p: &mut RpcLimits| p.record.max_record_bytes = 0x8000_0000,
+        |p: &mut RpcLimits| p.record.max_fragments = 0,
         |p: &mut RpcLimits| p.backing_bytes = 1,
-        |p: &mut RpcLimits| p.max_builder_reservation_bytes = 1,
         |p: &mut RpcLimits| p.decode.max_depth = 0,
         |p: &mut RpcLimits| p.encode.max_wire_bytes = 2049,
     ] {
         let mut p = limits();
         mutate(&mut p);
-        assert!(p.validate().is_err());
+        p.validate().unwrap_err();
     }
+
     for mutate in [
         |p: &mut RpcLimits| p.decode.payload.max_segments = 126,
         |p: &mut RpcLimits| p.decode.payload.max_backing_capacity = 1015,
     ] {
         let mut p = limits();
         mutate(&mut p);
-        let rpc = BoundedRpcClient::new(
+        let rpc = RpcClient::new(
             Script::new(vec![]),
             p,
             opaque_auth::default(),
             opaque_auth::default(),
         )
         .unwrap();
-        assert!(BoundedNfsClient::new(rpc, 1001).is_err());
+        assert!(Nfs3Client::new(rpc, 1001).is_err());
     }
     let mut p = limits();
+    p.record.block_bytes = usize::MAX;
+    p.validate().unwrap(); // shared div_ceil path, no overflowing round-up addition
     p.decode.max_metadata_bytes = 0;
     p.decode.max_collection_elements = 0;
-    assert!(p.validate().is_ok()); // zero is a finite no-metadata/no-collection policy
+    p.validate().unwrap(); // zero is a finite no-metadata/no-collection policy
+}
+
+#[test]
+fn standard_error_chains_preserve_wrapped_causes() {
+    use std::error::Error;
+
+    use nfs3_types::async_io::FramingError;
+    use nfs3_types::xdr_codec::{DecodeError, EncodeError, PayloadError};
+
+    let wire = PayloadError::NonzeroPadding {
+        offset: 7,
+        value: 9,
+    };
+    let error = nfs3_client::rpc::RpcError {
+        kind: RpcErrorKind::Decode(DecodeError::Wire(wire)),
+        io_started: true,
+        connection_usable: false,
+    };
+    let kind = error.source().unwrap();
+    let decode = kind.source().unwrap();
+    assert_eq!(
+        decode.source().unwrap().downcast_ref::<PayloadError>(),
+        Some(&wire)
+    );
+    assert!(error.to_string().contains("connection_usable=false"));
+    let io = RpcErrorKind::Io(std::io::Error::from(ErrorKind::BrokenPipe));
+    assert_eq!(
+        io.source()
+            .unwrap()
+            .downcast_ref::<std::io::Error>()
+            .unwrap()
+            .kind(),
+        ErrorKind::BrokenPipe
+    );
+    for kind in [
+        RpcErrorKind::Storage(wire),
+        RpcErrorKind::Encode(EncodeError::Allocation),
+    ] {
+        assert!(kind.source().is_some());
+        assert!(!kind.to_string().is_empty());
+    }
+    let framing = FramingError::Storage(wire);
+    assert_eq!(
+        framing.source().unwrap().downcast_ref::<PayloadError>(),
+        Some(&wire)
+    );
+    let framing = FramingError::Io(std::io::Error::from(ErrorKind::UnexpectedEof));
+    assert!(framing.source().unwrap().is::<std::io::Error>());
+    assert!(FramingError::Limit.source().is_none());
+    assert!(RpcErrorKind::Configuration.source().is_none());
 }

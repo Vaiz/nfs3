@@ -7,18 +7,16 @@
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
 
-use std::io::{Read, Write};
-
-use nfs3_macros::{XdrCodec, XdrDecode, XdrEncode};
+use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{
-    Decode, DecodeResult, Decoder, Encode, EncodeResult, Encoder, Opaque, Pack, Unpack,
+    Decode, DecodeResult, Decoder, Encode, EncodeError, EncodeLimits, EncodeResult, Encoder, Opaque,
 };
 
 /// RPC header
 ///
 /// The RPC header is a 32-bit integer that contains the length of the fragment and an EOF flag.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct fragment_header {
     pub header: u32,
 }
@@ -66,7 +64,6 @@ pub const RPC_VERSION_2: u32 = 2;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum msg_type {
     CALL = 0,
     REPLY = 1,
@@ -74,7 +71,6 @@ pub enum msg_type {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum reply_stat {
     MSG_ACCEPTED = 0,
     MSG_DENIED = 1,
@@ -82,7 +78,6 @@ pub enum reply_stat {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum accept_stat {
     SUCCESS = 0,
     PROG_UNAVAIL = 1,
@@ -94,7 +89,6 @@ pub enum accept_stat {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum reject_stat {
     RPC_MISMATCH = 0,
     AUTH_ERROR = 1,
@@ -102,7 +96,6 @@ pub enum reject_stat {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum auth_stat {
     AUTH_OK = 0,
     AUTH_BADCRED = 1,
@@ -133,7 +126,6 @@ impl std::fmt::Display for auth_stat {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
 /// Closed legacy flavor set, not every flavor allowed by extensible ONC RPC.
-#[derive(XdrDecode, XdrEncode)]
 pub enum auth_flavor {
     AUTH_NULL = 0,
     AUTH_UNIX = 1,
@@ -142,7 +134,7 @@ pub enum auth_flavor {
     // and more to be defined
 }
 
-#[derive(Clone, Debug, XdrCodec)]
+#[derive(Clone, Debug)]
 pub struct opaque_auth<'a> {
     pub flavor: auth_flavor,
     pub body: Opaque<'a>,
@@ -160,17 +152,24 @@ impl Default for opaque_auth<'static> {
 impl opaque_auth<'static> {
     /// Creates a new `opaque_auth` with the given flavor and body constructed from `auth_unix`.
     ///
-    /// # Panics
-    ///
-    /// Panics if the `auth_unix` cannot be packed.
-    #[must_use]
-    pub fn auth_unix(auth: &auth_unix) -> Self {
-        let mut out = Vec::with_capacity(auth.packed_size());
-        auth.pack(&mut out).expect("failed to pack auth_unix");
-        Self {
+    /// Encoding and the independent metadata copy are fallible and bounded.
+    pub fn auth_unix(auth: &auth_unix, limits: EncodeLimits) -> EncodeResult<Self> {
+        let mut encoder = Encoder::new(limits);
+        encoder.encode(auth)?;
+        let plan = encoder.finish()?;
+        if plan.len() > 400 {
+            return Err(EncodeError::InvalidRepresentation);
+        }
+        let mut out = Vec::new();
+        out.try_reserve_exact(plan.len())
+            .map_err(|_allocation_error| EncodeError::Allocation)?;
+        for chunk in plan.chunks() {
+            out.extend_from_slice(chunk);
+        }
+        Ok(Self {
             flavor: auth_flavor::AUTH_UNIX,
             body: Opaque::owned(out),
-        }
+        })
     }
 
     #[must_use]
@@ -182,7 +181,7 @@ impl opaque_auth<'static> {
     }
 }
 
-#[derive(Clone, Debug, XdrCodec)]
+#[derive(Clone, Debug)]
 pub struct auth_unix {
     pub stamp: u32,
     pub machinename: Opaque<'static>,
@@ -203,7 +202,7 @@ impl Default for auth_unix {
     }
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct call_body<'a> {
     pub rpcvers: u32,
     pub prog: u32,
@@ -213,7 +212,7 @@ pub struct call_body<'a> {
     pub verf: opaque_auth<'a>,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct accepted_reply<'a> {
     pub verf: opaque_auth<'a>,
     pub reply_data: accept_stat_data,
@@ -227,52 +226,6 @@ pub enum accept_stat_data {
     PROC_UNAVAIL,
     GARBAGE_ARGS,
     SYSTEM_ERR,
-}
-
-impl Pack for accept_stat_data {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::SUCCESS
-            | Self::PROG_UNAVAIL
-            | Self::PROC_UNAVAIL
-            | Self::GARBAGE_ARGS
-            | Self::SYSTEM_ERR => 0,
-            Self::PROG_MISMATCH { .. } => 8,
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::SUCCESS => accept_stat::SUCCESS.pack(out)?,
-            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out)?,
-            Self::PROG_MISMATCH { low, high } => {
-                accept_stat::PROG_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
-            }
-            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out)?,
-            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out)?,
-            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out)?,
-        };
-        Ok(len)
-    }
-}
-
-impl Unpack for accept_stat_data {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (accept_stat, len) = accept_stat::unpack(input)?;
-        let (body, body_len) = match accept_stat {
-            accept_stat::SUCCESS => (Self::SUCCESS, 0),
-            accept_stat::PROG_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::PROG_MISMATCH { low, high }, low_len + high_len)
-            }
-            accept_stat::PROG_UNAVAIL => (Self::PROG_UNAVAIL, 0),
-            accept_stat::PROC_UNAVAIL => (Self::PROC_UNAVAIL, 0),
-            accept_stat::GARBAGE_ARGS => (Self::GARBAGE_ARGS, 0),
-            accept_stat::SYSTEM_ERR => (Self::SYSTEM_ERR, 0),
-        };
-        Ok((body, len + body_len))
-    }
 }
 
 #[derive(Debug)]
@@ -292,46 +245,7 @@ impl rejected_reply {
     }
 }
 
-impl Pack for rejected_reply {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::RPC_MISMATCH { .. } => 8,
-            Self::AUTH_ERROR(_) => 4,
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::RPC_MISMATCH { low, high } => {
-                reject_stat::RPC_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
-            }
-            Self::AUTH_ERROR(auth_stat) => {
-                reject_stat::AUTH_ERROR.pack(out)? + auth_stat.pack(out)?
-            }
-        };
-        Ok(len)
-    }
-}
-
-impl Unpack for rejected_reply {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (reject_stat, len) = reject_stat::unpack(input)?;
-        let (body, body_len) = match reject_stat {
-            reject_stat::RPC_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::RPC_MISMATCH { low, high }, low_len + high_len)
-            }
-            reject_stat::AUTH_ERROR => {
-                let (auth_stat, auth_stat_len) = auth_stat::unpack(input)?;
-                (Self::AUTH_ERROR(auth_stat), auth_stat_len)
-            }
-        };
-        Ok((body, len + body_len))
-    }
-}
-
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub enum reply_body<'a> {
     #[xdr(0)]
     MSG_ACCEPTED(accepted_reply<'a>),
@@ -339,13 +253,13 @@ pub enum reply_body<'a> {
     MSG_DENIED(rejected_reply),
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct rpc_msg<'a, 'b> {
     pub xid: u32,
     pub body: msg_body<'a, 'b>,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub enum msg_body<'a, 'b> {
     #[xdr(0)]
     CALL(call_body<'a>),
@@ -354,84 +268,84 @@ pub enum msg_body<'a, 'b> {
 }
 
 impl Decode for opaque_auth<'_> {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
         Ok(Self {
-            flavor: d.decode()?,
-            body: d.opaque(400)?,
+            flavor: decoder.decode()?,
+            body: decoder.opaque(400)?,
         })
     }
 }
 
 impl Encode for opaque_auth<'_> {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.encode(&self.flavor)?;
-        e.opaque(self.body.as_ref(), 400)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.encode(&self.flavor)?;
+        encoder.opaque(self.body.as_ref(), 400)
     }
 }
 
 impl Encode for auth_unix {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.encode(&self.stamp)?;
-        e.opaque(self.machinename.as_ref(), 255)?;
-        e.encode(&self.uid)?;
-        e.encode(&self.gid)?;
-        e.collection(&self.gids, 16)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.encode(&self.stamp)?;
+        encoder.opaque(self.machinename.as_ref(), 255)?;
+        encoder.encode(&self.uid)?;
+        encoder.encode(&self.gid)?;
+        encoder.collection(&self.gids, 16)
     }
 }
 
 impl Encode for accept_stat_data {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
         match self {
-            Self::SUCCESS => e.encode(&accept_stat::SUCCESS),
-            Self::PROG_UNAVAIL => e.encode(&accept_stat::PROG_UNAVAIL),
+            Self::SUCCESS => encoder.encode(&accept_stat::SUCCESS),
+            Self::PROG_UNAVAIL => encoder.encode(&accept_stat::PROG_UNAVAIL),
             Self::PROG_MISMATCH { low, high } => {
-                e.encode(&accept_stat::PROG_MISMATCH)?;
-                e.encode(low)?;
-                e.encode(high)
+                encoder.encode(&accept_stat::PROG_MISMATCH)?;
+                encoder.encode(low)?;
+                encoder.encode(high)
             }
-            Self::PROC_UNAVAIL => e.encode(&accept_stat::PROC_UNAVAIL),
-            Self::GARBAGE_ARGS => e.encode(&accept_stat::GARBAGE_ARGS),
-            Self::SYSTEM_ERR => e.encode(&accept_stat::SYSTEM_ERR),
+            Self::PROC_UNAVAIL => encoder.encode(&accept_stat::PROC_UNAVAIL),
+            Self::GARBAGE_ARGS => encoder.encode(&accept_stat::GARBAGE_ARGS),
+            Self::SYSTEM_ERR => encoder.encode(&accept_stat::SYSTEM_ERR),
         }
     }
 }
 
 impl Encode for rejected_reply {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
         match self {
             Self::RPC_MISMATCH { low, high } => {
-                e.encode(&reject_stat::RPC_MISMATCH)?;
-                e.encode(low)?;
-                e.encode(high)
+                encoder.encode(&reject_stat::RPC_MISMATCH)?;
+                encoder.encode(low)?;
+                encoder.encode(high)
             }
             Self::AUTH_ERROR(status) => {
-                e.encode(&reject_stat::AUTH_ERROR)?;
-                e.encode(status)
+                encoder.encode(&reject_stat::AUTH_ERROR)?;
+                encoder.encode(status)
             }
         }
     }
 }
 
 impl Decode for auth_unix {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
         Ok(Self {
-            stamp: d.decode()?,
-            machinename: d.opaque(255)?,
-            uid: d.decode()?,
-            gid: d.decode()?,
-            gids: d.collection(16)?,
+            stamp: decoder.decode()?,
+            machinename: decoder.opaque(255)?,
+            uid: decoder.decode()?,
+            gid: decoder.decode()?,
+            gids: decoder.collection(16)?,
         })
     }
 }
 
 impl Decode for accept_stat_data {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        Ok(match d.decode::<accept_stat>()? {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        Ok(match decoder.decode::<accept_stat>()? {
             accept_stat::SUCCESS => Self::SUCCESS,
             accept_stat::PROG_UNAVAIL => Self::PROG_UNAVAIL,
             accept_stat::PROG_MISMATCH => Self::PROG_MISMATCH {
-                low: d.decode()?,
-                high: d.decode()?,
+                low: decoder.decode()?,
+                high: decoder.decode()?,
             },
             accept_stat::PROC_UNAVAIL => Self::PROC_UNAVAIL,
             accept_stat::GARBAGE_ARGS => Self::GARBAGE_ARGS,
@@ -441,13 +355,13 @@ impl Decode for accept_stat_data {
 }
 
 impl Decode for rejected_reply {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        Ok(match d.decode::<reject_stat>()? {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        Ok(match decoder.decode::<reject_stat>()? {
             reject_stat::RPC_MISMATCH => Self::RPC_MISMATCH {
-                low: d.decode()?,
-                high: d.decode()?,
+                low: decoder.decode()?,
+                high: decoder.decode()?,
             },
-            reject_stat::AUTH_ERROR => Self::AUTH_ERROR(d.decode()?),
+            reject_stat::AUTH_ERROR => Self::AUTH_ERROR(decoder.decode()?),
         })
     }
 }

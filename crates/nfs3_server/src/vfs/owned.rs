@@ -6,13 +6,12 @@
 
 use std::sync::Arc;
 
-use nfs3_types::nfs3::{fattr3, nfsstat3, stable_how};
+use nfs3_types::nfs3::{nfsstat3, stable_how};
 use nfs3_types::xdr_codec::{BackingReservation, Payload, PayloadLimits, ReceiveBuffer};
 use tokio::sync::OwnedSemaphorePermit;
 
-use super::{NfsFileSystem, NfsReadFileSystem};
-
-pub(crate) struct Lease {
+#[derive(Debug)]
+pub struct Lease {
     // Drop entitlement before publishing the slot as free. Drain uses the
     // operation semaphore as the completion barrier.
     pub(crate) _control: BackingReservation,
@@ -20,8 +19,10 @@ pub(crate) struct Lease {
 }
 
 /// Private shared ownership prevents an outer future from reclaiming live work.
-pub(crate) type WorkLease = Arc<Lease>;
+pub type WorkLease = Arc<Lease>;
 
+/// READ work with initialized storage and an inseparable private work lease.
+#[derive(Debug)]
 pub struct OwnedRead<H> {
     pub handle: H,
     pub offset: u64,
@@ -55,7 +56,7 @@ impl<H> OwnedRead<H> {
         let payload = self
             .buffer
             .freeze(count, self.limits)
-            .map_err(|_| nfsstat3::NFS3ERR_SERVERFAULT)?;
+            .map_err(|_overflow| nfsstat3::NFS3ERR_SERVERFAULT)?;
         Ok(OwnedReadResult {
             payload,
             eof,
@@ -64,6 +65,8 @@ impl<H> OwnedRead<H> {
     }
 }
 
+/// Completed READ prefix retaining backing and work entitlement until reply/drop.
+#[derive(Debug)]
 pub struct OwnedReadResult {
     pub(crate) payload: Payload,
     pub(crate) eof: bool,
@@ -81,25 +84,23 @@ impl OwnedReadResult {
     }
 }
 
+/// Complete WRITE work, including the private operation lease.
+///
+/// Move the whole request into actual work (including blocking closures), and
+/// drop it there only after IO and required synchronization, on every exit path.
+#[derive(Debug)]
 pub struct OwnedWrite<H> {
     pub handle: H,
     pub offset: u64,
     pub stable: stable_how,
-    pub data: Payload,
+    pub(crate) data: Payload,
     pub(crate) _lease: WorkLease,
 }
 
-/// No blanket copying adapter from legacy Vec/slice IO is supplied.
-pub trait NfsOwnedRead: NfsReadFileSystem {
-    fn read_owned(
-        &self,
-        request: OwnedRead<Self::Handle>,
-    ) -> impl Future<Output = Result<OwnedReadResult, nfsstat3>> + Send;
-}
-
-pub trait NfsOwnedIo: NfsFileSystem + NfsOwnedRead {
-    fn write_owned(
-        &self,
-        request: OwnedWrite<Self::Handle>,
-    ) -> impl Future<Output = Result<(fattr3, stable_how), nfsstat3>> + Send;
+impl<H> OwnedWrite<H> {
+    /// Borrow bulk segments without separating their owner from the work lease.
+    #[must_use]
+    pub const fn data(&self) -> &Payload {
+        &self.data
+    }
 }

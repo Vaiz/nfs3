@@ -1,19 +1,24 @@
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Loopback fixture helpers abort on setup and RPC failures"
+)]
 #![cfg(any(feature = "tokio", feature = "smol"))]
 
-use nfs3_client::bounded::{BoundedRpcClient, RpcLimits};
-use nfs3_client::bounded_nfs::BoundedNfsClient;
+use nfs3_client::Nfs3Client;
 use nfs3_client::io::{AsyncRead, AsyncWrite};
+use nfs3_client::rpc::{RpcClient, RpcLimits};
+use nfs3_types::async_io::RecordLimits;
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{DecodeLimits, EncodeLimits, Payload, PayloadLimits, Void};
 
 const fn limits() -> RpcLimits {
     RpcLimits {
-        block_bytes: 7,
-        max_record_bytes: 1024,
-        max_fragments: 128,
+        record: RecordLimits {
+            block_bytes: 7,
+            max_record_bytes: 1024,
+            max_fragments: 128,
+        },
         backing_bytes: 2048,
-        max_builder_reservation_bytes: 65536,
         decode: DecodeLimits {
             max_metadata_bytes: 512,
             max_collection_elements: 64,
@@ -65,8 +70,7 @@ fn peer(listener: &std::net::TcpListener) {
 
 async fn exercise<IO: AsyncRead + AsyncWrite>(io: IO) {
     let mut client =
-        BoundedRpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default())
-            .unwrap();
+        RpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default()).unwrap();
     let first: Payload = client.call(1, 2, 3, &Void).await.unwrap();
     let pointer = first.chunks().next().unwrap().as_ptr() as usize;
     let clone = first.try_clone().unwrap();
@@ -123,9 +127,8 @@ fn nfs_peer(listener: &std::net::TcpListener) {
 async fn exercise_nfs<IO: AsyncRead + AsyncWrite>(io: IO) {
     use nfs3_types::nfs3::{Nfs3Result, READ3args, nfs_fh3, stable_how};
     use nfs3_types::xdr_codec::Opaque;
-    let rpc = BoundedRpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default())
-        .unwrap();
-    let mut nfs = BoundedNfsClient::new(rpc, 17).unwrap();
+    let rpc = RpcClient::new(io, limits(), opaque_auth::default(), opaque_auth::default()).unwrap();
+    let mut nfs = Nfs3Client::new(rpc, 17).unwrap();
     let file = nfs_fh3 {
         data: Opaque::borrowed(b"file"),
     };
@@ -141,14 +144,16 @@ async fn exercise_nfs<IO: AsyncRead + AsyncWrite>(io: IO) {
         panic!()
     };
     assert_eq!(value.data.try_to_vec().unwrap(), [0x5a; 17]);
-    let Nfs3Result::Ok(value) = nfs
-        .write(file, 0, stable_how::FILE_SYNC, value.data)
+    let Nfs3Result::Ok(written) = nfs
+        .write(file, 0, stable_how::FILE_SYNC, &value.data)
         .await
         .unwrap()
     else {
         panic!()
     };
-    assert_eq!(value.count, 17);
+    assert_eq!(written.count, 17);
+    assert!(nfs.rpc().backing_used() >= 17); // borrowing WRITE preserves the READ owner
+    drop(value);
     assert_eq!(nfs.rpc().backing_used(), 0);
     assert!(nfs.rpc().is_usable());
 }

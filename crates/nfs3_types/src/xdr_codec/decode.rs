@@ -53,7 +53,14 @@ impl fmt::Display for DecodeError {
         write!(f, "{self:?}")
     }
 }
-impl std::error::Error for DecodeError {}
+impl std::error::Error for DecodeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Wire(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 pub type DecodeResult<T> = Result<T, DecodeError>;
 
@@ -181,7 +188,7 @@ impl Decoder {
             let mut bytes = Vec::new();
             bytes
                 .try_reserve_exact(len)
-                .map_err(|_| DecodeError::Allocation)?;
+                .map_err(|_allocation_error| DecodeError::Allocation)?;
             bytes.resize(len, 0);
             self.cursor.read_opaque_into(&mut bytes, max)?;
             Ok(Opaque(Cow::Owned(bytes)))
@@ -193,8 +200,8 @@ impl Decoder {
     pub fn collection<T: Decode>(&mut self, max: usize) -> DecodeResult<Vec<T>> {
         self.ready()?;
         let result = (|| {
-            let count =
-                usize::try_from(self.decode::<u32>()?).map_err(|_| DecodeError::Overflow)?;
+            let count = usize::try_from(self.decode::<u32>()?)
+                .map_err(|_overflow| DecodeError::Overflow)?;
             if count > max {
                 return Err(DecodeError::Limit {
                     kind: DecodeLimit::FieldElements,
@@ -237,7 +244,7 @@ impl Decoder {
             )?;
             items
                 .try_reserve_exact(next - items.len())
-                .map_err(|_| DecodeError::Allocation)?;
+                .map_err(|_allocation_error| DecodeError::Allocation)?;
             *target = next;
         }
         items.push(item);
@@ -248,10 +255,10 @@ impl Decoder {
 macro_rules! scalar {
     ($ty:ty, $method:ident) => {
         impl Decode for $ty {
-            fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-                d.ready()?;
-                let result = d.cursor.$method().map_err(Into::into);
-                d.remember(result)
+            fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+                decoder.ready()?;
+                let result = decoder.cursor.$method().map_err(Into::into);
+                decoder.remember(result)
             }
         }
     };
@@ -261,73 +268,74 @@ scalar!(u64, read_u64);
 scalar!(bool, read_bool);
 
 impl<const N: usize> Decode for [u8; N] {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.ready()?;
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.ready()?;
         let mut bytes = [0; N];
-        let result = d
+        let result = decoder
             .cursor
             .read_fixed(&mut bytes)
             .map(|()| bytes)
             .map_err(Into::into);
-        d.remember(result)
+        decoder.remember(result)
     }
 }
 
 impl Decode for Opaque<'_> {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.opaque(usize::MAX)
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.opaque(usize::MAX)
     }
 }
 impl Decode for Payload {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.ready()?;
-        let result = d.cursor.read_opaque_charged(d.limits.payload, |bytes| {
-            charge(
-                &mut d.reservation,
-                bytes,
-                d.limits.max_reservation_bytes,
-                DecodeLimit::ReservationBytes,
-            )
-        });
-        d.remember(result)
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.ready()?;
+        let result = decoder
+            .cursor
+            .read_opaque_charged(decoder.limits.payload, |bytes| {
+                charge(
+                    &mut decoder.reservation,
+                    bytes,
+                    decoder.limits.max_reservation_bytes,
+                    DecodeLimit::ReservationBytes,
+                )
+            });
+        decoder.remember(result)
     }
 }
 impl<T: Decode> Decode for Vec<T> {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.collection(usize::MAX)
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.collection(usize::MAX)
     }
 }
 impl<T: Decode> Decode for List<T> {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.ready()?;
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.ready()?;
         let result = (|| {
             let mut items = Vec::new();
             let mut target = 0;
-            while d.decode::<bool>()? {
+            while decoder.decode::<bool>()? {
                 charge(
-                    &mut d.elements,
+                    &mut decoder.elements,
                     1,
-                    d.limits.max_collection_elements,
+                    decoder.limits.max_collection_elements,
                     DecodeLimit::CollectionElements,
                 )?;
-                let item = d.decode()?;
-                d.push(&mut items, &mut target, item)?;
+                let item = decoder.decode()?;
+                decoder.push(&mut items, &mut target, item)?;
             }
             Ok(Self(items))
         })();
-        d.remember(result)
+        decoder.remember(result)
     }
 }
 impl Decode for Void {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        d.ready()?;
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        decoder.ready()?;
         Ok(Self)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::*;
 
@@ -382,7 +390,7 @@ mod tests {
         for bytes in [vec![0, 0, 0, 99], vec![0, 0, 0, 1, 1, 0, 0, 2]] {
             let record = Payload::try_from_vec(bytes, limits().payload).unwrap();
             let mut d = Decoder::new(record, limits());
-            assert!(d.decode::<Opaque<'_>>().is_err());
+            d.decode::<Opaque<'_>>().unwrap_err();
             assert_eq!(d.cursor.position(), 0);
             assert_eq!(d.reservation, 0);
             assert_eq!(d.metadata, 0);

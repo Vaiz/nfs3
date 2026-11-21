@@ -8,9 +8,8 @@ use nfs3_client::nfs3_types::nfs3::{
     GETATTR3args, LINK3args, LOOKUP3args, LOOKUP3res, MKDIR3args, MKDIR3res, MKNOD3args,
     Nfs3Option, READ3args, READDIR3args, READDIRPLUS3args, READLINK3args, REMOVE3args, REMOVE3res,
     RENAME3args, RENAME3res, RMDIR3args, RMDIR3res, SETATTR3args, SETATTR3res, SYMLINK3args,
-    SYMLINK3res, WRITE3args, WRITE3res, cookieverf3, createhow3, devicedata3, diropargs3, ftype3,
-    mknoddata3, nfs_fh3, nfspath3, nfsstat3, sattr3, set_atime, set_mtime, specdata3, stable_how,
-    symlinkdata3,
+    SYMLINK3res, WRITE3res, cookieverf3, createhow3, devicedata3, diropargs3, ftype3, mknoddata3,
+    nfs_fh3, nfspath3, nfsstat3, sattr3, set_atime, set_mtime, specdata3, stable_how, symlinkdata3,
 };
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::JustClientExt;
@@ -279,8 +278,8 @@ pub async fn read_file_contents(ctx: &mut TestContext, subdir: PathBuf, subdir_f
         .expect("read call failed")
         .unwrap();
 
-    let read_content = read_resok.data.0;
-    assert_eq!(read_content.as_ref(), HELLO_WORLD, "Content mismatch");
+    let read_content = read_resok.data.try_to_vec().unwrap();
+    assert_eq!(read_content, HELLO_WORLD, "Content mismatch");
     assert!(read_resok.eof, "Expected EOF for complete read");
 
     assert_files_equal(
@@ -329,8 +328,8 @@ pub async fn read_with_offset(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
         .expect("read call failed")
         .unwrap();
 
-    let data = read_resok.data.0;
-    assert_eq!(data.as_ref(), b"abcde", "Content mismatch with offset");
+    let data = read_resok.data.try_to_vec().unwrap();
+    assert_eq!(data, b"abcde", "Content mismatch with offset");
 }
 
 pub async fn read_binary_file(ctx: &mut TestContext, subdir: PathBuf, subdir_fh: nfs_fh3) {
@@ -633,8 +632,8 @@ pub async fn concurrent_reads(ctx: &mut TestContext, subdir: PathBuf, subdir_fh:
             .expect("read call failed")
             .unwrap();
 
-        let data = read_resok.data.0;
-        let read_content = String::from_utf8(data.to_vec()).expect("invalid UTF-8 in read data");
+        let data = read_resok.data.try_to_vec().unwrap();
+        let read_content = String::from_utf8(data).expect("invalid UTF-8 in read data");
         assert_eq!(
             read_content,
             CONCURRENT_CONTENT,
@@ -740,13 +739,12 @@ pub async fn write_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir
 
     let write_result = ctx
         .client
-        .write(&WRITE3args {
-            file: file_fh,
-            offset: 0,
-            count: 4,
-            stable: stable_how::UNSTABLE,
-            data: Opaque::borrowed(b"test"),
-        })
+        .write(
+            file_fh,
+            0,
+            stable_how::UNSTABLE,
+            &nfs3_tests::fixture_payload(b"test".to_vec()),
+        )
         .await
         .expect("write call failed");
 
@@ -861,7 +859,13 @@ pub async fn mknod_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdi
         .await;
 
     match mknod_result {
-        Err(nfs3_client::RpcError::ProcUnavail) => {}
+        Err(nfs3_client::RpcError {
+            kind:
+                nfs3_client::RpcErrorKind::NotAccepted(
+                    nfs3_client::nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL,
+                ),
+            ..
+        }) => {}
         _ => panic!(
             "Expected RpcError::ProcUnavail error for mknod on readonly filesystem, got: \
              {mknod_result:?}"
@@ -991,7 +995,13 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
         .await;
 
     match link_result {
-        Err(nfs3_client::RpcError::ProcUnavail) => {}
+        Err(nfs3_client::RpcError {
+            kind:
+                nfs3_client::RpcErrorKind::NotAccepted(
+                    nfs3_client::nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL,
+                ),
+            ..
+        }) => {}
         _ => panic!(
             "Expected RpcError::ProcUnavail error for link on readonly filesystem, got: \
              {link_result:?}"

@@ -7,7 +7,7 @@
 
 //! This module contains the definitions of the Port Mapper protocol as defined in RFC 1057.
 
-use crate::xdr_codec::{List, Opaque, XdrCodec, XdrDecode, XdrEncode};
+use crate::xdr_codec::{List, Opaque, XdrCodec};
 
 pub const IPPROTO_TCP: u32 = 6;
 pub const IPPROTO_UDP: u32 = 17;
@@ -15,7 +15,7 @@ pub const PROGRAM: u32 = 100_000;
 pub const VERSION: u32 = 2;
 pub const PMAP_PORT: u16 = 111;
 
-#[derive(Copy, Clone, Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, XdrCodec)]
 pub struct mapping {
     pub prog: u32,
     pub vers: u32,
@@ -25,7 +25,7 @@ pub struct mapping {
 
 pub type pmaplist = List<mapping>;
 
-#[derive(Clone, Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct call_args<'a> {
     pub prog: u32,
     pub vers: u32,
@@ -33,7 +33,7 @@ pub struct call_args<'a> {
     pub args: Opaque<'a>,
 }
 
-#[derive(Clone, Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct call_result<'a> {
     pub port: u32,
     pub res: Opaque<'a>,
@@ -41,7 +41,6 @@ pub struct call_result<'a> {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
-#[derive(XdrDecode, XdrEncode)]
 pub enum PMAP_PROG {
     PMAPPROC_NULL = 0,
     PMAPPROC_SET = 1,
@@ -52,7 +51,7 @@ pub enum PMAP_PROG {
 }
 
 impl std::convert::TryFrom<u32> for PMAP_PROG {
-    type Error = crate::xdr_codec::Error;
+    type Error = crate::xdr_codec::DecodeError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
@@ -62,7 +61,7 @@ impl std::convert::TryFrom<u32> for PMAP_PROG {
             3 => Ok(Self::PMAPPROC_GETPORT),
             4 => Ok(Self::PMAPPROC_DUMP),
             5 => Ok(Self::PMAPPROC_CALLIT),
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
+            _ => Err(crate::xdr_codec::DecodeError::InvalidTag(value)),
         }
     }
 }

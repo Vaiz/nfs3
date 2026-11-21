@@ -9,6 +9,7 @@ use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::Opaque;
 
 use crate::io::{AsyncRead, AsyncWrite};
+use crate::rpc::{RpcClient, RpcErrorKind, RpcLimits};
 use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
 
 /// Contains the connection to the NFS server.
@@ -75,6 +76,8 @@ pub struct Nfs3ConnectionBuilder<C> {
     mount_path: dirpath<'static>,
     credential: opaque_auth<'static>,
     verifier: opaque_auth<'static>,
+    limits: RpcLimits,
+    max_bulk_bytes: u32,
 }
 
 impl<C, S> Nfs3ConnectionBuilder<C>
@@ -84,8 +87,15 @@ where
 {
     /// Creates a new `NFSv3` connection builder.
     /// The `mount_path` is the path to mount on the server.
-    pub fn new(connector: C, host: impl AsRef<str>, mount_path: impl AsRef<str>) -> Self {
-        Self {
+    pub fn new(
+        connector: C,
+        host: impl AsRef<str>,
+        mount_path: impl AsRef<str>,
+        limits: RpcLimits,
+        max_bulk_bytes: u32,
+    ) -> Result<Self, RpcErrorKind> {
+        crate::nfs::validate_limits(limits, max_bulk_bytes)?;
+        Ok(Self {
             host: host.as_ref().into(),
             connector,
             connect_from_privileged_port: true,
@@ -95,7 +105,9 @@ where
             mount_path: dirpath(Opaque::owned(mount_path.as_ref().as_bytes().to_vec())),
             credential: opaque_auth::default(),
             verifier: opaque_auth::default(),
-        }
+            limits,
+            max_bulk_bytes,
+        })
     }
 
     /// Sets whether to connect from a privileged port (0-1023).
@@ -144,13 +156,18 @@ where
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
         let io = self.connect(mount_port).await?;
-        let mut mount_client =
-            mount::MountClient::new_with_auth(io, self.credential.clone(), self.verifier.clone());
+        let mut mount_client = mount::MountClient::new_with_auth(
+            io,
+            self.limits,
+            self.credential.clone(),
+            self.verifier.clone(),
+        )?;
         let borrowed_mount_path = dirpath(Opaque::borrowed(self.mount_path.0.as_ref()));
         let mount_resok = mount_client.mnt(borrowed_mount_path).await?;
 
         let io = self.connect(nfs3_port).await?;
-        let nfs3_client = Nfs3Client::new_with_auth(io, self.credential, self.verifier);
+        let rpc = RpcClient::new(io, self.limits, self.credential, self.verifier)?;
+        let nfs3_client = Nfs3Client::new(rpc, self.max_bulk_bytes)?;
 
         Ok(Nfs3Connection {
             host: self.host,
@@ -177,7 +194,7 @@ where
             .connect(SocketAddr::new(addr, self.portmapper_port))
             .await?;
 
-        let mut portmapper = portmapper::PortmapperClient::new(io);
+        let mut portmapper = portmapper::PortmapperClient::new(io, self.limits)?;
         let mount_port = if let Some(port) = self.mount_port {
             port
         } else {

@@ -1,6 +1,4 @@
-#![allow(clippy::unwrap_used)]
-
-use nfs3_types::xdr_codec::{Payload, PayloadError, PayloadLimit, PayloadLimits, RecordCursor};
+use crate::xdr_codec::{Payload, PayloadError, PayloadLimit, PayloadLimits, RecordCursor};
 
 const fn limits() -> PayloadLimits {
     PayloadLimits {
@@ -116,15 +114,15 @@ fn bool_and_scalar_failures_preserve_cached_state() {
         );
         assert_eq!(c.position(), 0);
         assert_eq!(c.read_u32().unwrap(), 2);
-        assert!(c.read_u64().is_err());
+        c.read_u64().unwrap_err();
         assert_eq!(c.position(), 4);
         assert!(c.read_bool().unwrap());
-        assert!(c.read_u32().is_err());
+        c.read_u32().unwrap_err();
         c.finish().unwrap();
     }
     for n in 0..8 {
         let mut c = cursor(vec![vec![1; n]]);
-        assert!(c.read_u64().is_err());
+        c.read_u64().unwrap_err();
         assert_eq!(c.position(), 0);
         let mut out = [0; 8];
         c.read_exact(&mut out[..n]).unwrap();
@@ -147,7 +145,7 @@ fn opaque_truncation_and_padding_errors_are_atomic() {
             assert_eq!(shared.position(), 0);
             let mut copied = cursor(chunks());
             let mut output = [0xee; 8];
-            assert!(copied.read_opaque_into(&mut output, 8).is_err());
+            copied.read_opaque_into(&mut output, 8).unwrap_err();
             assert_eq!(output, [0xee; 8]);
             assert_eq!(copied.position(), 0);
             let mut exact = [0xee; 8];
@@ -217,7 +215,7 @@ fn extraction_limits_and_small_copy_are_explicit() {
     );
     assert_eq!(small, [0xee; 2]);
     let mut copied = [0xee; 3];
-    assert!(c.read_opaque_into(&mut copied, 2).is_err());
+    c.read_opaque_into(&mut copied, 2).unwrap_err();
     assert_eq!(copied, [0xee; 3]);
     assert_eq!(c.position(), 0);
     let shared = c
@@ -286,7 +284,7 @@ fn maximum_wire_lengths_are_checked_without_reserving() {
         }
         assert_eq!(c.position(), 0);
         let mut output = [0xee; 3];
-        assert!(c.read_opaque_into(&mut output, usize::MAX).is_err());
+        c.read_opaque_into(&mut output, usize::MAX).unwrap_err();
         assert_eq!(output, [0xee; 3]);
         assert_eq!(c.read_u32().unwrap(), value);
         c.finish().unwrap();

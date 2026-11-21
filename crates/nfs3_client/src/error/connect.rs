@@ -8,6 +8,8 @@ use super::{MountError, PortmapError};
 /// Returned by [`Nfs3ConnectionBuilder::mount`](crate::Nfs3ConnectionBuilder::mount).
 #[derive(Debug)]
 pub enum ConnectError {
+    /// Explicit local policy validation failed; no success fallback.
+    Policy(crate::RpcErrorKind),
     /// An I/O error occurred when connecting to a port.
     Io(std::io::Error),
     /// A portmapper operation failed.
@@ -19,6 +21,7 @@ pub enum ConnectError {
 impl fmt::Display for ConnectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Policy(e) => e.fmt(f),
             Self::Io(e) => e.fmt(f),
             Self::Portmap(e) => e.fmt(f),
             Self::Mount(e) => e.fmt(f),
@@ -29,6 +32,7 @@ impl fmt::Display for ConnectError {
 impl StdError for ConnectError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
+            Self::Policy(e) => Some(e),
             Self::Io(e) => Some(e),
             Self::Portmap(e) => Some(e),
             Self::Mount(e) => Some(e),
@@ -39,6 +43,12 @@ impl StdError for ConnectError {
 impl From<std::io::Error> for ConnectError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)
+    }
+}
+
+impl From<crate::RpcErrorKind> for ConnectError {
+    fn from(error: crate::RpcErrorKind) -> Self {
+        Self::Policy(error)
     }
 }
 
@@ -60,7 +70,7 @@ impl ConnectError {
     #[must_use]
     pub const fn is_connection_reusable(&self) -> bool {
         match self {
-            Self::Io(_) => false,
+            Self::Policy(_) | Self::Io(_) => false,
             Self::Portmap(e) => e.is_connection_reusable(),
             Self::Mount(e) => e.is_connection_reusable(),
         }

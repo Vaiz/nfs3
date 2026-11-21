@@ -1,41 +1,32 @@
 # `nfs3_macros`
 
-`nfs3_macros` is a Rust library that provides `XdrCodec` derive macro for the `nfs3_types` crate. `XdrCodec` macro automatically implements `Pack` and `Unpack` traits for structs and enums, simplifying serialization and deserialization of XDR encoded data.
-## Features
+`XdrCodec` derives the checked `nfs3_types::xdr_codec::{Encode, Decode}` pair.
+`XdrEncode` and `XdrDecode` derive only their respective direction. All three use
+the same validated schema and generator, with independent directional bounds.
 
-- Automatically implements `Pack` and `Unpack` traits for structs and enums.
-- Supports named, unnamed, and unit structs.
-- Supports unit-only enums.
+Supported forms:
 
-## Owner-aware `XdrDecode`
+- Named, tuple and unit structs, in field declaration order.
+- Unit-only enums with non-negative u32 literal discriminants or implicit
+  successive tags. Negative/expression discriminants are unsupported.
+- Tagged unions with one `#[xdr(u32_literal)]` per arm. Arms are unit or
+  single-field tuple variants; Rust discriminants are not accepted here.
 
-`XdrDecode` independently implements `nfs3_types::xdr_codec::Decode`; it does not
-alter `XdrCodec` or require legacy streaming traits. Named, tuple and unit structs,
-unit enums with non-negative u32 literal discriminants (or implicit successive tags), and tagged
-unions with `#[xdr(u32_tag)]` on every arm are supported. Union arms are unit or
-single-field tuple variants. Invalid/missing/duplicate tags, unsupported shapes
-and Rust unions produce compile errors.
-All-unit enums reject `#[xdr]` attributes: legacy `Pack` uses their Rust
-discriminants, not attribute tags. Negative and expression discriminants are unsupported.
+Missing, duplicate, malformed and overflowing tags, Rust unions and unsupported
+arm shapes produce compile errors. `xdr` is rejected on containers/fields and on
+unit-only enum variants. Protocol field bounds and default union arms use manual
+implementations, not an additional attribute language.
 
-Lifetimes, const parameters and where clauses are preserved. Only type parameters
-receive an added `Decode` bound; field-type bounds are deliberately avoided so
-recursive `List` definitions do not create cyclic trait obligations. Every nested
-field uses `Decoder::decode` for aggregate depth and sticky-error enforcement.
-Protocol field bounds/default union arms use manual implementations, not an
-additional attribute language. See `nfs3_types` for explicit resource policy.
+Lifetimes, const parameters and where clauses are preserved. Each type parameter
+receives only the direction's `Encode` or `Decode` bound. Field-type bounds are
+avoided so recursive `List` definitions do not create cyclic trait obligations.
+Thus `#[derive(XdrCodec)] struct Value<T>(T)` can encode a borrowed `&Payload`
+without requiring it to decode, or decode a decode-only type.
 
-## Checked `XdrEncode`
+Nested fields/tags use `Encoder::encode` and `Decoder::decode` for aggregate depth
+and sticky errors. Unknown tags produce `DecodeError::InvalidTag`. Generated
+paths name `nfs3_types` directly. See that crate for explicit resource policies.
 
-`XdrEncode` independently implements `nfs3_types::xdr_codec::Encode`, with the
-same supported forms and shared validated tag interpretation as `XdrDecode`.
-It preserves generic/lifetime/const parameters and where clauses, adds `Encode`
-bounds to type parameters, and nests every field/tag through `Encoder::encode`.
-It can be derived alongside `XdrDecode` without requiring `Pack`/`Unpack`.
-Manual implementations handle protocol bounds and default union arms.
-
-All-unit discriminants must be non-negative u32 literals (or implicit successive
-values); `#[xdr]` tags on all-unit enums, negative/expression discriminants,
-missing/duplicate/overflowing tags and unsupported union shapes produce compile
-errors. Neither new derive changes legacy `XdrCodec` parsing or behavior.
-See `nfs3_types` for explicit encoding limits and owned segmented `SendPlan` output.
+Migration: `XdrCodec` no longer generates the removed streaming `Pack`/`Unpack`
+traits or unchecked size arithmetic. Encode into a checked `SendPlan`; decode a
+complete owned record and require `Decoder::finish()`.

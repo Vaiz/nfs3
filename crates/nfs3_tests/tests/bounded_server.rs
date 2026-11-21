@@ -1,16 +1,21 @@
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Integration fixture helpers abort on setup and RPC failures"
+)]
 use std::sync::Arc;
 use std::time::Duration;
 
-use nfs3_client::bounded::{BoundedRpcClient, RpcLimits};
-use nfs3_client::bounded_nfs::BoundedNfsClient;
+use nfs3_client::Nfs3Client;
+use nfs3_client::rpc::{RpcClient, RpcLimits};
 use nfs3_client::tokio::TokioIo;
-use nfs3_server::bounded::{BoundedListener, DirectoryLimits, ServerLimits};
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::nfs3_types::nfs3::*;
 use nfs3_server::nfs3_types::rpc::opaque_auth;
 use nfs3_server::nfs3_types::xdr_codec::*;
 use nfs3_server::nfs3_types::{self};
+use nfs3_server::tcp::{
+    DecodePolicy, DirectoryLimits, EncodePolicy, NFSTcpListener as BoundedListener, ServerLimits,
+};
 use nfs3_types::async_io::RecordLimits;
 use tokio::net::TcpStream;
 mod bounded_server_support;
@@ -54,7 +59,7 @@ async fn raw_reply(socket: &mut TcpStream) -> Vec<u8> {
 async fn raw_send(socket: &mut TcpStream, record: &[u8]) {
     use tokio::io::AsyncWriteExt;
     socket
-        .write_all(&(0x8000_0000 | record.len() as u32).to_be_bytes())
+        .write_all(&(0x8000_0000 | u32::try_from(record.len()).unwrap()).to_be_bytes())
         .await
         .unwrap();
     socket.write_all(record).await.unwrap();
@@ -86,7 +91,7 @@ async fn graceful_drain_delivers_admitted_write_reply_before_releasing_backing()
             PROGRAM,
             VERSION,
             7,
-            &Write3Args {
+            &WRITE3args {
                 file,
                 offset: 0,
                 count: 3,
@@ -103,11 +108,9 @@ async fn graceful_drain_delivers_admitted_write_reply_before_releasing_backing()
         .forget();
     let draining = Arc::clone(&server);
     let mut drain = tokio::spawn(async move { draining.drain().await });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(30), &mut drain)
-            .await
-            .is_err()
-    );
+    tokio::time::timeout(Duration::from_millis(30), &mut drain)
+        .await
+        .unwrap_err();
     assert!(server.backing_used() > 0);
     state.release();
     let reply = tokio::time::timeout(Duration::from_secs(2), call)
@@ -198,6 +201,7 @@ async fn partial_first_marker_uses_progress_and_whole_record_deadlines_without_a
 
 #[tokio::test]
 async fn readonly_policy_precedes_count_mismatch_and_listener_drop_stops_idle_reader() {
+    use tokio::io::AsyncReadExt;
     let server = BoundedListener::bind_ro("127.0.0.1:0", fs(), "/".to_owned(), limits())
         .await
         .unwrap();
@@ -209,7 +213,7 @@ async fn readonly_policy_precedes_count_mismatch_and_listener_drop_stops_idle_re
             PROGRAM,
             VERSION,
             7,
-            &Write3Args {
+            &WRITE3args {
                 file: nfs_fh3::default(),
                 offset: 0,
                 count: 10,
@@ -223,7 +227,28 @@ async fn readonly_policy_precedes_count_mismatch_and_listener_drop_stops_idle_re
         result,
         Nfs3Result::Err((nfsstat3::NFS3ERR_ROFS, _))
     ));
-    let result: READ3resPayload = rpc
+    // Even an oversized payload and invalid handle must reach ROFS, not a
+    // decoder cap derived from max_write_bytes or a handle-validation failure.
+    let result: WRITE3res = rpc
+        .call(
+            PROGRAM,
+            VERSION,
+            7,
+            &WRITE3args {
+                file: nfs_fh3::default(),
+                offset: 0,
+                count: 4097,
+                stable: stable_how::FILE_SYNC,
+                data: Opaque::owned(vec![0; 4097]),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        result,
+        Nfs3Result::Err((nfsstat3::NFS3ERR_ROFS, _))
+    ));
+    let result: READ3res<Payload> = rpc
         .call(
             PROGRAM,
             VERSION,
@@ -246,7 +271,6 @@ async fn readonly_policy_precedes_count_mismatch_and_listener_drop_stops_idle_re
         .await
         .unwrap()
         .unwrap();
-    use tokio::io::AsyncReadExt;
     assert_eq!(idle.read(&mut [0]).await.unwrap(), 0);
     drop(rpc);
 }
@@ -262,9 +286,9 @@ async fn maximum_bulk_roundtrip_and_directory_host_metadata_bound() {
     let mut rpc = client(&server).await;
     let root = root(&mut rpc).await;
     let file = file(&mut rpc, &root).await;
-    let mut nfs = BoundedNfsClient::new(rpc, 4096).unwrap();
+    let mut nfs = Nfs3Client::new(rpc, 4096).unwrap();
     let mut expected = Vec::new();
-    expected.extend((0..4096).map(|i| (i % 251) as u8));
+    expected.extend((0..4096).map(|i| u8::try_from(i % 251).unwrap()));
     let data = Payload::try_from_chunks(
         expected.chunks(127).map(<[u8]>::to_vec).collect(),
         PayloadLimits {
@@ -275,7 +299,7 @@ async fn maximum_bulk_roundtrip_and_directory_host_metadata_bound() {
     )
     .unwrap();
     let Nfs3Result::Ok(result) = nfs
-        .write(file.clone(), 0, stable_how::FILE_SYNC, data)
+        .write(file.clone(), 0, stable_how::FILE_SYNC, &data)
         .await
         .unwrap()
     else {
@@ -319,6 +343,10 @@ async fn maximum_bulk_roundtrip_and_directory_host_metadata_bound() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One end-to-end wire oracle covers the metadata procedure table"
+)]
 async fn shared_metadata_operations_mount_and_rpc_mapping() {
     let server = BoundedListener::bind("127.0.0.1:0", fs(), "/".to_owned(), limits())
         .await
@@ -565,7 +593,7 @@ async fn shared_metadata_operations_mount_and_rpc_mapping() {
             .call::<_, Void>(program, version, procedure, &Void)
             .await
             .unwrap_err();
-        let nfs3_client::bounded::BoundedErrorKind::NotAccepted(stat) = error.kind else {
+        let nfs3_client::RpcErrorKind::NotAccepted(stat) = error.kind else {
             panic!()
         };
         assert!(matches!(
@@ -587,29 +615,30 @@ async fn shared_metadata_operations_mount_and_rpc_mapping() {
 async fn exact_worst_case_write_envelope_and_checked_configuration() {
     let mut l = limits();
     l.max_write_bytes = 8192 - 928;
-    l.decode.payload.max_logical_bytes = l.max_write_bytes as usize;
-    assert!(l.validate().is_ok());
+    l.validate().unwrap();
     let mut too_large = l;
     too_large.max_write_bytes += 1;
-    assert!(too_large.validate().is_err()); // padding also must fit
+    too_large.validate().unwrap_err(); // padding also must fit
     too_large = l;
     too_large.backing_bytes = l.operation_envelope().unwrap() - 1;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
+    too_large.backing_bytes += 1;
+    too_large.validate().unwrap(); // exact derived envelope suffices
     too_large = l;
     too_large.directory.max_metadata_bytes = usize::MAX;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
     too_large = l;
     too_large.receive_timeout = Duration::ZERO;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
     too_large = l;
     too_large.max_read_bytes = u32::MAX;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
     too_large = l;
     too_large.encode.max_metadata_bytes = 100;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
     too_large = l;
     too_large.encode.max_chunks = 2;
-    assert!(too_large.validate().is_err());
+    too_large.validate().unwrap_err();
 
     let server = BoundedListener::bind("127.0.0.1:0", fs(), "/".to_owned(), l)
         .await
@@ -663,6 +692,10 @@ async fn exact_worst_case_write_envelope_and_checked_configuration() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep all overlimit-name procedure fixtures and mutation assertions together"
+)]
 async fn overlimit_names_return_typed_failure_bodies_without_mutation() {
     use nfs3_server::vfs::{NfsFileSystem, NfsReadFileSystem};
     let backend = Arc::new(fs());
@@ -710,8 +743,7 @@ async fn overlimit_names_return_typed_failure_bodies_without_mutation() {
     let mut cases = Vec::new();
     macro_rules! case {
         ($proc:expr, $args:expr, $body:expr) => {{
-            let mut args = Vec::new();
-            $args.pack(&mut args).unwrap();
+            let args = nfs3_tests::rpc_tests::encode(&$args);
             cases.push(($proc, args, $body));
         }};
     }
@@ -789,16 +821,20 @@ async fn overlimit_names_return_typed_failure_bodies_without_mutation() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep exact directory envelope and independent wire fixtures together"
+)]
 async fn directory_envelope_rejects_one_below_metadata_and_reservation_before_io() {
     let mut l = limits();
     let bound = l.directory.reply_metadata_bound().unwrap();
     assert_eq!(bound, 132 + 4 * (184 + 256));
     l.encode.max_metadata_bytes = bound;
     l.encode.max_reservation_bytes = Encoder::metadata_reservation_bound(bound).unwrap();
-    assert!(l.validate().is_ok());
+    l.validate().unwrap();
     let mut invalid = l;
     invalid.encode.max_metadata_bytes -= 1;
-    assert!(invalid.validate().is_err());
+    invalid.validate().unwrap_err();
     assert!(
         BoundedListener::bind("127.0.0.1:0", fs(), "/".to_owned(), invalid)
             .await
@@ -807,14 +843,14 @@ async fn directory_envelope_rejects_one_below_metadata_and_reservation_before_io
     );
     invalid = l;
     invalid.encode.max_reservation_bytes -= 1;
-    assert!(invalid.validate().is_err());
+    invalid.validate().unwrap_err();
     invalid = l;
     // Construction work is constant even for an enormous entry policy.
     invalid.directory.max_entries = usize::MAX;
     invalid.encode = limits().encode;
-    assert!(invalid.validate().is_ok());
+    invalid.validate().unwrap();
     invalid.directory.max_name_bytes = usize::MAX;
-    assert!(invalid.validate().is_err());
+    invalid.validate().unwrap_err();
 
     // Full independent maximum-entry fixture: 64-byte wire handle, full attrs,
     // maximum names, and both list termination words. No backend-size shortcut.
@@ -853,7 +889,7 @@ async fn directory_envelope_rejects_one_below_metadata_and_reservation_before_io
             eof: false,
         },
     });
-    let mut encoder = Encoder::new(l.encode);
+    let mut encoder = Encoder::new(client_limits(l, 32768).encode);
     for word in [99_u32, 1, 0, 0, 0, 0] {
         encoder.encode(&word).unwrap();
     }
@@ -865,12 +901,17 @@ async fn directory_envelope_rejects_one_below_metadata_and_reservation_before_io
         wire.extend_from_slice(chunk);
     }
     assert_eq!(&wire[wire.len() - 8..], &[0; 8]);
-    use std::io::Cursor;
-    let (decoded, _) = READDIRPLUS3res::unpack(&mut Cursor::new(&wire[24..])).unwrap();
-    let Nfs3Result::Ok(decoded) = decoded else {
+    let policy = client_limits(limits(), 1024 * 1024).decode;
+    let mut decoder = Decoder::new(
+        Payload::try_from_vec(wire[24..].to_vec(), policy.payload).unwrap(),
+        policy,
+    );
+    let response: READDIRPLUS3res<'static> = decoder.decode().unwrap();
+    decoder.finish().unwrap();
+    let Nfs3Result::Ok(response) = response else {
         panic!()
     };
-    assert_eq!(decoded.reply.entries.0.len(), 4);
+    assert_eq!(response.reply.entries.0.len(), 4);
     let server = BoundedListener::bind("127.0.0.1:0", fs(), "/".to_owned(), l)
         .await
         .unwrap();
@@ -924,9 +965,9 @@ async fn authorization_preserves_none_sys_and_portmap_exemption() {
         .unwrap_err();
     assert!(matches!(
         error.kind,
-        nfs3_client::bounded::BoundedErrorKind::Rejected(
-            nfs3_types::rpc::rejected_reply::AUTH_ERROR(nfs3_types::rpc::auth_stat::AUTH_TOOWEAK)
-        )
+        nfs3_client::RpcErrorKind::Rejected(nfs3_types::rpc::rejected_reply::AUTH_ERROR(
+            nfs3_types::rpc::auth_stat::AUTH_TOOWEAK
+        ))
     ));
     let port: u32 = rpc
         .call(
@@ -954,11 +995,11 @@ async fn authorization_preserves_none_sys_and_portmap_exemption() {
     };
     for (uid, accepted) in [(42, true), (41, false)] {
         auth.uid = uid;
-        let body = opaque_auth::auth_unix(&auth);
+        let body = opaque_auth::auth_unix(&auth, nfs3_tests::client_limits().encode).unwrap();
         assert_eq!(body.flavor, auth_flavor::AUTH_UNIX);
         let mut record = fixture(67, PROGRAM, 0, &[])[..24].to_vec();
         record.extend_from_slice(&1_u32.to_be_bytes());
-        record.extend_from_slice(&(body.body.len() as u32).to_be_bytes());
+        record.extend_from_slice(&u32::try_from(body.body.len()).unwrap().to_be_bytes());
         record.extend_from_slice(&body.body);
         record.extend_from_slice(&[0; 8]);
         let mut socket = TcpStream::connect(server.local_addr().unwrap())
@@ -974,7 +1015,10 @@ async fn authorization_preserves_none_sys_and_portmap_exemption() {
 }
 
 fn write_args(handle: &nfs_fh3, count: u32, stable: u32, data: &[u8]) -> Vec<u8> {
-    let mut args = (handle.data.len() as u32).to_be_bytes().to_vec();
+    let mut args = u32::try_from(handle.data.len())
+        .unwrap()
+        .to_be_bytes()
+        .to_vec();
     args.extend_from_slice(&handle.data);
     while !args.len().is_multiple_of(4) {
         args.push(0);
@@ -982,7 +1026,7 @@ fn write_args(handle: &nfs_fh3, count: u32, stable: u32, data: &[u8]) -> Vec<u8>
     args.extend_from_slice(&0_u64.to_be_bytes());
     args.extend_from_slice(&count.to_be_bytes());
     args.extend_from_slice(&stable.to_be_bytes());
-    args.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    args.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
     args.extend_from_slice(data);
     while !args.len().is_multiple_of(4) {
         args.push(0);
@@ -1012,7 +1056,7 @@ async fn standard_file_direct_fill_stability_commit_and_short_zero_eof() {
     let mut rpc = client(&server).await;
     let root = root(&mut rpc).await;
     let file = file(&mut rpc, &root).await;
-    let mut nfs = BoundedNfsClient::new(rpc, 4096).unwrap();
+    let mut nfs = Nfs3Client::new(rpc, 4096).unwrap();
     for (offset, count, expected, eof) in [
         (0, 0, b"".as_slice(), false),
         (6, 4096, b"world".as_slice(), true),
@@ -1047,7 +1091,8 @@ async fn standard_file_direct_fill_stability_commit_and_short_zero_eof() {
             },
         )
         .unwrap();
-        let Nfs3Result::Ok(result) = nfs.write(file.clone(), 0, stable, data).await.unwrap() else {
+        let Nfs3Result::Ok(result) = nfs.write(file.clone(), 0, stable, &data).await.unwrap()
+        else {
             panic!()
         };
         assert_eq!(result.committed, stable);
@@ -1115,6 +1160,16 @@ async fn malformed_auth_padding_trailing_and_count_policy_precede_mutation_and_x
             0,
             Some(22),
         ),
+        (
+            fixture(
+                33,
+                PROGRAM,
+                7,
+                &write_args(&nfs_fh3::default(), 4097, 2, &vec![0; 4097]),
+            ),
+            0,
+            Some(22), // valid oversized WRITE: INVAL before invalid handle, never GARBAGE_ARGS
+        ),
     ] {
         raw_send(&mut socket, &record).await;
         let reply = raw_reply(&mut socket).await;
@@ -1164,7 +1219,7 @@ async fn read_direct_fill_prefix_eof_zero_and_configured_maximum() {
     let mut rpc = client(&server).await;
     let root = root(&mut rpc).await;
     let file = file(&mut rpc, &root).await;
-    let mut nfs = BoundedNfsClient::new(rpc, 4096).unwrap();
+    let mut nfs = Nfs3Client::new(rpc, 4096).unwrap();
     for (offset, count, expected, eof) in [
         (0, 3, b"hel".as_slice(), false),
         (6, 4096, b"world".as_slice(), true),
@@ -1231,9 +1286,7 @@ async fn encode_failure_falls_back_only_for_nonmutation() {
         .unwrap_err();
     assert!(matches!(
         error.kind,
-        nfs3_client::bounded::BoundedErrorKind::NotAccepted(
-            nfs3_types::rpc::accept_stat_data::SYSTEM_ERR
-        )
+        nfs3_client::RpcErrorKind::NotAccepted(nfs3_types::rpc::accept_stat_data::SYSTEM_ERR)
     ));
     assert!(rpc.is_usable());
     let error = rpc
@@ -1252,12 +1305,10 @@ async fn encode_failure_falls_back_only_for_nonmutation() {
         .await
         .unwrap_err();
     assert!(error.io_started && !error.connection_usable);
-    assert!(
-        backend
-            .lookup(&backend.root_dir(), &b"created".as_slice().into())
-            .await
-            .is_ok()
-    );
+    backend
+        .lookup(&backend.root_dir(), &b"created".as_slice().into())
+        .await
+        .unwrap();
     drop(rpc);
     server.drain().await;
     assert_eq!(server.backing_used(), 0);
@@ -1367,31 +1418,23 @@ async fn connection_and_operation_slot_exhaustion_close_without_body() {
     assert_eq!(server.backing_used(), 0);
 }
 
-fn limits() -> ServerLimits {
-    let payload = PayloadLimits {
-        max_logical_bytes: 4096,
-        max_backing_capacity: 8192,
-        max_segments: 128,
-    };
+const fn limits() -> ServerLimits {
     ServerLimits {
         record: RecordLimits {
             block_bytes: 128,
             max_record_bytes: 8192,
             max_fragments: 256,
-            max_builder_reservation_bytes: 65536,
         },
-        decode: DecodeLimits {
+        decode: DecodePolicy {
             max_metadata_bytes: 4096,
             max_collection_elements: 128,
             max_depth: 32,
             max_reservation_bytes: 65536,
-            payload,
         },
-        encode: EncodeLimits {
+        encode: EncodePolicy {
             max_wire_bytes: 8192,
             max_metadata_bytes: 8192,
             max_chunks: 256,
-            max_retained_capacity: 8192,
             max_depth: 32,
             max_reservation_bytes: 65536,
         },
@@ -1406,11 +1449,36 @@ fn limits() -> ServerLimits {
         max_connections: 8,
         max_operations: 2,
         backing_bytes: 1024 * 1024,
-        control_bytes: 16384,
         idle_timeout: Duration::from_secs(2),
         progress_timeout: Duration::from_millis(150),
         receive_timeout: Duration::from_millis(400),
         send_timeout: Duration::from_secs(2),
+    }
+}
+
+const fn client_limits(l: ServerLimits, backing_bytes: usize) -> RpcLimits {
+    RpcLimits {
+        record: l.record,
+        backing_bytes,
+        decode: DecodeLimits {
+            max_metadata_bytes: l.decode.max_metadata_bytes,
+            max_collection_elements: l.decode.max_collection_elements,
+            max_depth: l.decode.max_depth,
+            max_reservation_bytes: l.decode.max_reservation_bytes,
+            payload: PayloadLimits {
+                max_logical_bytes: l.record.max_record_bytes,
+                max_backing_capacity: l.record.max_record_bytes,
+                max_segments: l.record.max_record_bytes.div_ceil(l.record.block_bytes),
+            },
+        },
+        encode: EncodeLimits {
+            max_wire_bytes: l.encode.max_wire_bytes,
+            max_metadata_bytes: l.encode.max_metadata_bytes,
+            max_chunks: l.encode.max_chunks,
+            max_retained_capacity: l.record.max_record_bytes,
+            max_depth: l.encode.max_depth,
+            max_reservation_bytes: l.encode.max_reservation_bytes,
+        },
     }
 }
 
@@ -1423,32 +1491,24 @@ fn fs() -> MemFs {
     MemFs::new(config).unwrap()
 }
 
-async fn client<T: nfs3_server::vfs::NfsOwnedIo + 'static>(
+async fn client<T: nfs3_server::vfs::NfsFileSystem + 'static>(
     server: &BoundedListener<T>,
-) -> BoundedRpcClient<TokioIo<TcpStream>> {
+) -> RpcClient<TokioIo<TcpStream>> {
     let socket = TcpStream::connect(server.local_addr().unwrap())
         .await
         .unwrap();
     server.accept().await.unwrap();
     let l = limits();
-    BoundedRpcClient::new(
+    RpcClient::new(
         TokioIo::new(socket),
-        RpcLimits {
-            block_bytes: l.record.block_bytes,
-            max_record_bytes: l.record.max_record_bytes,
-            max_fragments: l.record.max_fragments,
-            backing_bytes: 32768,
-            max_builder_reservation_bytes: l.record.max_builder_reservation_bytes,
-            decode: l.decode,
-            encode: l.encode,
-        },
+        client_limits(l, 32768),
         opaque_auth::default(),
         opaque_auth::default(),
     )
     .unwrap()
 }
 
-async fn root(rpc: &mut BoundedRpcClient<TokioIo<TcpStream>>) -> nfs_fh3 {
+async fn root(rpc: &mut RpcClient<TokioIo<TcpStream>>) -> nfs_fh3 {
     let result: nfs3_types::mount::mountres3 = rpc
         .call(
             nfs3_types::mount::PROGRAM,
@@ -1466,7 +1526,7 @@ async fn root(rpc: &mut BoundedRpcClient<TokioIo<TcpStream>>) -> nfs_fh3 {
     }
 }
 
-async fn file(rpc: &mut BoundedRpcClient<TokioIo<TcpStream>>, root: &nfs_fh3) -> nfs_fh3 {
+async fn file(rpc: &mut RpcClient<TokioIo<TcpStream>>, root: &nfs_fh3) -> nfs_fh3 {
     let result: LOOKUP3res = rpc
         .call(
             PROGRAM,
@@ -1495,7 +1555,7 @@ async fn live_owned_read_write_stable_commit_and_directory() {
     let mut rpc = client(&server).await;
     let root = root(&mut rpc).await;
     let file = file(&mut rpc, &root).await;
-    let mut nfs = BoundedNfsClient::new(rpc, 4096).unwrap();
+    let mut nfs = Nfs3Client::new(rpc, 4096).unwrap();
     let Nfs3Result::Ok(read) = nfs
         .read(&READ3args {
             file: file.clone(),
@@ -1515,7 +1575,7 @@ async fn live_owned_read_write_stable_commit_and_directory() {
         stable_how::FILE_SYNC,
     ] {
         let Nfs3Result::Ok(written) = nfs
-            .write(file.clone(), 0, stable, read.data.try_clone().unwrap())
+            .write(file.clone(), 0, stable, &read.data)
             .await
             .unwrap()
         else {
@@ -1611,6 +1671,10 @@ async fn whole_record_trickle_expires_while_healthy_connection_progresses() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One lifecycle oracle covers disconnect, cancellation and detached job completion"
+)]
 async fn actual_write_job_survives_disconnect_cancellation_and_early_outer_return() {
     use std::sync::atomic::Ordering;
     for (cancel_connection, return_early) in [(false, false), (true, false), (true, true)] {
@@ -1639,22 +1703,14 @@ async fn actual_write_job_survives_disconnect_cancellation_and_early_outer_retur
             .unwrap();
         let connection = server.accept().await.unwrap().unwrap();
         let l = limits();
-        let mut rpc = BoundedRpcClient::new(
+        let mut rpc = RpcClient::new(
             TokioIo::new(socket),
-            RpcLimits {
-                block_bytes: 128,
-                max_record_bytes: 8192,
-                max_fragments: 256,
-                backing_bytes: 16384,
-                max_builder_reservation_bytes: 65536,
-                decode: l.decode,
-                encode: l.encode,
-            },
+            client_limits(l, 16384),
             opaque_auth::default(),
             opaque_auth::default(),
         )
         .unwrap();
-        let args = Write3Args {
+        let args = WRITE3args {
             file,
             offset: 0,
             count: 3,
@@ -1690,13 +1746,48 @@ async fn actual_write_job_survives_disconnect_cancellation_and_early_outer_retur
         tokio::time::timeout(Duration::from_secs(2), server.drain())
             .await
             .unwrap();
-        assert!(state.complete.load(Ordering::Acquire));
+        // The canonical backend consumes the request through actual IO; its
+        // lease can drop before the worker's final test-only completion store.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !state.complete.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         assert_eq!(server.backing_used(), 0);
-        use nfs3_server::vfs::NfsReadFileSystem;
-        let id = backend
-            .lookup(&backend.root_dir(), &b"file".as_slice().into())
+        // Verify persisted mutation through a fresh listener, not a fabricated
+        // owned request or a removed slice/Vec backend shortcut.
+        let verifier = BoundedListener::bind(
+            "127.0.0.1:0",
+            Controlled {
+                fs: backend,
+                state: State::new(),
+                return_early: false,
+            },
+            "/".to_owned(),
+            limits(),
+        )
+        .await
+        .unwrap();
+        let mut rpc = client(&verifier).await;
+        let verify_root = self::root(&mut rpc).await;
+        let verify_file = self::file(&mut rpc, &verify_root).await;
+        let reply: READ3res<Payload> = rpc
+            .call(
+                PROGRAM,
+                VERSION,
+                6,
+                &READ3args {
+                    file: verify_file,
+                    offset: 0,
+                    count: 3,
+                },
+            )
             .await
             .unwrap();
-        assert_eq!(backend.read(&id, 0, 3).await.unwrap().0, b"new");
+        assert_eq!(reply.unwrap().data.try_to_vec().unwrap(), b"new");
+        drop(rpc);
+        verifier.drain().await;
     }
 }

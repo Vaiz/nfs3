@@ -13,29 +13,6 @@ pub struct WriteFs {
     file_size: u64,
 }
 
-impl nfs3_server::vfs::NfsOwnedRead for WriteFs {
-    async fn read_owned(
-        &self,
-        _request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
-    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_INVAL)
-    }
-}
-
-impl nfs3_server::vfs::NfsOwnedIo for WriteFs {
-    async fn write_owned(
-        &self,
-        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
-    ) -> Result<(fattr3, stable_how), nfsstat3> {
-        // Sink does no persistent work; ownership ends with this call.
-        drop(request);
-        Ok((
-            file_attr(FILE_HANDLE.as_u64(), self.file_size),
-            stable_how::FILE_SYNC,
-        ))
-    }
-}
-
 impl WriteFs {
     #[must_use]
     pub const fn new(file_size: u64) -> Self {
@@ -68,10 +45,8 @@ impl NfsReadFileSystem for WriteFs {
 
     async fn read(
         &self,
-        _id: &FileHandleU64,
-        _offset: u64,
-        _count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+        _request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
         Err(nfsstat3::NFS3ERR_INVAL)
     }
 
@@ -95,10 +70,7 @@ impl NfsFileSystem for WriteFs {
 
     async fn write(
         &self,
-        _id: &FileHandleU64,
-        _offset: u64,
-        _data: &[u8],
-        _stable: stable_how,
+        _request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Ok((
             file_attr(FILE_HANDLE.as_u64(), self.file_size),

@@ -18,8 +18,7 @@ use nfs3_server::vfs::{
     VFSCapabilities,
 };
 use symbols_cache::SymbolsCache;
-use tokio::fs::{File, ReadDir};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::fs::ReadDir;
 use tracing::debug;
 
 use crate::string_ext::{FromOsString, IntoOsString};
@@ -52,27 +51,6 @@ impl Fs {
     fn path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
         let relative_path = self.cache.handle_to_path(id)?;
         Ok(self.root.join(relative_path))
-    }
-
-    async fn read(
-        &self,
-        path: PathBuf,
-        start: u64,
-        count: u32,
-    ) -> std::io::Result<(Vec<u8>, bool)> {
-        let mut f = File::open(&path).await?;
-        let len = f.metadata().await?.len();
-        if start >= len || count == 0 {
-            return Ok((Vec::new(), u64::from(count) >= len));
-        }
-
-        let count = u64::from(count).min(len - start);
-        f.seek(SeekFrom::Start(start)).await?;
-
-        let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
-        f.read_exact(&mut buf).await?;
-
-        Ok((buf, start + count >= len))
     }
 
     async fn get_or_create_iterator(
@@ -135,28 +113,6 @@ impl Fs {
     }
 }
 
-impl nfs3_server::vfs::NfsOwnedRead for Fs {
-    async fn read_owned(
-        &self,
-        request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
-    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
-        let path = self.path(request.handle)?;
-        nfs3_server::fs_util::read_owned_file(request, path).await
-    }
-}
-
-impl nfs3_server::vfs::NfsOwnedIo for Fs {
-    async fn write_owned(
-        &self,
-        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
-    ) -> Result<(fattr3, stable_how), nfsstat3> {
-        let id = request.handle;
-        let path = self.path(id)?;
-        let (metadata, stable) = nfs3_server::fs_util::write_owned_file(request, path).await?;
-        Ok((metadata_to_fattr3(id.as_u64(), &metadata), stable))
-    }
-}
-
 impl NfsReadFileSystem for Fs {
     type Handle = FileHandleU64;
 
@@ -183,12 +139,10 @@ impl NfsReadFileSystem for Fs {
 
     async fn read(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
-        let path = self.path(*id)?;
-        self.read(path, offset, count).await.map_err(map_io_error)
+        request: nfs3_server::vfs::OwnedRead<FileHandleU64>,
+    ) -> Result<nfs3_server::vfs::OwnedReadResult, nfsstat3> {
+        let path = self.path(request.handle)?;
+        nfs3_server::fs_util::read_owned_file(request, path).await
     }
 
     async fn readdir(
@@ -255,36 +209,12 @@ impl NfsFileSystem for Fs {
 
     async fn write(
         &self,
-        id: &Self::Handle,
-        offset: u64,
-        data: &[u8],
-        _stable: stable_how,
+        request: nfs3_server::vfs::OwnedWrite<FileHandleU64>,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
-        let path = self.path(*id)?;
-
-        // Check if it's a regular file
-        let metadata = tokio::fs::symlink_metadata(&path)
-            .await
-            .map_err(map_io_error)?;
-
-        if !metadata.is_file() {
-            return Err(nfsstat3::NFS3ERR_INVAL);
-        }
-
-        async {
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .await?;
-            file.seek(SeekFrom::Start(offset)).await?;
-            file.write_all(data).await?;
-            file.flush().await
-        }
-        .await
-        .map_err(map_io_error)?;
-
-        let attr = self.getattr(id).await?;
-        Ok((attr, stable_how::FILE_SYNC))
+        let id = request.handle;
+        let path = self.path(id)?;
+        let (metadata, stable) = nfs3_server::fs_util::write_owned_file(request, path).await?;
+        Ok((metadata_to_fattr3(id.as_u64(), &metadata), stable))
     }
 
     async fn create(

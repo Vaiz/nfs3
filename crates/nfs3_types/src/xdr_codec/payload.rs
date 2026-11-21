@@ -122,7 +122,7 @@ impl Payload {
         let mut segments = Vec::new();
         segments
             .try_reserve_exact(count)
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         for bytes in chunks {
             if !bytes.is_empty() {
                 let range = 0..bytes.len();
@@ -154,7 +154,7 @@ impl Payload {
         let mut segments = Vec::new();
         segments
             .try_reserve_exact(1)
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         segments.push(Segment {
             chunk: Arc::new(Chunk {
                 bytes,
@@ -280,7 +280,7 @@ impl Payload {
         let mut segments = Vec::new();
         segments
             .try_reserve_exact(count)
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         if len != 0 {
             let mut base = start_base;
             for segment in &self.segments[start_segment..] {
@@ -317,7 +317,7 @@ impl Payload {
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(self.len)
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         for chunk in self.chunks() {
             bytes.extend_from_slice(chunk);
         }
@@ -363,7 +363,7 @@ impl ReceiveBuffer {
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(len)
-            .map_err(|_| PayloadError::Allocation)?;
+            .map_err(|_allocation_error| PayloadError::Allocation)?;
         if bytes.capacity() > max_capacity {
             return Err(PayloadError::LimitExceeded {
                 kind: PayloadLimit::BackingCapacity,
@@ -415,7 +415,8 @@ impl ReceiveBuffer {
                 len: self.bytes.len(),
             });
         }
-        let mut builder = RecordBuilder::new(limits, usize::MAX);
+        let work = RecordBuilder::reservation_bound(1).ok_or(PayloadError::Overflow)?;
+        let mut builder = RecordBuilder::new(limits, work);
         self.bytes.truncate(prefix);
         builder.push(self, prefix)?;
         Ok(builder.finish())
@@ -507,7 +508,7 @@ impl RecordBuilder {
             self.payload
                 .segments
                 .try_reserve_exact(capacity - self.payload.segments.len())
-                .map_err(|_| PayloadError::Allocation)?;
+                .map_err(|_allocation_error| PayloadError::Allocation)?;
             if self.payload.segments.capacity() > capacity {
                 return Err(PayloadError::Allocation);
             }
@@ -544,7 +545,6 @@ impl fmt::Debug for ReceiveBuffer {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::*;
     use crate::xdr_codec::RecordCursor;
@@ -658,14 +658,12 @@ mod tests {
         let record = Payload::try_from_vec(bytes, limits).unwrap();
         let origin = Arc::downgrade(&record.segments[0].chunk);
         let mut cursor = RecordCursor::new(record);
-        assert!(
-            cursor
-                .read_opaque(PayloadLimits {
-                    max_backing_capacity: 8,
-                    ..limits
-                })
-                .is_err()
-        );
+        cursor
+            .read_opaque(PayloadLimits {
+                max_backing_capacity: 8,
+                ..limits
+            })
+            .unwrap_err();
         let mut output = [0; 3];
         cursor.read_opaque_into(&mut output, 3).unwrap();
         cursor.finish().unwrap();
@@ -725,7 +723,7 @@ mod tests {
                 let mut d = Decoder::new(record, policy);
                 let value: Opaque<'_> = d.decode().unwrap();
                 if fail {
-                    assert!(d.decode::<u32>().is_err());
+                    d.decode::<u32>().unwrap_err();
                 }
                 assert!(origin.upgrade().is_some());
                 if finish {

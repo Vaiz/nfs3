@@ -54,25 +54,36 @@ a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.
 
-Opt-in bounded listener
-======================
+Canonical bounded listener
+==========================
 
-`bounded::BoundedListener::bind(address, vfs, export, limits)` requires
-`vfs::NfsOwnedIo`; `bind_ro` wraps an `NfsOwnedRead` backend. Supply every
+`tcp::NFSTcpListener::bind(address, vfs, export, limits)` requires
+`vfs::NfsFileSystem`; `bind_ro` wraps an `NfsReadFileSystem` backend. Supply every
 `ServerLimits`, codec, framing and directory limit explicitly: there are no
 default profiles. `validate` checks the startup envelope and fixed maximum
 READ/WRITE reply codec work and worst-case directory metadata/reservation work
 before binding, without allocating transfer-sized backing.
-`minimum_control_bytes` exposes the derived control floor, not a profile.
+`DecodePolicy` and `EncodePolicy` retain independent codec limits. Request bulk
+logical/backing/segment limits derive from the admitted record, never the WRITE
+semantic size; reply retained bulk capacity derives from supplied READ storage.
+Builder work and the private control floor are computed internally, not caller knobs.
 `accept` returns an optional connection task handle; dropping that handle
 detaches it. `run` accepts until error/shutdown. `drain` stops admissions and
 readers and waits for admitted work and bounded reply sends; shutdown does not
 cancel their replies. `run` returns `Interrupted` on shutdown, even without a
 new socket.
-Legacy `tcp::NFSTcpListener` remains available for comparison.
-This API is opt-in; existing listeners and CLI invocations do not switch
-automatically. Correctness checks do not establish a copy, memory or performance
-target pass.
+Export names normalize to one leading slash and no trailing slash before the
+name-length check. Accepted sockets retain `TCP_NODELAY = true`.
+This is the sole server engine. The old `NFSTcp` helper trait, old TCP/rpcwire
+processing and duplicate-XID tracker are removed. Use `local_addr` instead of
+`get_listen_ip/port`, pass export/policy at binding instead of `with_export_name`,
+and use `run`/`drain` instead of `handle_forever`. There is no mount-notification
+setter, generation-specific bind or `"auto"` address search; supply a socket
+address. No compatibility wrapper or copying bridge is provided.
+The [CLI](../cargo_nfs3_server/README.md) requires independent policy flags.
+Examples intentionally choose finite constants in `examples/support/mod.rs`;
+they are demonstration policy, not library or CLI defaults.
+Correctness checks do not establish a copy, memory or performance target pass.
 
 The bounded listener serves the same implemented NFS/mount/portmap procedures
 through shared metadata handlers. IO uses the runtime-neutral
@@ -82,6 +93,10 @@ connections progressing concurrently. It reads only the first four-byte
 marker before failfast operation/domain admission. No body read or mutation
 occurs on admission exhaustion. Connection exhaustion closes immediately.
 Unread pipelined input can cause a TCP reset and discard even an earlier reply.
+Repeated XIDs execute again: there is no duplicate suppression or exactly-once
+guarantee. Invalid XDR, auth, padding and trailing input are checked strictly.
+The workspace duplex harness uses this same connection loop through the hidden
+test-only exports and explicitly supplies its finite fixture limits.
 
 The per-operation reservation is the **sum** of maximum request backing,
 maximum READ backing, builder work, decode work/metadata, encode work/metadata,
@@ -104,6 +119,9 @@ documented `FileHandle` size contract. `AUTH_SYS` has a separate RFC-bounded
 machine/group decode allowance included in control, not an unrestricted second
 record decode budget. READLINK output is checked before server ownership/copy.
 
+The two VFS traits have only owned bulk methods:
+`NfsReadFileSystem::read(OwnedRead)` and `NfsFileSystem::write(OwnedWrite)`.
+The separate `NfsOwnedRead`/`NfsOwnedIo` traits and Vec/slice methods are removed.
 `OwnedRead` supplies charged initialized writable storage before backend work.
 `complete(count, eof)` consumes it into a checked prefix; a backend cannot
 substitute an uncharged Vec. `OwnedWrite` supplies an owned segmented Payload,
@@ -112,7 +130,7 @@ Custom backends must move the **whole request** into actual blocking jobs and
 keep it for all actual work, including error paths; spawning unrelated borrowed
 work violates this contract. No blanket legacy Vec/slice copying adapter exists.
 `MemFs` fills supplied READ storage and iterates WRITE chunks. The mirror backends
-implement the capability using `fs_util` standard-file blocking jobs. Those jobs
+implement these methods using `fs_util` standard-file blocking jobs. Those jobs
 use `sync_data`/`sync_all` for `DATA_SYNC`/`FILE_SYNC`, and COMMIT flushes the file.
 OS synchronization is not a claim about storage hardware crash guarantees.
 

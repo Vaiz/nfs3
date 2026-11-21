@@ -12,77 +12,13 @@
     )
 )]
 use nfs3_types::nfs3::*;
-use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, Unpack, Void};
+use nfs3_types::xdr_codec::Void;
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
-use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
-use crate::rpcwire::handle;
-use crate::rpcwire::messages::{HandleResult, IncomingRpcMessage};
+use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt, DirectoryList};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
-
-#[cfg_attr(
-    not(test),
-    expect(
-        clippy::enum_glob_use,
-        reason = "The dispatch table lists the NFSv3 procedure variants"
-    )
-)]
-pub async fn handle_nfs<T>(
-    context: RPCContext<T>,
-    message: IncomingRpcMessage,
-) -> anyhow::Result<HandleResult>
-where
-    T: NfsFileSystem,
-{
-    use NFS_PROGRAM::*;
-
-    let call = message.body();
-    let xid = message.xid();
-
-    debug!("handle_nfs({xid}, {call:?}");
-    if call.vers != VERSION {
-        error!("Invalid NFSv3 Version number {} != {VERSION}", call.vers,);
-        return message.into_error_reply(accept_stat_data::PROG_MISMATCH {
-            low: VERSION,
-            high: VERSION,
-        });
-    }
-
-    let Ok(proc) = NFS_PROGRAM::try_from(call.proc) else {
-        error!("invalid NFS3 Program number {}", call.proc);
-        return message.into_error_reply(accept_stat_data::PROC_UNAVAIL);
-    };
-
-    debug!("{proc}({})", message.xid());
-    match proc {
-        NFSPROC3_NULL => handle(context, message, nfsproc3_null).await,
-        NFSPROC3_GETATTR => handle(context, message, nfsproc3_getattr).await,
-        NFSPROC3_LOOKUP => handle(context, message, nfsproc3_lookup).await,
-        NFSPROC3_READ => handle(context, message, nfsproc3_read).await,
-        NFSPROC3_FSINFO => handle(context, message, nfsproc3_fsinfo).await,
-        NFSPROC3_ACCESS => handle(context, message, nfsproc3_access).await,
-        NFSPROC3_PATHCONF => handle(context, message, nfsproc3_pathconf).await,
-        NFSPROC3_FSSTAT => handle(context, message, nfsproc3_fsstat).await,
-        NFSPROC3_READDIR => handle(context, message, nfsproc3_readdir).await,
-        NFSPROC3_READDIRPLUS => handle(context, message, nfsproc3_readdirplus).await,
-        NFSPROC3_WRITE => handle(context, message, nfsproc3_write).await,
-        NFSPROC3_CREATE => handle(context, message, nfsproc3_create).await,
-        NFSPROC3_SETATTR => handle(context, message, nfsproc3_setattr).await,
-        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, message, nfsproc3_remove).await,
-        NFSPROC3_RENAME => handle(context, message, nfsproc3_rename).await,
-        NFSPROC3_MKDIR => handle(context, message, nfsproc3_mkdir).await,
-        NFSPROC3_SYMLINK => handle(context, message, nfsproc3_symlink).await,
-        NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
-        NFSPROC3_COMMIT => handle(context, message, nfsproc3_commit).await,
-        NFSPROC3_MKNOD | NFSPROC3_LINK => {
-            warn!("Unimplemented message {proc}");
-            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
-        }
-    }
-}
 
 macro_rules! fh_to_id {
     ($context:expr, $fh:expr) => {
@@ -94,13 +30,6 @@ macro_rules! fh_to_id {
             }
         }
     };
-}
-
-pub async fn nfsproc3_null<T>(_: RPCContext<T>, _: u32, _: Void) -> Void
-where
-    T: crate::vfs::NfsFileSystem,
-{
-    Void
 }
 
 pub async fn nfsproc3_getattr<T>(
@@ -150,38 +79,6 @@ where
         Err(stat) => {
             debug!("lookup error {xid}({:?}) --> {stat}", dirops.name,);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
-        }
-    }
-}
-
-async fn nfsproc3_read<T>(
-    context: RPCContext<T>,
-    xid: u32,
-    read3args: READ3args,
-) -> READ3res<'static>
-where
-    T: NfsFileSystem,
-{
-    let handle = read3args.file;
-    let id = fh_to_id!(context, &handle);
-    let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
-    match context
-        .vfs
-        .read(&id, read3args.offset, read3args.count)
-        .await
-    {
-        Ok((bytes, eof)) => {
-            debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());
-            READ3res::Ok(READ3resok {
-                file_attributes,
-                count: u32::try_from(bytes.len()).expect("buffer is too big"),
-                eof,
-                data: Opaque::owned(bytes),
-            })
-        }
-        Err(stat) => {
-            error!("read error {} --> {stat}", xid);
-            READ3res::Err((stat, READ3resfail { file_attributes }))
         }
     }
 }
@@ -353,9 +250,6 @@ where
     //
     // if args.cookieverf != cookieverf3::default() && args.cookieverf != dirversion {
     // info!(" -- Dir version mismatch. Received {:?}", args.cookieverf);
-    // make_success_reply(xid).pack(output)?;
-    // nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
-    // dir_attr.pack(output)?;
     // return Ok(());
     // }
 
@@ -380,22 +274,21 @@ where
 
     // this is a wrapper around a writer that also just counts the number of bytes
     // written
-    let mut entries_result = match context.directory_limits {
-        Some(limits) => BoundedEntryPlusList::with_entry_limit(
-            args.dircount as usize,
-            max_bytes_allowed,
-            limits.max_entries,
-        ),
-        None => BoundedEntryPlusList::new(args.dircount as usize, max_bytes_allowed),
-    };
+    let mut entries_result = BoundedEntryPlusList::with_entry_limit(
+        args.dircount as usize,
+        max_bytes_allowed,
+        context.directory_limits.max_entries,
+    );
     let mut host_entries = 0;
     let mut host_metadata = 0;
     loop {
         match iter.next().await {
             NextResult::Ok(dir_entry_plus) => {
-                if context.directory_limits.is_some_and(|limits| {
-                    !limits.admit_name(&dir_entry_plus.name, &mut host_entries, &mut host_metadata)
-                }) {
+                if !context.directory_limits.admit_name(
+                    &dir_entry_plus.name,
+                    &mut host_entries,
+                    &mut host_metadata,
+                ) {
                     eof = false;
                     break;
                 }
@@ -440,6 +333,10 @@ where
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep bounded directory accounting and pagination in one ordered handler"
+)]
 pub async fn nfsproc3_readdir<T>(
     context: RPCContext<T>,
     xid: u32,
@@ -483,7 +380,14 @@ where
         reply: dirlist3::default(),
     };
 
-    let empty_len = xid.packed_size() + resok.packed_size();
+    let Some(empty_len) = crate::nfs_ext::readdir_empty_size(&resok.dir_attributes) else {
+        return READDIR3res::Err((
+            nfsstat3::NFS3ERR_TOOSMALL,
+            READDIR3resfail {
+                dir_attributes: resok.dir_attributes,
+            },
+        ));
+    };
     if empty_len > readdir3args.count as usize {
         // we have no space to write anything
         return READDIR3res::Err((
@@ -506,14 +410,12 @@ where
     }
 
     let mut iter = iter.unwrap();
-    let mut entries = context.directory_limits.map_or_else(
-        || BoundedList::new(max_bytes_allowed),
-        |limits| {
-            BoundedList::with_entry_limit(
-                max_bytes_allowed,
-                limits.max_entries.min(max_bytes_allowed / 24),
-            )
-        },
+    let mut entries = DirectoryList::with_entry_limit(
+        max_bytes_allowed,
+        context
+            .directory_limits
+            .max_entries
+            .min(max_bytes_allowed / 24),
     );
     let mut host_entries = 0;
     let mut host_metadata = 0;
@@ -521,13 +423,16 @@ where
     loop {
         match iter.next().await {
             NextResult::Ok(entry) => {
-                if context.directory_limits.is_some_and(|limits| {
-                    !limits.admit_name(&entry.name, &mut host_entries, &mut host_metadata)
-                }) {
+                if !context.directory_limits.admit_name(
+                    &entry.name,
+                    &mut host_entries,
+                    &mut host_metadata,
+                ) {
                     eof = false;
                     break;
                 }
-                let result = entries.try_push(entry);
+                let size = crate::nfs_ext::entry_size(&entry);
+                let result = entries.try_push_sized(entry, size);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
                     eof = false;
@@ -565,65 +470,6 @@ where
     resok.reply.entries = entries;
     resok.reply.eof = eof;
     Nfs3Result::Ok(resok)
-}
-
-async fn nfsproc3_write<T>(
-    context: RPCContext<T>,
-    xid: u32,
-    write3args: WRITE3args<'_>,
-) -> WRITE3res
-where
-    T: NfsFileSystem,
-{
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
-        warn!("No write capabilities.");
-        return WRITE3res::Err((nfsstat3::NFS3ERR_ROFS, WRITE3resfail::default()));
-    }
-
-    if write3args.data.len() != write3args.count as usize {
-        error!(
-            "Data length mismatch: expected {}, got {}",
-            write3args.count,
-            write3args.data.len()
-        );
-        return WRITE3res::Err((nfsstat3::NFS3ERR_INVAL, WRITE3resfail::default()));
-    }
-
-    let id = fh_to_id!(context, &write3args.file);
-    let before = get_wcc_attr(&context, &id)
-        .await
-        .map_or(pre_op_attr::None, pre_op_attr::Some);
-
-    match context
-        .vfs
-        .write(&id, write3args.offset, &write3args.data, write3args.stable)
-        .await
-    {
-        Ok((fattr, committed)) => {
-            debug!("write success {xid} --> {fattr:?}, committed: {committed}");
-            WRITE3res::Ok(WRITE3resok {
-                file_wcc: wcc_data {
-                    before,
-                    after: post_op_attr::Some(fattr),
-                },
-                count: write3args.count,
-                committed,
-                verf: context.file_handle_converter.verf(),
-            })
-        }
-        Err(stat) => {
-            error!("write error {xid} --> {stat}");
-            WRITE3res::Err((
-                stat,
-                WRITE3resfail {
-                    file_wcc: wcc_data {
-                        before,
-                        after: post_op_attr::None,
-                    },
-                },
-            ))
-        }
-    }
 }
 
 pub async fn nfsproc3_commit<T>(context: RPCContext<T>, xid: u32, args: COMMIT3args) -> COMMIT3res
@@ -1032,13 +878,11 @@ where
 
     match context.vfs.readlink(&id).await {
         Ok(data) => {
-            if context.reply_metadata_limit.is_some_and(|max| {
-                let capacity = match &data.0.0 {
-                    std::borrow::Cow::Owned(v) => v.capacity(),
-                    std::borrow::Cow::Borrowed(v) => v.len(),
-                };
-                capacity > max
-            }) {
+            let capacity = match &data.0.0 {
+                std::borrow::Cow::Owned(v) => v.capacity(),
+                std::borrow::Cow::Borrowed(v) => v.len(),
+            };
+            if capacity > context.reply_metadata_limit {
                 return READLINK3res::Err((
                     nfsstat3::NFS3ERR_SERVERFAULT,
                     READLINK3resfail { symlink_attributes },
@@ -1057,7 +901,7 @@ where
     }
 }
 
-fn nfs_option_from_result<T: Pack + Unpack, E>(result: Result<T, E>) -> Nfs3Option<T> {
+fn nfs_option_from_result<T, E>(result: Result<T, E>) -> Nfs3Option<T> {
     result.map_or(Nfs3Option::None, Nfs3Option::Some)
 }
 

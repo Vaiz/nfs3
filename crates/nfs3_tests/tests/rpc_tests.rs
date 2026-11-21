@@ -121,10 +121,12 @@ async fn repeated_requests() -> anyhow::Result<()> {
     check_reply_header(1, &msg)?;
     assert!(body.is_some());
 
-    // Send the same request again
+    // XIDs correlate replies; the serial engine executes each admitted record.
+    // There is intentionally no suppression/exactly-once promise.
     client.send_call(&rpc_msg, &Void).await?;
-    // the server will ignore the repeated request, so we need to send another one
-    // btw, this is not the correct implementation of the NFS protocol
+    let (msg, body) = client.recv_reply::<Void>().await?;
+    check_reply_header(1, &msg)?;
+    assert!(body.is_some());
 
     let rpc_msg2 = nfs3_call(2, NFS_PROGRAM::NFSPROC3_NULL);
     client.send_call(&rpc_msg2, &Void).await?;

@@ -1,5 +1,4 @@
 use nfs3_client::nfs3_types::nfs3::*;
-use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_tests::TestContext;
 
 #[tokio::test]
@@ -231,13 +230,12 @@ async fn test_write() -> Result<(), anyhow::Error> {
 
     let file_handle = create.object;
     let write = client
-        .write(&WRITE3args {
-            file: file_handle.clone(),
-            offset: 0,
-            count: u32::try_from(COUNT)?,
-            stable: stable_how::DATA_SYNC,
-            data: Opaque::owned(vec![0u8; COUNT]),
-        })
+        .write(
+            file_handle.clone(),
+            0,
+            stable_how::DATA_SYNC,
+            &nfs3_tests::fixture_payload(vec![0u8; COUNT]),
+        )
         .await?;
 
     tracing::info!("{write:?}");
@@ -391,7 +389,15 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
 
     tracing::info!("{mknod:?}");
     assert!(
-        matches!(mknod, Err(RpcError::ProcUnavail)),
+        matches!(
+            mknod,
+            Err(RpcError {
+                kind: nfs3_client::RpcErrorKind::NotAccepted(
+                    nfs3_client::nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL
+                ),
+                ..
+            })
+        ),
         "Expected ProcUnavail error"
     );
 
@@ -557,7 +563,15 @@ async fn test_link() -> Result<(), anyhow::Error> {
         .await;
 
     assert!(
-        matches!(link, Err(RpcError::ProcUnavail)),
+        matches!(
+            link,
+            Err(RpcError {
+                kind: nfs3_client::RpcErrorKind::NotAccepted(
+                    nfs3_client::nfs3_types::rpc::accept_stat_data::PROC_UNAVAIL
+                ),
+                ..
+            })
+        ),
         "Expected ProcUnavail error"
     );
 

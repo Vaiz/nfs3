@@ -11,7 +11,7 @@ use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 pub use rpc_tests::RpcTestContext;
-pub use server::Server;
+pub use server::{Server, client_limits, server_limits};
 use tokio::io::{DuplexStream, duplex};
 
 pub struct TestContext<IO> {
@@ -59,19 +59,29 @@ impl TestContext<TokioIo<DuplexStream>> {
         let memfs = MemFs::new(fs_config).expect("initialize the test filesystem");
         let (root_dir, server_handle) = if readonly {
             let memfs = ReadOnlyAdapter::new(memfs);
-            let server = Server::new(server, memfs).expect("initialize the read-only test server");
+            let server = Server::new(server, memfs, server_limits())
+                .expect("initialize the read-only test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)
         } else {
-            let server = Server::new(server, memfs).expect("initialize the read-write test server");
+            let server = Server::new(server, memfs, server_limits())
+                .expect("initialize the read-write test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)
         };
 
         let client = nfs3_client::tokio::TokioIo::new(client);
-        let client = nfs3_client::Nfs3Client::new(client);
+        let rpc = nfs3_client::rpc::RpcClient::new(
+            client,
+            client_limits(),
+            nfs3_client::nfs3_types::rpc::opaque_auth::default(),
+            nfs3_client::nfs3_types::rpc::opaque_auth::default(),
+        )
+        .expect("initialize the test RPC client");
+        let client =
+            nfs3_client::Nfs3Client::new(rpc, 1024 * 1024).expect("initialize the test NFS client");
 
         Self {
             server_handle,
@@ -143,6 +153,19 @@ pub fn print_hex(data: &[u8]) {
         for byte in chunk {
             print!("{byte:02x} ");
         }
+
         println!();
     }
+}
+
+/// Adopt test-owned input under the explicit fixture transfer policy.
+/// Creates a payload under the explicit fixture policy.
+///
+/// # Panics
+///
+/// Panics if the fixture exceeds the payload limits or allocation fails.
+#[must_use]
+pub fn fixture_payload(bytes: Vec<u8>) -> nfs3_client::nfs3_types::xdr_codec::Payload {
+    nfs3_client::nfs3_types::xdr_codec::Payload::try_from_vec(bytes, client_limits().decode.payload)
+        .expect("create the fixture payload")
 }

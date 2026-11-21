@@ -1,4 +1,7 @@
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "Test fixture helpers abort on codec failure"
+)]
 
 use nfs3_types::xdr_codec::*;
 use nfs3_types::{mount, nfs3, portmap, rpc};
@@ -40,12 +43,6 @@ fn flat(plan: &SendPlan) -> Vec<u8> {
     bytes
 }
 
-fn legacy(value: &impl Pack) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    value.pack(&mut bytes).unwrap();
-    bytes
-}
-
 fn words(values: &[u32]) -> Vec<u8> {
     values
         .iter()
@@ -80,14 +77,14 @@ fn nfs_write_read_bulk_golden_pointer_identity_and_structural_counts() {
 
     let data = payload(vec![b"a".to_vec(), b"bc".to_vec()]);
     let pointers: Vec<_> = data.chunks().map(<[u8]>::as_ptr).collect();
-    let write = nfs3::WRITE3argsPayload {
+    let write = nfs3::WRITE3args {
         file: nfs3::nfs_fh3 {
             data: Opaque::borrowed(b"fh!"),
         },
         offset: 0x0000_0001_0000_0002,
         count: 99, // Structural, intentionally not data.len().
         stable: nfs3::stable_how::FILE_SYNC,
-        data,
+        data: &data,
     };
     let old = nfs3::WRITE3args {
         file: write.file.clone(),
@@ -102,9 +99,9 @@ fn nfs_write_read_bulk_golden_pointer_identity_and_structural_counts() {
     golden.extend_from_slice(b"abc\0");
     let p = plan(&write);
     assert_eq!(flat(&p), golden);
-    assert_eq!(flat(&p), legacy(&old));
     assert_eq!(flat(&plan(&old)), golden);
     drop(write);
+    drop(data); // the borrowed input's backing is now owned by the send plan
     assert_eq!(
         p.chunks().map(<[u8]>::len).collect::<Vec<_>>(),
         [28, 1, 2, 1]
@@ -113,13 +110,13 @@ fn nfs_write_read_bulk_golden_pointer_identity_and_structural_counts() {
         assert_eq!(chunk.as_ptr(), pointer);
     }
 
-    let read = nfs3::READ3resPayload::Ok(nfs3::READ3resokPayload {
+    let read = nfs3::READ3res::<Payload>::Ok(nfs3::READ3resok {
         file_attributes: nfs3::Nfs3Option::None,
         count: 7, // Preserve the supplied count, not the opaque length.
         eof: true,
         data: payload(vec![b"ab".to_vec(), b"c".to_vec()]),
     });
-    let old: nfs3::READ3res<'_> = nfs3::Nfs3Result::Ok(nfs3::READ3resok {
+    let old: nfs3::READ3res<Opaque<'_>> = nfs3::Nfs3Result::Ok(nfs3::READ3resok {
         file_attributes: nfs3::Nfs3Option::None,
         count: 7,
         eof: true,
@@ -130,7 +127,7 @@ fn nfs_write_read_bulk_golden_pointer_identity_and_structural_counts() {
     let p = plan(&read);
     drop(read);
     assert_eq!(flat(&p), golden);
-    assert_eq!(flat(&p), legacy(&old));
+    assert_eq!(flat(&plan(&old)), golden);
     send_sync_static::<SendPlan>();
     let p = std::thread::spawn(move || {
         assert_eq!(flat(&p), golden);
@@ -164,7 +161,9 @@ fn empty_bulk_and_padding_for_all_residues() {
         e.encode(&23_u32).unwrap();
         let p = e.finish().unwrap();
         let mut expected = vec![0, 0, 0, 1, b'x', 0, 0, 0];
-        expected.extend(legacy(&Opaque::owned(vec![0x71; len])));
+        expected.extend(words(&[u32::try_from(len).unwrap()]));
+        expected.extend(vec![0x71; len]);
+        expected.extend(vec![0; (4 - len % 4) % 4]);
         expected.extend(words(&[23]));
         assert_eq!(flat(&p), expected);
         if len == 0 {
@@ -175,7 +174,7 @@ fn empty_bulk_and_padding_for_all_residues() {
     }
 }
 
-#[derive(XdrDecode, XdrEncode)]
+#[derive(XdrCodec)]
 struct Generic<'a, T, const N: usize>
 where
     T: std::fmt::Debug,
@@ -184,13 +183,13 @@ where
     name: Opaque<'a>,
     fixed: [u8; N],
 }
-#[derive(XdrDecode, XdrEncode)]
+#[derive(XdrCodec)]
 struct Tuple<T>(T);
-#[derive(XdrDecode, XdrEncode)]
+#[derive(XdrCodec)]
 struct Unit;
-#[derive(XdrDecode, XdrEncode)]
+#[derive(XdrCodec)]
 struct Recursive(List<Self>);
-#[derive(XdrDecode, XdrEncode)]
+#[derive(XdrCodec)]
 enum Tagged<T> {
     #[xdr(7)]
     Value(T),
@@ -204,6 +203,42 @@ enum Simple {
     Five = 5,
     Six,
     Max = 0xffff_ffff,
+}
+
+#[test]
+fn independent_direction_bounds() {
+    struct DecodeOnly(u32);
+    impl Decode for DecodeOnly {
+        fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+            decoder.decode().map(Self)
+        }
+    }
+
+    // The combined derive is present on Tuple. Borrowed Payload deliberately
+    // has no Decode implementation; only the Encode bound may be required.
+    let data = payload(vec![b"abc".to_vec()]);
+    let pointer = data.chunks().next().unwrap().as_ptr();
+    let output = plan(&Tuple(&data));
+    assert_eq!(flat(&output), b"\0\0\0\x03abc\0");
+    assert_eq!(output.chunks().nth(1).unwrap().as_ptr(), pointer);
+
+    let mut decoder = Decoder::new(
+        payload(vec![17_u32.to_be_bytes().to_vec()]),
+        DecodeLimits {
+            max_metadata_bytes: 4,
+            max_collection_elements: 0,
+            max_depth: 4,
+            max_reservation_bytes: 4,
+            payload: PayloadLimits {
+                max_logical_bytes: 4,
+                max_backing_capacity: 4,
+                max_segments: 1,
+            },
+        },
+    );
+    let Tuple(DecodeOnly(value)) = decoder.decode::<Tuple<DecodeOnly>>().unwrap();
+    assert_eq!(value, 17);
+    decoder.finish().unwrap();
 }
 
 #[test]
@@ -245,7 +280,6 @@ fn generic_tuple_unit_recursive_list_and_union_forms() {
             0, 5, 0, 0, 0, 0, 0, 0, 0, 1,
         ]
     );
-    assert_eq!(flat(&plan(&directory)), legacy(&directory));
 }
 
 fn fails(value: &(impl Encode + ?Sized), policy: EncodeLimits) -> EncodeError {
@@ -302,7 +336,7 @@ fn aggregate_limits_have_exact_boundaries() {
     assert!(matches!(e.encode(&bulk), Err(EncodeError::Limit {
         kind: EncodeLimit::RetainedCapacity, actual, ..
     }) if actual == 2 * bulk.retained_capacity()));
-    assert!(e.finish().is_err());
+    e.finish().unwrap_err();
 }
 
 #[test]
@@ -350,9 +384,9 @@ fn every_metadata_byte_and_reservation_is_charged() {
 
 struct Swallow;
 impl Encode for Swallow {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        let _ = e.encode(&1_u32);
-        let _ = e.fail::<()>(EncodeError::InvalidRepresentation);
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        let _ = encoder.encode(&1_u32);
+        let _ = encoder.fail::<()>(EncodeError::InvalidRepresentation);
         Ok(())
     }
 }
@@ -443,17 +477,27 @@ fn invalid_manual_representations_and_known_field_bounds() {
             gids: vec![0; count],
             ..Default::default()
         };
-        assert_eq!(flat(&plan(&auth)), legacy(&auth));
+        let mut golden = words(&[0, 255]);
+        golden.extend(vec![1; 255]);
+        golden.push(0);
+        golden.extend(words(&[0, 0, u32::try_from(count).unwrap()]));
+        golden.extend(vec![0; count * 4]);
+        assert_eq!(flat(&plan(&auth)), golden);
     }
     let handle = nfs3::nfs_fh3 {
         data: Opaque::owned(vec![1; 64]),
     };
-    assert_eq!(flat(&plan(&handle)), legacy(&handle));
+    let mut golden = words(&[64]);
+    golden.extend(vec![1; 64]);
+    assert_eq!(flat(&plan(&handle)), golden);
     let mount = mount::mountres3::Ok(mount::mountres3_ok {
         fhandle: mount::fhandle3(Opaque::owned(vec![1; 64])),
         auth_flavors: vec![0, 1],
     });
-    assert_eq!(flat(&plan(&mount)), legacy(&mount));
+    let mut golden = words(&[0, 64]);
+    golden.extend(vec![1; 64]);
+    golden.extend(words(&[2, 0, 1]));
+    assert_eq!(flat(&plan(&mount)), golden);
     let mapping = portmap::mapping {
         prog: 1,
         vers: 2,

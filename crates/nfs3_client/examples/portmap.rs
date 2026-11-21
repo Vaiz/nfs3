@@ -1,4 +1,5 @@
 use std::env;
+mod support;
 
 use nfs3_client::PortmapError;
 use nfs3_client::nfs3_types::mount::{PROGRAM as MOUNT_PROGRAM, VERSION as MOUNT_VERSION};
@@ -19,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = TcpStream::connect(format!("{ip}:{port}")).await?;
     println!("Connected to portmapper on {ip}:{port}");
     let rpc = TokioIo::new(stream);
-    let mut portmapper = nfs3_client::PortmapperClient::new(rpc);
+    let mut portmapper = nfs3_client::PortmapperClient::new(rpc, support::limits())?;
 
     portmapper.null().await?;
 

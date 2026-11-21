@@ -7,13 +7,10 @@
 
 //! This module contains the definitions of the `NFSv3` protocol as defined in RFC 1813.
 
-use std::io::{Read, Write};
-
-use nfs3_macros::{XdrCodec, XdrDecode, XdrEncode};
+use nfs3_macros::XdrCodec;
 
 use crate::xdr_codec::{
-    Decode, DecodeResult, Decoder, Encode, EncodeError, EncodeResult, Encoder, List, Opaque, Pack,
-    Payload, Unpack, Void,
+    Decode, DecodeResult, Decoder, Encode, EncodeError, EncodeResult, Encoder, List, Opaque, Void,
 };
 
 pub const PROGRAM: u32 = 100_003;
@@ -68,48 +65,6 @@ impl<T, E: std::fmt::Debug> Nfs3Result<T, E> {
     }
 }
 
-impl<T, E> Pack for Nfs3Result<T, E>
-where
-    T: Pack,
-    E: Pack,
-{
-    fn packed_size(&self) -> usize {
-        match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.packed_size() + v.packed_size(),
-            Self::Err((code, err)) => code.packed_size() + err.packed_size(),
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
-            Self::Err((code, err)) => code.pack(out)? + err.pack(out)?,
-        };
-        Ok(len)
-    }
-}
-
-impl<T, E> Unpack for Nfs3Result<T, E>
-where
-    T: Unpack,
-    E: Unpack,
-{
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (code, dsz): (nfsstat3, usize) = Unpack::unpack(input)?;
-        sz += dsz;
-        if code == nfsstat3::NFS3_OK {
-            let (val, fsz) = Unpack::unpack(input)?;
-            sz += fsz;
-            Ok((Self::Ok(val), sz))
-        } else {
-            let (val, csz) = Unpack::unpack(input)?;
-            sz += csz;
-            Ok((Self::Err((code, val)), sz))
-        }
-    }
-}
-
 pub type ACCESS3res = Nfs3Result<ACCESS3resok, ACCESS3resfail>;
 pub type COMMIT3res = Nfs3Result<COMMIT3resok, COMMIT3resfail>;
 pub type CREATE3res = Nfs3Result<CREATE3resok, CREATE3resfail>;
@@ -121,7 +76,7 @@ pub type LOOKUP3res = Nfs3Result<LOOKUP3resok, LOOKUP3resfail>;
 pub type MKDIR3res = Nfs3Result<MKDIR3resok, MKDIR3resfail>;
 pub type MKNOD3res = Nfs3Result<MKNOD3resok, MKNOD3resfail>;
 pub type PATHCONF3res = Nfs3Result<PATHCONF3resok, PATHCONF3resfail>;
-pub type READ3res<'a> = Nfs3Result<READ3resok<'a>, READ3resfail>;
+pub type READ3res<D> = Nfs3Result<READ3resok<D>, READ3resfail>;
 pub type READDIR3res<'a> = Nfs3Result<READDIR3resok<'a>, READDIR3resfail>;
 pub type READDIRPLUS3res<'a> = Nfs3Result<READDIRPLUS3resok<'a>, READDIRPLUS3resfail>;
 pub type READLINK3res<'a> = Nfs3Result<READLINK3resok<'a>, READLINK3resfail>;
@@ -132,8 +87,8 @@ pub type SETATTR3res = Nfs3Result<SETATTR3resok, SETATTR3resfail>;
 pub type SYMLINK3res = Nfs3Result<SYMLINK3resok, SYMLINK3resfail>;
 pub type WRITE3res = Nfs3Result<WRITE3resok, WRITE3resfail>;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, XdrCodec, XdrDecode, XdrEncode)]
-pub enum Nfs3Option<T: Pack + Unpack> {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, XdrCodec)]
+pub enum Nfs3Option<T> {
     #[xdr(1)]
     Some(T),
     #[default]
@@ -141,7 +96,7 @@ pub enum Nfs3Option<T: Pack + Unpack> {
     None,
 }
 
-impl<T: Pack + Unpack> Nfs3Option<T> {
+impl<T> Nfs3Option<T> {
     pub const fn is_some(&self) -> bool {
         matches!(self, Self::Some(_))
     }
@@ -171,60 +126,60 @@ pub type set_mode3 = Nfs3Option<mode3>;
 pub type set_size3 = Nfs3Option<size3>;
 pub type set_uid3 = Nfs3Option<uid3>;
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct ACCESS3args {
     pub object: nfs_fh3,
     pub access: u32,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct ACCESS3resfail {
     pub obj_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct ACCESS3resok {
     pub obj_attributes: post_op_attr,
     pub access: u32,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3args {
     pub file: nfs_fh3,
     pub offset: offset3,
     pub count: count3,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3resfail {
     pub file_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct COMMIT3resok {
     pub file_wcc: wcc_data,
     pub verf: writeverf3,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct CREATE3args<'a> {
     pub where_: diropargs3<'a>,
     pub how: createhow3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct CREATE3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct CREATE3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct FSINFO3args {
     pub fsroot: nfs_fh3,
 }
@@ -235,12 +190,12 @@ impl From<nfs_fh3> for FSINFO3args {
     }
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSINFO3resfail {
     pub obj_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct FSINFO3resok {
     pub obj_attributes: post_op_attr,
     pub rtmax: u32,
@@ -255,7 +210,7 @@ pub struct FSINFO3resok {
     pub properties: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct FSSTAT3args {
     pub fsroot: nfs_fh3,
 }
@@ -266,12 +221,12 @@ impl From<nfs_fh3> for FSSTAT3args {
     }
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct FSSTAT3resfail {
     pub obj_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct FSSTAT3resok {
     pub obj_attributes: post_op_attr,
     pub tbytes: size3,
@@ -283,7 +238,7 @@ pub struct FSSTAT3resok {
     pub invarsec: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct GETATTR3args {
     pub object: nfs_fh3,
 }
@@ -294,83 +249,83 @@ impl From<nfs_fh3> for GETATTR3args {
     }
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct GETATTR3resok {
     pub obj_attributes: fattr3,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct LINK3args<'a> {
     pub file: nfs_fh3,
     pub link: diropargs3<'a>,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct LINK3resfail {
     pub file_attributes: post_op_attr,
     pub linkdir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct LINK3resok {
     pub file_attributes: post_op_attr,
     pub linkdir_wcc: wcc_data,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct LOOKUP3args<'a> {
     pub what: diropargs3<'a>,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct LOOKUP3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct LOOKUP3resok {
     pub object: nfs_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct MKDIR3args<'a> {
     pub where_: diropargs3<'a>,
     pub attributes: sattr3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct MKDIR3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct MKDIR3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3args<'a> {
     pub where_: diropargs3<'a>,
     pub what: mknoddata3,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct MKNOD3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct PATHCONF3args {
     pub object: nfs_fh3,
 }
@@ -381,7 +336,7 @@ impl From<nfs_fh3> for PATHCONF3args {
     }
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct PATHCONF3resfail {
     pub obj_attributes: post_op_attr,
 }
@@ -391,7 +346,6 @@ pub struct PATHCONF3resfail {
     clippy::struct_excessive_bools,
     reason = "The XDR response has four independent boolean fields"
 )]
-#[derive(XdrDecode, XdrEncode)]
 pub struct PATHCONF3resok {
     pub obj_attributes: post_op_attr,
     pub linkmax: u32,
@@ -402,32 +356,28 @@ pub struct PATHCONF3resok {
     pub case_preserving: bool,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READ3args {
     pub file: nfs_fh3,
     pub offset: offset3,
     pub count: count3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct READ3resfail {
     pub file_attributes: post_op_attr,
 }
 
-/// READ success fields shared by legacy and owned shared bulk forms.
-#[derive(Debug, XdrDecode, XdrEncode)]
-pub struct Read3ResOk<D> {
+/// READ success fields, generic over the bulk representation.
+#[derive(Debug, XdrCodec)]
+pub struct READ3resok<D> {
     pub file_attributes: post_op_attr,
     pub count: count3,
     pub eof: bool,
     pub data: D,
 }
 
-pub type READ3resok<'a> = Read3ResOk<Opaque<'a>>;
-pub type READ3resokPayload = Read3ResOk<Payload>;
-pub type READ3resPayload = Nfs3Result<READ3resokPayload, READ3resfail>;
-
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIR3args {
     pub dir: nfs_fh3,
     pub cookie: cookie3,
@@ -435,19 +385,19 @@ pub struct READDIR3args {
     pub count: count3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct READDIR3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIR3resok<'a> {
     pub dir_attributes: post_op_attr,
     pub cookieverf: cookieverf3,
     pub reply: dirlist3<'a>,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIRPLUS3args {
     pub dir: nfs_fh3,
     pub cookie: cookie3,
@@ -456,111 +406,111 @@ pub struct READDIRPLUS3args {
     pub maxcount: count3,
 }
 
-#[derive(Default, Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Debug, XdrCodec)]
 pub struct READDIRPLUS3resfail {
     pub dir_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READDIRPLUS3resok<'a> {
     pub dir_attributes: post_op_attr,
     pub cookieverf: cookieverf3,
     pub reply: dirlistplus3<'a>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct READLINK3args {
     pub symlink: nfs_fh3,
 }
 
-#[derive(Default, Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Debug, XdrCodec)]
 pub struct READLINK3resfail {
     pub symlink_attributes: post_op_attr,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct READLINK3resok<'a> {
     pub symlink_attributes: post_op_attr,
     pub data: nfspath3<'a>,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct REMOVE3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct REMOVE3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct REMOVE3resok {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct RENAME3args<'a, 'b> {
     pub from: diropargs3<'a>,
     pub to: diropargs3<'b>,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct RENAME3resfail {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct RENAME3resok {
     pub fromdir_wcc: wcc_data,
     pub todir_wcc: wcc_data,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct RMDIR3args<'a> {
     pub object: diropargs3<'a>,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct RMDIR3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct RMDIR3resok {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct SETATTR3args {
     pub object: nfs_fh3,
     pub new_attributes: sattr3,
     pub guard: sattrguard3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SETATTR3resfail {
     pub obj_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct SETATTR3resok {
     pub obj_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct SYMLINK3args<'a> {
     pub where_: diropargs3<'a>,
     pub symlink: symlinkdata3<'a>,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct SYMLINK3resfail {
     pub dir_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct SYMLINK3resok {
     pub obj: post_op_fh3,
     pub obj_attributes: post_op_attr,
@@ -568,8 +518,8 @@ pub struct SYMLINK3resok {
 }
 
 /// Structural WRITE decoding preserves count and opaque length separately.
-#[derive(Debug, XdrDecode, XdrEncode)]
-pub struct Write3Args<D> {
+#[derive(Debug, XdrCodec)]
+pub struct WRITE3args<D> {
     pub file: nfs_fh3,
     pub offset: offset3,
     pub count: count3,
@@ -577,157 +527,87 @@ pub struct Write3Args<D> {
     pub data: D,
 }
 
-pub type WRITE3args<'a> = Write3Args<Opaque<'a>>;
-pub type WRITE3argsPayload = Write3Args<Payload>;
-
-impl<D: Pack> Pack for Read3ResOk<D> {
-    fn packed_size(&self) -> usize {
-        self.file_attributes.packed_size()
-            + self.count.packed_size()
-            + self.eof.packed_size()
-            + self.data.packed_size()
-    }
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(self.file_attributes.pack(out)?
-            + self.count.pack(out)?
-            + self.eof.pack(out)?
-            + self.data.pack(out)?)
-    }
-}
-impl<D: Unpack> Unpack for Read3ResOk<D> {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (file_attributes, a) = Unpack::unpack(input)?;
-        let (count, b) = Unpack::unpack(input)?;
-        let (eof, c) = Unpack::unpack(input)?;
-        let (data, d) = Unpack::unpack(input)?;
-        Ok((
-            Self {
-                file_attributes,
-                count,
-                eof,
-                data,
-            },
-            a + b + c + d,
-        ))
-    }
-}
-impl<D: Pack> Pack for Write3Args<D> {
-    fn packed_size(&self) -> usize {
-        self.file.packed_size()
-            + self.offset.packed_size()
-            + self.count.packed_size()
-            + self.stable.packed_size()
-            + self.data.packed_size()
-    }
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(self.file.pack(out)?
-            + self.offset.pack(out)?
-            + self.count.pack(out)?
-            + self.stable.pack(out)?
-            + self.data.pack(out)?)
-    }
-}
-impl<D: Unpack> Unpack for Write3Args<D> {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (file, file_len) = Unpack::unpack(input)?;
-        let (offset, offset_len) = Unpack::unpack(input)?;
-        let (count, count_len) = Unpack::unpack(input)?;
-        let (stable, stable_len) = Unpack::unpack(input)?;
-        let (data, data_len) = Unpack::unpack(input)?;
-        Ok((
-            Self {
-                file,
-                offset,
-                count,
-                stable,
-                data,
-            },
-            file_len + offset_len + count_len + stable_len + data_len,
-        ))
-    }
-}
-
 impl<T: Decode, E: Decode> Decode for Nfs3Result<T, E> {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        let status = d.decode::<nfsstat3>()?;
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        let status = decoder.decode::<nfsstat3>()?;
         if status == nfsstat3::NFS3_OK {
-            Ok(Self::Ok(d.decode()?))
+            Ok(Self::Ok(decoder.decode()?))
         } else {
-            Ok(Self::Err((status, d.decode()?)))
+            Ok(Self::Err((status, decoder.decode()?)))
         }
     }
 }
 impl Decode for nfs_fh3 {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
         Ok(Self {
-            data: d.opaque(NFS3_FHSIZE)?,
+            data: decoder.opaque(NFS3_FHSIZE)?,
         })
     }
 }
 impl Decode for mknoddata3 {
-    fn decode(d: &mut Decoder) -> DecodeResult<Self> {
-        Ok(match d.decode::<ftype3>()? {
-            ftype3::NF3CHR => Self::NF3CHR(d.decode()?),
-            ftype3::NF3BLK => Self::NF3BLK(d.decode()?),
-            ftype3::NF3SOCK => Self::NF3SOCK(d.decode()?),
-            ftype3::NF3FIFO => Self::NF3FIFO(d.decode()?),
+    fn decode(decoder: &mut Decoder) -> DecodeResult<Self> {
+        Ok(match decoder.decode::<ftype3>()? {
+            ftype3::NF3CHR => Self::NF3CHR(decoder.decode()?),
+            ftype3::NF3BLK => Self::NF3BLK(decoder.decode()?),
+            ftype3::NF3SOCK => Self::NF3SOCK(decoder.decode()?),
+            ftype3::NF3FIFO => Self::NF3FIFO(decoder.decode()?),
             ftype3::NF3REG | ftype3::NF3DIR | ftype3::NF3LNK => Self::default,
         })
     }
 }
 
 impl<T: Encode, E: Encode> Encode for Nfs3Result<T, E> {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
         match self {
             Self::Ok(value) => {
-                e.encode(&nfsstat3::NFS3_OK)?;
-                e.encode(value)
+                encoder.encode(&nfsstat3::NFS3_OK)?;
+                encoder.encode(value)
             }
-            Self::Err((nfsstat3::NFS3_OK, _)) => e.fail(EncodeError::InvalidRepresentation),
+            Self::Err((nfsstat3::NFS3_OK, _)) => encoder.fail(EncodeError::InvalidRepresentation),
             Self::Err((status, value)) => {
-                e.encode(status)?;
-                e.encode(value)
+                encoder.encode(status)?;
+                encoder.encode(value)
             }
         }
     }
 }
 
 impl Encode for nfs_fh3 {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
-        e.opaque(self.data.as_ref(), NFS3_FHSIZE)
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
+        encoder.opaque(self.data.as_ref(), NFS3_FHSIZE)
     }
 }
 
 impl Encode for mknoddata3 {
-    fn encode(&self, e: &mut Encoder) -> EncodeResult<()> {
+    fn encode(&self, encoder: &mut Encoder) -> EncodeResult<()> {
         match self {
             Self::NF3CHR(value) => {
-                e.encode(&ftype3::NF3CHR)?;
-                e.encode(value)
+                encoder.encode(&ftype3::NF3CHR)?;
+                encoder.encode(value)
             }
             Self::NF3BLK(value) => {
-                e.encode(&ftype3::NF3BLK)?;
-                e.encode(value)
+                encoder.encode(&ftype3::NF3BLK)?;
+                encoder.encode(value)
             }
             Self::NF3SOCK(value) => {
-                e.encode(&ftype3::NF3SOCK)?;
-                e.encode(value)
+                encoder.encode(&ftype3::NF3SOCK)?;
+                encoder.encode(value)
             }
             Self::NF3FIFO(value) => {
-                e.encode(&ftype3::NF3FIFO)?;
-                e.encode(value)
+                encoder.encode(&ftype3::NF3FIFO)?;
+                encoder.encode(value)
             }
-            Self::default => e.fail(EncodeError::InvalidRepresentation),
+            Self::default => encoder.fail(EncodeError::InvalidRepresentation),
         }
     }
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct WRITE3resfail {
     pub file_wcc: wcc_data,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct WRITE3resok {
     pub file_wcc: wcc_data,
     pub count: count3,
@@ -735,10 +615,10 @@ pub struct WRITE3resok {
     pub verf: writeverf3,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct cookieverf3(pub [u8; NFS3_COOKIEVERFSIZE]);
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub enum createhow3 {
     #[xdr(0)]
     UNCHECKED(sattr3),
@@ -748,7 +628,7 @@ pub enum createhow3 {
     EXCLUSIVE(createverf3),
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum createmode3 {
     #[default]
     UNCHECKED = 0,
@@ -756,41 +636,41 @@ pub enum createmode3 {
     EXCLUSIVE = 2,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct devicedata3 {
     pub dev_attributes: sattr3,
     pub spec: specdata3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct dirlist3<'a> {
     pub entries: List<entry3<'a>>,
     pub eof: bool,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct dirlistplus3<'a> {
     pub entries: List<entryplus3<'a>>,
     pub eof: bool,
 }
 
-#[derive(Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Eq, PartialEq, XdrCodec)]
 pub struct diropargs3<'a> {
     pub dir: nfs_fh3,
     pub name: filename3<'a>,
 }
 
-#[derive(Debug, Clone, XdrCodec, PartialEq, Eq, XdrDecode, XdrEncode)]
+#[derive(Debug, Clone, XdrCodec, PartialEq, Eq)]
 pub struct entry3<'a> {
     pub fileid: fileid3,
     pub name: filename3<'a>,
     pub cookie: cookie3,
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct entryplus3<'a> {
     pub fileid: fileid3,
     pub name: filename3<'a>,
@@ -799,7 +679,7 @@ pub struct entryplus3<'a> {
     pub name_handle: post_op_fh3,
 }
 
-#[derive(Debug, Clone, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Clone, XdrCodec)]
 pub struct fattr3 {
     pub type_: ftype3,
     pub mode: mode3,
@@ -816,7 +696,7 @@ pub struct fattr3 {
     pub ctime: nfstime3,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Clone, Eq, PartialEq, XdrCodec)]
 pub struct filename3<'a>(pub Opaque<'a>);
 
 impl From<Vec<u8>> for filename3<'static> {
@@ -863,7 +743,7 @@ impl PartialEq<[u8]> for filename3<'_> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum ftype3 {
     #[default]
     NF3REG = 1,
@@ -899,7 +779,7 @@ pub enum mknoddata3 {
     default,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct nfs_fh3 {
     pub data: Opaque<'static>,
 }
@@ -912,7 +792,7 @@ impl Default for nfs_fh3 {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfspath3<'a>(pub Opaque<'a>);
 
 impl From<Vec<u8>> for nfspath3<'static> {
@@ -950,7 +830,7 @@ impl PartialEq<[u8]> for nfspath3<'_> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum nfsstat3 {
     #[default]
     NFS3_OK = 0,
@@ -1021,7 +901,7 @@ impl std::fmt::Display for nfsstat3 {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfstime3 {
     pub seconds: u32,
     pub nseconds: u32,
@@ -1055,7 +935,7 @@ impl From<&nfstime3> for std::time::SystemTime {
     }
 }
 
-#[derive(Default, Debug, Clone, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Debug, Clone, XdrCodec)]
 pub struct sattr3 {
     pub mode: set_mode3,
     pub uid: set_uid3,
@@ -1065,7 +945,7 @@ pub struct sattr3 {
     pub mtime: set_mtime,
 }
 
-#[derive(Default, Debug, Clone, Copy, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Debug, Clone, Copy, XdrCodec)]
 pub enum set_atime {
     #[default]
     #[xdr(0)]
@@ -1076,7 +956,7 @@ pub enum set_atime {
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Default, Debug, Clone, Copy, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Default, Debug, Clone, Copy, XdrCodec)]
 pub enum set_mtime {
     #[default]
     #[xdr(0)]
@@ -1087,13 +967,13 @@ pub enum set_mtime {
     SET_TO_CLIENT_TIME(nfstime3), // = 2,
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, XdrCodec)]
 pub struct specdata3 {
     pub specdata1: u32,
     pub specdata2: u32,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum stable_how {
     #[default]
     UNSTABLE = 0,
@@ -1111,13 +991,13 @@ impl std::fmt::Display for stable_how {
     }
 }
 
-#[derive(Debug, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, XdrCodec)]
 pub struct symlinkdata3<'a> {
     pub symlink_attributes: sattr3,
     pub symlink_data: nfspath3<'a>,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub enum time_how {
     #[default]
     DONT_CHANGE = 0,
@@ -1125,20 +1005,20 @@ pub enum time_how {
     SET_TO_CLIENT_TIME = 2,
 }
 
-#[derive(Debug, Clone, Copy, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Clone, Copy, XdrCodec)]
 pub struct wcc_attr {
     pub size: size3,
     pub mtime: nfstime3,
     pub ctime: nfstime3,
 }
 
-#[derive(Debug, Default, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Default, XdrCodec)]
 pub struct wcc_data {
     pub before: pre_op_attr,
     pub after: post_op_attr,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
 pub struct writeverf3(pub [u8; NFS3_WRITEVERFSIZE]);
 
 pub type cookie3 = u64;
@@ -1157,61 +1037,7 @@ pub type size3 = u64;
 
 pub type uid3 = u32;
 
-impl Pack for mknoddata3 {
-    fn packed_size(&self) -> usize {
-        4 + match self {
-            Self::NF3CHR(val) | Self::NF3BLK(val) => val.packed_size(),
-            Self::NF3SOCK(val) | Self::NF3FIFO(val) => val.packed_size(),
-            Self::default => 0,
-        }
-    }
-
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(match self {
-            Self::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
-            Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
-            Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
-            Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
-        })
-    }
-}
-
-impl Unpack for mknoddata3 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
-        sz += dsz;
-
-        let v = match v {
-            4 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3CHR(val)
-            }
-            3 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3BLK(val)
-            }
-            6 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3SOCK(val)
-            }
-            7 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3FIFO(val)
-            }
-            _ => Self::default,
-        };
-
-        Ok((v, sz))
-    }
-}
-
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, XdrCodec, XdrDecode, XdrEncode)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, XdrCodec)]
 pub enum NFS_PROGRAM {
     #[default]
     NFSPROC3_NULL = 0,
@@ -1239,7 +1065,7 @@ pub enum NFS_PROGRAM {
 }
 
 impl std::convert::TryFrom<u32> for NFS_PROGRAM {
-    type Error = crate::xdr_codec::Error;
+    type Error = crate::xdr_codec::DecodeError;
 
     fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
@@ -1265,7 +1091,7 @@ impl std::convert::TryFrom<u32> for NFS_PROGRAM {
             19 => Ok(Self::NFSPROC3_FSINFO),
             20 => Ok(Self::NFSPROC3_PATHCONF),
             21 => Ok(Self::NFSPROC3_COMMIT),
-            _ => Err(crate::xdr_codec::Error::InvalidEnumValue(value)),
+            _ => Err(crate::xdr_codec::DecodeError::InvalidTag(value)),
         }
     }
 }

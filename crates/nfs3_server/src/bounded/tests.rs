@@ -1,9 +1,8 @@
-#![allow(clippy::unwrap_used)]
 use nfs3_types::nfs3::*;
-use nfs3_types::xdr_codec::{Pack, PayloadLimits};
+use nfs3_types::xdr_codec::Encoder;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::*;
+use super::{NFSTcpListener as BoundedListener, *};
 use crate::memfs::{MemFs, MemFsConfig};
 use crate::vfs::NfsReadFileSystem;
 
@@ -13,24 +12,17 @@ const fn limits() -> ServerLimits {
             block_bytes: 128,
             max_record_bytes: 8192,
             max_fragments: 256,
-            max_builder_reservation_bytes: 65536,
         },
-        decode: DecodeLimits {
+        decode: DecodePolicy {
             max_metadata_bytes: 4096,
             max_collection_elements: 128,
             max_depth: 32,
             max_reservation_bytes: 65536,
-            payload: PayloadLimits {
-                max_logical_bytes: 4096,
-                max_backing_capacity: 8192,
-                max_segments: 128,
-            },
         },
-        encode: EncodeLimits {
+        encode: EncodePolicy {
             max_wire_bytes: 8192,
             max_metadata_bytes: 8192,
             max_chunks: 256,
-            max_retained_capacity: 8192,
             max_depth: 32,
             max_reservation_bytes: 65536,
         },
@@ -45,7 +37,6 @@ const fn limits() -> ServerLimits {
         max_connections: 4,
         max_operations: 2,
         backing_bytes: 1024 * 1024,
-        control_bytes: 16384,
         idle_timeout: Duration::from_secs(2),
         progress_timeout: Duration::from_millis(200),
         receive_timeout: Duration::from_secs(1),
@@ -54,7 +45,40 @@ const fn limits() -> ServerLimits {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines)] // End-to-end timeout/release oracle for both slow-peer modes.
+async fn export_normalizes_before_length_admission() {
+    for (input, expected) in [
+        (String::new(), "/"),
+        ("foo".to_owned(), "/foo"),
+        ("///foo///".to_owned(), "/foo"),
+        ("/foo/bar/".to_owned(), "/foo/bar"),
+        ("/".repeat(8192), "/"),
+    ] {
+        let server = BoundedListener::bind(
+            "127.0.0.1:0",
+            MemFs::new(MemFsConfig::default()).unwrap(),
+            input,
+            limits(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(server.shared.export.as_str(), expected);
+        server.drain().await;
+    }
+    let result = BoundedListener::bind(
+        "127.0.0.1:0",
+        MemFs::new(MemFsConfig::default()).unwrap(),
+        "x".repeat(limits().decode.max_metadata_bytes),
+        limits(),
+    )
+    .await;
+    assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::InvalidInput));
+}
+
+#[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "End-to-end timeout/release oracle for both slow-peer modes"
+)]
 async fn bounded_server_stalled_and_trickle_send_release_lease_and_allow_healthy_peer() {
     // A 128-byte duplex buffer deterministically blocks a 4KiB actual READ
     // reply, without kernel buffer assumptions or transfer-sized stress data.
@@ -88,13 +112,18 @@ async fn bounded_server_stalled_and_trickle_send_release_lease_and_allow_healthy
         for word in [17_u32, 0, 2, PROGRAM, VERSION, 6, 0, 0, 0, 0] {
             record.extend_from_slice(&word.to_be_bytes());
         }
-        READ3args {
-            file,
-            offset: 0,
-            count: 4096,
+        let mut encoder = Encoder::new(l.encode_limits());
+        encoder
+            .encode(&READ3args {
+                file,
+                offset: 0,
+                count: 4096,
+            })
+            .unwrap();
+        let plan = encoder.finish().unwrap();
+        for chunk in plan.chunks() {
+            record.extend_from_slice(chunk);
         }
-        .pack(&mut record)
-        .unwrap();
         client
             .write_u32(0x8000_0000 | u32::try_from(record.len()).unwrap())
             .await
