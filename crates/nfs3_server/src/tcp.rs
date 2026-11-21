@@ -1,27 +1,24 @@
+mod builder;
+mod socket;
+#[cfg(all(test, feature = "memfs", feature = "__test_reexports"))]
+mod tests;
+
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncWrite, BufReader};
+pub use builder::Builder;
+pub(crate) use socket::process_socket;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::context::RPCContext;
-use crate::rpcwire::{SocketMessageHandler, write_fragment};
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
-use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
-
-/// Configures a TCP listener. Supply a filesystem before calling [`Builder::bind`].
-#[must_use]
-pub struct Builder<FS = ()> {
-    fs: FS,
-    options: ListenerOptions,
-}
 
 #[derive(Clone, Default)]
 struct ListenerOptions {
@@ -32,70 +29,6 @@ struct ListenerOptions {
 
 fn normalized_export_name(name: &str) -> Arc<String> {
     Arc::new(format!("/{}", name.trim_matches('/')))
-}
-
-impl Builder {
-    /// Creates a builder with no incoming RPC record size limit.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Supplies a filesystem.
-    pub fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
-        Builder {
-            fs,
-            options: self.options,
-        }
-    }
-
-    /// Supplies a filesystem that only supports reads.
-    pub fn read_only_filesystem<RO: NfsReadFileSystem + 'static>(
-        self,
-        fs: RO,
-    ) -> Builder<ReadOnlyAdapter<RO>> {
-        self.filesystem(ReadOnlyAdapter::new(fs))
-    }
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        Self {
-            fs: (),
-            options: ListenerOptions::default(),
-        }
-    }
-}
-
-impl<FS> Builder<FS> {
-    /// Sets the NFS export path (default: `/`). For example, `data` and `/data/`
-    /// both export the filesystem at `/data`.
-    pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
-        self.options.export_name = Some(normalized_export_name(name.as_ref()));
-        self
-    }
-
-    /// Sets the file handle generation number. Instances sharing the same filesystem
-    /// can use the same generation number to keep file handles valid across instances.
-    pub const fn generation_number(mut self, generation_number: u64) -> Self {
-        self.options.generation_number = Some(generation_number);
-        self
-    }
-
-    /// Sets the maximum total payload bytes in an incoming RPC record, excluding
-    /// fragment markers. Records larger than the limit cause the connection to close.
-    /// By default there is no limit.
-    pub const fn max_rpc_record_size(mut self, max_rpc_record_size: NonZeroUsize) -> Self {
-        self.options.max_rpc_record_size = Some(max_rpc_record_size);
-        self
-    }
-}
-
-impl<T: NfsFileSystem + 'static> Builder<T> {
-    /// Binds to an `ip:port` address. Use `auto:port` to select a loopback address
-    /// or port `0` to let the OS choose a port.
-    pub async fn bind(self, addr: &str) -> io::Result<NFSTcpListener<T>> {
-        NFSTcpListener::bind_inner(addr, self.fs, self.options).await
-    }
 }
 
 /// A NFS Tcp Connection Handler
@@ -124,38 +57,6 @@ pub fn generate_host_ip(hostnum: u16) -> String {
         ((hostnum >> 8) & 0xFF) as u8,
         (hostnum & 0xFF) as u8
     )
-}
-
-/// processes an established socket
-pub(crate) async fn process_socket<IO, T>(
-    socket: IO,
-    context: RPCContext<T>,
-    max_rpc_record_size: Option<NonZeroUsize>,
-) -> Result<(), anyhow::Error>
-where
-    IO: AsyncRead + AsyncWrite + Unpin,
-    T: NfsFileSystem + 'static,
-{
-    let (reader, mut writer) = tokio::io::split(socket);
-    let mut reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
-    let (handler, mut replies) = SocketMessageHandler::new(context, max_rpc_record_size);
-
-    // Race the whole loops so replies cannot interrupt a partially read record,
-    // and a parser failure can close the socket even during a blocked write.
-    let result = tokio::select! {
-        biased;
-        result = handler.read_forever(&mut reader) => result,
-        result = async {
-            while let Some(reply) = replies.recv().await {
-                write_fragment(&mut writer, reply?).await?;
-            }
-            Ok(())
-        } => result,
-    };
-    if let Err(e) = &result {
-        debug!("Message handling closed: {e}");
-    }
-    result
 }
 
 pub trait NFSTcp: Send + Sync {
@@ -374,63 +275,5 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 let _ = process_socket(socket, context, max_rpc_record_size).await;
             });
         }
-    }
-}
-
-#[cfg(all(test, feature = "memfs", feature = "__test_reexports"))]
-mod tests {
-    use nfs3_types::portmap;
-    use nfs3_types::rpc::{
-        RPC_VERSION_2, call_body, fragment_header, msg_body, opaque_auth, rpc_msg,
-    };
-    use nfs3_types::xdr_codec::Pack;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    use super::*;
-    use crate::memfs::{MemFs, MemFsConfig};
-
-    #[tokio::test]
-    async fn truncated_record_closes_connection_during_pending_reply() {
-        let fs = MemFs::new(MemFsConfig::default()).expect("in-memory filesystem");
-        let context = RPCContext::test_ctx("/", Arc::new(fs));
-        let (mut client, server) = tokio::io::duplex(8);
-        let mut call = Vec::new();
-        rpc_msg {
-            xid: 1,
-            body: msg_body::CALL(call_body {
-                rpcvers: RPC_VERSION_2,
-                prog: portmap::PROGRAM,
-                vers: portmap::VERSION,
-                proc: portmap::PMAP_PROG::PMAPPROC_NULL as u32,
-                cred: opaque_auth::default(),
-                verf: opaque_auth::default(),
-            }),
-        }
-        .pack(&mut call)
-        .expect("encode NULL call");
-        let marker = fragment_header::new(u32::try_from(call.len()).expect("small call"), true)
-            .into_xdr_buf();
-
-        let client_io = async {
-            client.write_all(&marker).await.expect("send marker");
-            client.write_all(&call).await.expect("send NULL call");
-            client
-                .write_all(&marker[..2])
-                .await
-                .expect("start next marker");
-            // Read only one byte, so the reply still cannot fit in the duplex buffer.
-            client.read_u8().await.expect("reply started");
-            client.shutdown().await.expect("finish writing");
-        };
-        let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
-            tokio::join!(process_socket(server, context, None), client_io)
-        })
-        .await
-        .expect("parser must not wait for the reply to finish");
-        let err = result.expect_err("partial marker is a parser failure");
-        assert_eq!(
-            err.downcast_ref::<io::Error>().map(io::Error::kind),
-            Some(io::ErrorKind::UnexpectedEof)
-        );
     }
 }
