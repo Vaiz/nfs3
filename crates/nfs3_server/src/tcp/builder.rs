@@ -13,12 +13,12 @@ pub struct Builder<FS = ()> {
 }
 
 impl Builder {
-    /// Creates a builder with no incoming RPC record size limit.
+    /// Creates a builder.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Supplies a filesystem.
+    /// Sets the filesystem to export.
     pub fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
         Builder {
             fs,
@@ -26,7 +26,10 @@ impl Builder {
         }
     }
 
-    /// Supplies a filesystem that only supports reads.
+    /// Sets the filesystem to export and limits it to read-only operations.
+    ///
+    /// It uses [`ReadOnlyAdapter`] internally, which overrides all modifying operations to enforce
+    /// read-only access.
     pub fn read_only_filesystem<RO: NfsReadFileSystem + 'static>(
         self,
         fs: RO,
@@ -45,22 +48,26 @@ impl Default for Builder {
 }
 
 impl<FS> Builder<FS> {
-    /// Sets the NFS export path (default: `/`). For example, `data` and `/data/`
-    /// both export the filesystem at `/data`.
+    /// Sets the NFS export path (default: `/`).
+    ///
+    /// For example, `data` and `/data/` both export the filesystem at `/data`.
     pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
         self.options.export_name = Some(normalized_export_name(name.as_ref()));
         self
     }
 
-    /// Sets the file handle generation number. Instances sharing the same filesystem
-    /// can use the same generation number to keep file handles valid across instances.
+    /// Sets the file handle generation number.
+    ///
+    /// Instances sharing the same filesystem can use the same generation number to keep file
+    /// handles valid across instances.
     pub const fn generation_number(mut self, generation_number: u64) -> Self {
         self.options.generation_number = Some(generation_number);
         self
     }
 
-    /// Sets the maximum total payload bytes in an incoming RPC record, excluding
-    /// fragment markers. Records larger than the limit cause the connection to close.
+    /// Sets the maximum total payload bytes in an incoming RPC record.
+    ///
+    /// It excludes fragment markers. Records larger than the limit cause the connection to close.
     /// By default there is no limit.
     pub const fn max_rpc_record_size(mut self, max_rpc_record_size: NonZeroUsize) -> Self {
         self.options.max_rpc_record_size = Some(max_rpc_record_size);
@@ -69,8 +76,9 @@ impl<FS> Builder<FS> {
 }
 
 impl<T: NfsFileSystem + 'static> Builder<T> {
-    /// Binds to an `ip:port` address. Use `auto:port` to select a loopback address
-    /// or port `0` to let the OS choose a port.
+    /// Binds to an `ip:port` address.
+    ///
+    /// Use `auto:port` to select a loopback address or port `0` to let the OS choose a port.
     pub async fn bind(self, addr: &str) -> io::Result<NFSTcpListener<T>> {
         NFSTcpListener::bind_inner(addr, self.fs, self.options).await
     }
