@@ -17,6 +17,9 @@ use crate::units::KIBIBYTE;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
+// Shared budget for running RPC calls and completed replies waiting to be written.
+const REPLY_QUEUE_CAPACITY: usize = 16;
+
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
@@ -56,7 +59,7 @@ where
     let (reader, mut writer) = tokio::io::split(socket);
     let reader = BufReader::with_capacity(128 * KIBIBYTE as usize, reader);
     let reader = RpcRecordReader::new(reader, None);
-    let (replies, mut pending_replies) = mpsc::unbounded_channel();
+    let (replies, mut pending_replies) = mpsc::channel(REPLY_QUEUE_CAPACITY);
 
     // Race whole loops: a reply cannot cancel a partial read, but a framing
     // error can cancel a blocked write and close the connection.

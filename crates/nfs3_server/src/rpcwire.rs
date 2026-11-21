@@ -162,24 +162,26 @@ pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
 pub(crate) async fn read_and_dispatch<R, T>(
     mut record_reader: RpcRecordReader<R>,
     context: RPCContext<T>,
-    replies: mpsc::UnboundedSender<anyhow::Result<RpcRecord>>,
+    replies: mpsc::Sender<anyhow::Result<RpcRecord>>,
 ) -> anyhow::Result<()>
 where
     R: AsyncBufRead + Unpin,
     T: NfsFileSystem + 'static,
 {
     while let Some(message) = record_reader.read_record().await? {
+        // Read before reserving so the next framing error can still be
+        // surfaced even when all reply slots are in use.
+        let permit = replies.clone().reserve_owned().await?;
         let context = context.clone();
-        let send = replies.clone();
         tokio::spawn(async move {
             match handle_rpc_message(context, message).await {
                 Ok(RpcCallOutcome::Reply(reply)) => {
-                    let _ = send.send(Ok(reply));
+                    permit.send(Ok(reply));
                 }
                 Ok(RpcCallOutcome::NoReply) => {}
                 Err(err) => {
                     error!("Error handling RPC message: {err}");
-                    let _ = send.send(Err(anyhow!("Error handling RPC message")));
+                    permit.send(Err(anyhow!("Error handling RPC message")));
                 }
             }
         });
