@@ -21,7 +21,7 @@ pub use self::decoder::Decoder;
 pub use self::encoder::{Encoded, Encoder};
 pub use self::error::Error;
 pub use self::list::{BoundedList, List};
-pub use self::opaque::Opaque;
+pub use self::opaque::{BoundedOpaque, Opaque};
 pub use self::traits::{Pack, Unpack};
 pub use self::vec::BoundedVec;
 pub use self::void::Void;

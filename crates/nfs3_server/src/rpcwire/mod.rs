@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use call::{RpcCall, RpcCallOutcome};
+use call::{DecodedCall, RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
 use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
@@ -31,7 +31,10 @@ pub(crate) async fn handle_rpc_message<T>(
 where
     T: NfsFileSystem,
 {
-    let message = RpcCall::unpack(&mut args)?;
+    let message = match RpcCall::unpack(&mut args)? {
+        DecodedCall::Call(message) => message,
+        DecodedCall::Rejected(reply) => return Ok(reply),
+    };
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;

@@ -14,9 +14,12 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
-use crate::xdr_codec::{BoundedVec, Decoder, Encoder, Error, Opaque, Pack, Result, Unpack};
+use crate::xdr_codec::{
+    BoundedOpaque, BoundedVec, Decoder, Encoder, Error, Opaque, Pack, Result, Unpack,
+};
 
 pub const RPC_VERSION_2: u32 = 2;
+const MAX_AUTH_BYTES: usize = 400;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
@@ -92,14 +95,15 @@ pub enum auth_flavor {
 #[derive(Clone, Debug, XdrCodec)]
 pub struct opaque_auth<'a> {
     pub flavor: auth_flavor,
-    pub body: Opaque<'a>,
+    /// Credential or verifier data, limited to 400 bytes.
+    pub body: BoundedOpaque<'a, MAX_AUTH_BYTES>,
 }
 
 impl Default for opaque_auth<'static> {
     fn default() -> Self {
         Self {
             flavor: auth_flavor::AUTH_NULL,
-            body: Opaque::borrowed(&[]),
+            body: BoundedOpaque::empty(),
         }
     }
 }
@@ -117,7 +121,9 @@ impl opaque_auth<'static> {
         let body = out.into_bytes();
         Self {
             flavor: auth_flavor::AUTH_UNIX,
-            body: Opaque::from_bytes(body),
+            body: Opaque::from_bytes(body)
+                .try_into()
+                .expect("AUTH_SYS parameters fit in an RPC auth body"),
         }
     }
 
@@ -125,7 +131,7 @@ impl opaque_auth<'static> {
     pub fn borrow(&self) -> opaque_auth<'_> {
         opaque_auth {
             flavor: self.flavor,
-            body: Opaque::borrowed(self.body.as_ref()),
+            body: self.body.borrow(),
         }
     }
 }
@@ -133,12 +139,12 @@ impl opaque_auth<'static> {
 const MAX_MACHINENAME_LEN: usize = 255;
 const MAX_GIDS: usize = 16;
 
-/// RFC 5531 `AUTH_SYS` parameters. Decoding enforces the machine-name and
-/// supplemental-group limits.
-#[derive(Clone, Debug)]
+/// RFC 5531 `AUTH_SYS` parameters.
+#[derive(Clone, Debug, XdrCodec)]
 pub struct auth_unix {
     pub stamp: u32,
-    pub machinename: Opaque<'static>,
+    /// Machine name, limited to 255 bytes.
+    pub machinename: BoundedOpaque<'static, MAX_MACHINENAME_LEN>,
     pub uid: u32,
     pub gid: u32,
     /// Supplemental group IDs, limited to 16 entries.
@@ -159,46 +165,7 @@ impl auth_unix {
         let gids = gids.try_into()?;
         Ok(Self {
             stamp,
-            machinename: Opaque::owned(machinename.to_vec()),
-            uid,
-            gid,
-            gids,
-        })
-    }
-}
-
-impl Pack for auth_unix {
-    fn packed_size(&self) -> usize {
-        self.stamp.packed_size()
-            + self.machinename.packed_size()
-            + self.uid.packed_size()
-            + self.gid.packed_size()
-            + self.gids.packed_size()
-    }
-
-    fn pack(&self, out: &mut Encoder) -> Result<()> {
-        self.stamp.pack(out)?;
-        self.machinename.pack(out)?;
-        self.uid.pack(out)?;
-        self.gid.pack(out)?;
-        self.gids.pack(out)
-    }
-}
-
-impl Unpack for auth_unix {
-    fn unpack(input: &mut Decoder) -> Result<Self> {
-        let stamp = u32::unpack(input)?;
-        let name_len = u32::unpack(input)? as usize;
-        if name_len > MAX_MACHINENAME_LEN {
-            return Err(Error::InvalidLength(name_len));
-        }
-        let machinename = Opaque::from_bytes(input.read_opaque(name_len)?);
-        let uid = u32::unpack(input)?;
-        let gid = u32::unpack(input)?;
-        let gids = BoundedVec::unpack(input)?;
-        Ok(Self {
-            stamp,
-            machinename,
+            machinename: Opaque::owned(machinename.to_vec()).try_into()?,
             uid,
             gid,
             gids,
@@ -210,7 +177,7 @@ impl Default for auth_unix {
     fn default() -> Self {
         Self {
             stamp: 0,
-            machinename: Opaque::borrowed(b""),
+            machinename: BoundedOpaque::empty(),
             uid: 0,
             gid: 0,
             gids: BoundedVec::default(),

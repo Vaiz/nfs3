@@ -113,3 +113,63 @@ impl PartialEq for Opaque<'_> {
 }
 
 impl Eq for Opaque<'_> {}
+
+/// Variable-length XDR opaque data limited to `N` bytes.
+///
+/// Uses the same wire format and storage as [`Opaque`]. Decoding checks the
+/// length before reading or copying the payload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedOpaque<'a, const N: usize>(Opaque<'a>);
+
+impl<const N: usize> BoundedOpaque<'_, N> {
+    pub(crate) const fn empty() -> Self {
+        Self(Opaque::borrowed(&[]))
+    }
+
+    pub(crate) fn borrow(&self) -> BoundedOpaque<'_, N> {
+        BoundedOpaque(Opaque::borrowed(self.as_ref()))
+    }
+
+    /// Converts into [`Bytes`], copying only if the data is borrowed.
+    #[must_use]
+    pub fn into_bytes(self) -> Bytes {
+        self.0.into_bytes()
+    }
+}
+
+impl<'a, const N: usize> TryFrom<Opaque<'a>> for BoundedOpaque<'a, N> {
+    type Error = Error;
+
+    fn try_from(data: Opaque<'a>) -> Result<Self> {
+        if data.len() > N {
+            return Err(Error::InvalidLength(data.len()));
+        }
+        Ok(Self(data))
+    }
+}
+
+impl<const N: usize> AsRef<[u8]> for BoundedOpaque<'_, N> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<const N: usize> Pack for BoundedOpaque<'_, N> {
+    fn packed_size(&self) -> usize {
+        self.0.packed_size()
+    }
+
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        self.0.pack(out)
+    }
+}
+
+impl<const N: usize> Unpack for BoundedOpaque<'static, N> {
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let len = u32::unpack(input)? as usize;
+        if len > N {
+            return Err(Error::InvalidLength(len));
+        }
+        Ok(Self(Opaque::from_bytes(input.read_opaque(len)?)))
+    }
+}

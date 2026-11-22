@@ -1,9 +1,15 @@
 use anyhow::bail;
 use nfs3_types::rpc::{
-    accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, opaque_auth, rejected_reply,
-    reply_body, rpc_msg,
+    accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, msg_type, opaque_auth,
+    rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack, Void};
+use tracing::warn;
+
+pub(super) enum DecodedCall {
+    Call(RpcCall),
+    Rejected(RpcCallOutcome),
+}
 
 /// A decoded RPC call header.
 pub(crate) struct RpcCall {
@@ -13,23 +19,41 @@ pub(crate) struct RpcCall {
 
 impl RpcCall {
     /// Decodes the call header, leaving `input` at the procedure arguments.
-    pub(crate) fn unpack(input: &mut Decoder) -> anyhow::Result<Self> {
-        let rpc = match rpc_msg::unpack(input) {
-            Ok(ok) => ok,
+    pub(super) fn unpack(input: &mut Decoder) -> anyhow::Result<DecodedCall> {
+        let xid = u32::unpack(input)?;
+        if msg_type::unpack(input)? != msg_type::CALL {
+            bail!("Expected a CALL message, got REPLY. XID: {xid}");
+        }
+
+        let rpcvers = u32::unpack(input)?;
+        let program = u32::unpack(input)?;
+        let version = u32::unpack(input)?;
+        let procedure = u32::unpack(input)?;
+        let credential = match opaque_auth::unpack(input) {
+            Ok(credential) => credential,
             Err(err) => {
-                bail!("Failed to unpack RPC message: {err}");
+                warn!("Invalid RPC credential for XID {xid}: {err}");
+                return Self::auth_error(xid, auth_stat::AUTH_BADCRED).map(DecodedCall::Rejected);
             }
         };
-
-        let xid = rpc.xid;
-        let body = match rpc.body {
-            msg_body::CALL(call) => call,
-            msg_body::REPLY(_) => {
-                bail!("Expected a CALL message, got REPLY. XID: {xid}");
+        let verifier = match opaque_auth::unpack(input) {
+            Ok(verifier) => verifier,
+            Err(err) => {
+                warn!("Invalid RPC verifier for XID {xid}: {err}");
+                return Self::auth_error(xid, auth_stat::AUTH_BADVERF).map(DecodedCall::Rejected);
             }
         };
-
-        Ok(Self { xid, body })
+        Ok(DecodedCall::Call(Self {
+            xid,
+            body: call_body {
+                rpcvers,
+                prog: program,
+                vers: version,
+                proc: procedure,
+                cred: credential,
+                verf: verifier,
+            },
+        }))
     }
 
     pub(crate) const fn xid(&self) -> u32 {
@@ -68,8 +92,12 @@ impl RpcCall {
     }
 
     pub(crate) fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
+        Self::auth_error(self.xid, stat)
+    }
+
+    fn auth_error(xid: u32, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
         let rpc = rpc_msg {
-            xid: self.xid,
+            xid,
             body: msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::auth_error(stat))),
         };
         pack(&rpc, &Void).map(RpcCallOutcome::Reply)

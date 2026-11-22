@@ -5,7 +5,7 @@ use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
 use crate::rpc::{
     RPC_VERSION_2, auth_flavor, auth_unix, call_body, msg_body, opaque_auth, rpc_msg,
 };
-use crate::xdr_codec::{Decoder, Encoder, Error, Opaque, Pack, Unpack};
+use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, Error, Opaque, Pack, Unpack};
 
 #[test]
 fn rpc_call_len() {
@@ -237,7 +237,7 @@ fn auth_sys_decode_limits() {
             assert_eq!(input.into_remaining(), bytes.slice(prefix_len..));
         } else {
             let decoded = result.unwrap();
-            assert_eq!(decoded.machinename, machinename);
+            assert_eq!(decoded.machinename.as_ref(), machinename.as_ref());
             assert_eq!(decoded.gids.as_ref(), gids);
             assert_eq!(encode(&decoded).unwrap(), bytes);
             assert!(input.is_empty());
@@ -246,10 +246,43 @@ fn auth_sys_decode_limits() {
 }
 
 #[test]
+fn opaque_auth_body_limit() {
+    let data = [42; 401];
+    let body = BoundedOpaque::<400>::try_from(Opaque::borrowed(&data[..400])).unwrap();
+    let auth = opaque_auth {
+        flavor: auth_flavor::AUTH_UNIX,
+        body,
+    };
+    let mut input = Decoder::copying(encode(&auth).unwrap());
+    assert_eq!(
+        opaque_auth::unpack(&mut input).unwrap().body.as_ref(),
+        &data[..400]
+    );
+    assert!(input.is_empty());
+
+    let body = Opaque::borrowed(&data);
+    assert!(matches!(
+        BoundedOpaque::<400>::try_from(body.clone()),
+        Err(Error::InvalidLength(401))
+    ));
+    let mut out = Encoder::new(0);
+    auth.flavor.pack(&mut out).unwrap();
+    body.pack(&mut out).unwrap();
+    let mut input = Decoder::copying(out.into_bytes());
+    assert!(matches!(
+        opaque_auth::unpack(&mut input),
+        Err(Error::InvalidLength(401))
+    ));
+    assert_eq!(input.remaining(), 404);
+}
+
+#[test]
 fn opaque_auth_with_data() {
     let auth = opaque_auth {
         flavor: auth_flavor::AUTH_UNIX,
-        body: Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78]),
+        body: Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
+            .try_into()
+            .unwrap(),
     };
     let buffer = encode(&auth).unwrap().to_vec();
     let len = buffer.len();
@@ -331,7 +364,7 @@ fn auth_flavors() {
     for flavor in auth_flavors {
         let auth = opaque_auth {
             flavor,
-            body: Opaque::borrowed(&[]),
+            body: Opaque::borrowed(&[]).try_into().unwrap(),
         };
         let buffer = encode(&auth).unwrap().to_vec();
         let len = buffer.len();
