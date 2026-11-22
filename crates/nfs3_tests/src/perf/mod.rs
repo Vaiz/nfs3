@@ -1,3 +1,9 @@
+#![allow(
+    unknown_lints,
+    clippy::unused_async_trait_impl,
+    reason = "Benchmark fixtures do their work when polled without introducing I/O waits"
+)]
+
 mod list_fs;
 mod read_fs;
 mod write_fs;

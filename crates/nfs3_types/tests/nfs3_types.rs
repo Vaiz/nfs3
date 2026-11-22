@@ -109,7 +109,7 @@ fn empty_dirlist3_serialization() {
     let mut cursor = Cursor::new(buffer);
     let (deserialized, len) = dirlist3::unpack(&mut cursor).unwrap();
     assert_eq!(len, 8);
-    assert!(deserialized.entries.0.is_empty());
+    assert_eq!(deserialized.entries.0, []);
     assert_eq!(original.eof, deserialized.eof);
 }
 

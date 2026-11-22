@@ -1,5 +1,7 @@
 use std::io::{Read, Write};
 
+use derive_where::derive_where;
+
 use crate::xdr_codec::{Pack, Unpack};
 
 /// Represents a sequence of optional values in NFS3.
@@ -7,13 +9,8 @@ use crate::xdr_codec::{Pack, Unpack};
 /// This struct is a wrapper around a `Vec<T>`, where `T` is a type that implements
 /// the [`Pack`] and [`Unpack`] traits for serialization and deserialization.
 #[derive(Debug)]
+#[derive_where(Default)]
 pub struct List<T>(pub Vec<T>);
-
-impl<T> Default for List<T> {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
 
 impl<T> List<T> {
     #[must_use]

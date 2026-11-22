@@ -55,6 +55,11 @@ mod tests {
         }
     }
 
+    #[allow(
+        unknown_lints,
+        clippy::unused_async_trait_impl,
+        reason = "Match the real iterator's behavior of advancing only when polled"
+    )]
     impl ReadDirPlusIterator<FileHandleU64> for MockReadDirPlusIterator {
         async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
             if self.index >= self.entries.len() {

@@ -22,6 +22,7 @@ anyhow = "1.0.103"
 criterion = { version = "0.8", features = ["html_reports", "async_tokio"] }
 clap = { version = "4.5", default-features = false }
 ctrlc = { version = "3.5" }
+derive-where = "1.7"
 fastrand = "2.3"
 filetime = "0.2.25"
 future_assert = "0.1.0"

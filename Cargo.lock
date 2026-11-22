@@ -508,6 +508,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-where"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e2b94854e8576378ccda7c8de8a66ed8b4e8acbd2c50ec3418ea6c8aaf4b567"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -968,6 +979,7 @@ dependencies = [
 name = "nfs3_client"
 version = "0.9.1"
 dependencies = [
+ "derive-where",
  "fastrand",
  "jiff 1.0.1",
  "nfs3_types",
@@ -990,6 +1002,7 @@ name = "nfs3_server"
 version = "0.11.1"
 dependencies = [
  "anyhow",
+ "derive-where",
  "filetime",
  "future_assert",
  "intaglio",
@@ -1018,6 +1031,7 @@ dependencies = [
 name = "nfs3_types"
 version = "0.5.3"
 dependencies = [
+ "derive-where",
  "nfs3_macros",
 ]
 

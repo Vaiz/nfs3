@@ -697,6 +697,11 @@ impl MemFs {
     }
 }
 
+#[allow(
+    unknown_lints,
+    clippy::unused_async_trait_impl,
+    reason = "Defer filesystem access until the future is polled"
+)]
 impl NfsReadFileSystem for MemFs {
     type Handle = FileHandleU64;
 
@@ -759,6 +764,11 @@ impl NfsReadFileSystem for MemFs {
     }
 }
 
+#[allow(
+    unknown_lints,
+    clippy::unused_async_trait_impl,
+    reason = "Do not mutate the filesystem until the future is polled"
+)]
 impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
         let mut fs = self.fs.write().expect("lock is poisoned");
@@ -891,6 +901,11 @@ impl MemFsIterator {
     }
 }
 
+#[allow(
+    unknown_lints,
+    clippy::unused_async_trait_impl,
+    reason = "Do not advance the iterator until the future is polled"
+)]
 impl ReadDirIterator for MemFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
         self.visit_next_entry(|id, entry| DirEntry {
@@ -901,6 +916,11 @@ impl ReadDirIterator for MemFsIterator {
     }
 }
 
+#[allow(
+    unknown_lints,
+    clippy::unused_async_trait_impl,
+    reason = "Do not advance the iterator until the future is polled"
+)]
 impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
         self.visit_next_entry(|id, entry| {

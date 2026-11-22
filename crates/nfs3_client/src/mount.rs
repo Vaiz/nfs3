@@ -1,3 +1,4 @@
+use derive_where::derive_where;
 use nfs3_types::mount::{
     MOUNT_PROGRAM, PROGRAM, VERSION, dirpath, exports, mountlist, mountres3, mountres3_ok,
 };
@@ -9,7 +10,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the mount service
-#[derive(Debug)]
+#[derive_where(Debug)]
 pub struct MountClient<IO> {
     rpc: RpcClient<IO>,
 }

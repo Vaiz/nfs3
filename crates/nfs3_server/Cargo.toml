@@ -25,6 +25,7 @@ memfs = []
 [dependencies]
 nfs3_types.workspace = true
 
+derive-where.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "sync", "fs", "rt", "macros", "time"] }
 tracing.workspace = true
 anyhow.workspace = true
