@@ -698,7 +698,7 @@ impl MemFs {
 }
 
 #[allow(
-    unknown_lints,
+    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
     reason = "Defer filesystem access until the future is polled"
 )]
@@ -765,7 +765,7 @@ impl NfsReadFileSystem for MemFs {
 }
 
 #[allow(
-    unknown_lints,
+    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
     reason = "Do not mutate the filesystem until the future is polled"
 )]
@@ -902,7 +902,7 @@ impl MemFsIterator {
 }
 
 #[allow(
-    unknown_lints,
+    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
     reason = "Do not advance the iterator until the future is polled"
 )]
@@ -917,7 +917,7 @@ impl ReadDirIterator for MemFsIterator {
 }
 
 #[allow(
-    unknown_lints,
+    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
     reason = "Do not advance the iterator until the future is polled"
 )]

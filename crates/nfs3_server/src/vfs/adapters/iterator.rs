@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[allow(
-        unknown_lints,
+        unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
         clippy::unused_async_trait_impl,
         reason = "Match the real iterator's behavior of advancing only when polled"
     )]
