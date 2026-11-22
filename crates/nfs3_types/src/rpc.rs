@@ -142,8 +142,9 @@ impl RecordBuf {
     /// Returns a decoder over the record once its last fragment is complete,
     /// leaving the buffer empty for the next record.
     ///
-    /// The decoder knows the record's allocation, so large opaque data such as
-    /// READ or WRITE payloads is shared with the record instead of copied.
+    /// The decoder's minimum shared length is half of the record's allocation
+    /// (see [`Decoder`]), so READ and WRITE payloads are shared with the record
+    /// instead of copied.
     pub fn take_record(&mut self) -> Option<Decoder> {
         if !self.last || self.remaining() != 0 {
             return None;

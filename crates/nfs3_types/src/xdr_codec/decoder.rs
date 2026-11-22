@@ -9,9 +9,15 @@ use super::{Error, Result, Unpack};
 /// exactly one value. Malformed or truncated input returns an [`Error`], and
 /// lengths are checked before anything is allocated.
 ///
-/// Opaque data is copied out of the buffer, except in decoders returned by
-/// [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record), which share
-/// large payloads with the record.
+/// Each decoder has a minimum shared length. Opaque data at least that long is
+/// returned as a reference into the input buffer, without copying, and keeps
+/// the whole buffer in memory. Shorter opaque data is copied into its own
+/// allocation.
+///
+/// - [`Decoder::new`] disables sharing: all opaque data is copied.
+/// - [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record) sets the minimum to half of the
+///   record's allocation, so READ and WRITE payloads are shared, and a shared value never keeps
+///   more than twice its size in memory.
 ///
 /// ```
 /// use nfs3_types::xdr_codec::{Decoder, Unpack};
@@ -24,17 +30,13 @@ use super::{Error, Result, Unpack};
 pub struct Decoder {
     buf: Bytes,
     input_len: usize,
-    /// Smallest opaque length that is shared instead of copied.
-    ///
-    /// Half of the input's allocation when it is known, so a shared value never
-    /// keeps more than twice its own size alive; `usize::MAX` otherwise.
+    /// Minimum shared length; `usize::MAX` disables sharing.
     min_shared_len: usize,
 }
 
 impl Decoder {
-    /// Creates a decoder over `buf`.
-    ///
-    /// Opaque data is copied, so decoded values never keep `buf` alive.
+    /// Creates a decoder over `buf` with sharing disabled: all opaque data is
+    /// copied into its own allocation.
     pub fn new(buf: impl Into<Bytes>) -> Self {
         let buf = buf.into();
         Self {
@@ -44,10 +46,11 @@ impl Decoder {
         }
     }
 
-    /// Creates a decoder that may share opaque data with `buf`.
+    /// Creates a decoder whose minimum shared length is half of `buf`'s
+    /// capacity.
     ///
     /// `buf` must own its whole allocation (never split or advanced), so that
-    /// its capacity is the size of the memory a shared value keeps alive.
+    /// its capacity is the memory a shared value keeps alive.
     pub(crate) fn from_owned(buf: BytesMut) -> Self {
         let min_shared_len = buf.capacity().div_ceil(2);
         let buf = buf.freeze();
@@ -104,8 +107,9 @@ impl Decoder {
 
     /// Reads `len` bytes of opaque data followed by its padding.
     ///
-    /// The length is validated against the remaining input before anything is
-    /// allocated.
+    /// The data references the input if `len` is at least the minimum shared
+    /// length and is copied otherwise. The length is validated against the
+    /// remaining input before anything is allocated.
     pub(crate) fn read_opaque(&mut self, len: usize) -> Result<Bytes> {
         if len > self.buf.len() || get_padding(len) > self.buf.len() - len {
             return Err(Error::InvalidLength(len));
@@ -124,7 +128,7 @@ impl Decoder {
 
 /// Decodes a `T` that must occupy all of `buf`.
 ///
-/// Opaque data is copied, as with [`Decoder::new`].
+/// Sharing is disabled, as with [`Decoder::new`]: all opaque data is copied.
 pub fn decode<T: Unpack>(buf: impl Into<Bytes>) -> Result<T> {
     let mut input = Decoder::new(buf);
     let value = T::unpack(&mut input)?;
