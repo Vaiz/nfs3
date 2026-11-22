@@ -3,28 +3,38 @@ use bytes::{Buf, Bytes, BytesMut};
 use super::util::get_padding;
 use super::{Error, Result, Unpack};
 
-/// XDR input: an in-memory RPC record (or any complete XDR buffer).
+/// Reads XDR values from a complete in-memory buffer.
 ///
-/// Every read is bounds-checked and returns [`Error`] instead of panicking.
-/// Variable-length opaque data either shares the input buffer or is copied.
-/// It is shared only when it covers at least half of the input's backing
-/// allocation, so a decoded value never pins much more memory than its own
-/// size. Only decoders over received records (see
-/// [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record)) know their
-/// allocation; a decoder created with [`new`](Self::new) always copies.
+/// Read values with [`Unpack::unpack`], or use [`decode`] when the buffer holds
+/// exactly one value. Malformed or truncated input returns an [`Error`], and
+/// lengths are checked before anything is allocated.
+///
+/// Opaque data is copied out of the buffer, except in decoders returned by
+/// [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record), which share
+/// large payloads with the record.
+///
+/// ```
+/// use nfs3_types::xdr_codec::{Decoder, Unpack};
+///
+/// let mut input = Decoder::new(&[0, 0, 0, 7][..]);
+/// assert_eq!(u32::unpack(&mut input)?, 7);
+/// # Ok::<(), nfs3_types::xdr_codec::Error>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct Decoder {
     buf: Bytes,
     input_len: usize,
     /// Smallest opaque length that is shared instead of copied.
+    ///
+    /// Half of the input's allocation when it is known, so a shared value never
+    /// keeps more than twice its own size alive; `usize::MAX` otherwise.
     min_shared_len: usize,
 }
 
 impl Decoder {
-    /// Creates a decoder over a complete XDR buffer without copying it.
+    /// Creates a decoder over `buf`.
     ///
-    /// The size of the allocation behind `buf` is unknown, so decoded opaque
-    /// data is always copied rather than shared with it.
+    /// Opaque data is copied, so decoded values never keep `buf` alive.
     pub fn new(buf: impl Into<Bytes>) -> Self {
         let buf = buf.into();
         Self {
@@ -112,8 +122,9 @@ impl Decoder {
     }
 }
 
-/// Decodes a `T` that must occupy all of `buf`, copying its opaque data (see
-/// [`Decoder::new`]).
+/// Decodes a `T` that must occupy all of `buf`.
+///
+/// Opaque data is copied, as with [`Decoder::new`].
 pub fn decode<T: Unpack>(buf: impl Into<Bytes>) -> Result<T> {
     let mut input = Decoder::new(buf);
     let value = T::unpack(&mut input)?;

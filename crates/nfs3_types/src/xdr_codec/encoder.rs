@@ -19,13 +19,24 @@ const MAX_INITIAL_HEAD: usize = 1024;
 
 const MARKER_LEN: usize = 4;
 
-/// XDR output: a contiguous head buffer plus at most one shared payload.
+/// Writes XDR values.
 ///
-/// Fixed-size fields and small opaque values are copied into the head. The
-/// first large [`Opaque`](super::Opaque) value that already owns its bytes
-/// (the data of a READ reply or WRITE call) is kept as a separate chunk, so it
-/// is never copied while encoding. An RPC message carries at most one such
-/// payload; any further one is copied.
+/// Write values with [`Pack::pack`], then call [`finish`](Self::finish), or
+/// [`finish_record`](Self::finish_record) for an RPC record. Use [`encode`] to
+/// get a single value as one buffer.
+///
+/// Everything is copied except one large [`Opaque`](super::Opaque) backed by
+/// [`Bytes`], such as READ or WRITE data, which is kept as a separate chunk of
+/// [`Encoded`].
+///
+/// ```
+/// use nfs3_types::xdr_codec::{Encoder, Pack};
+///
+/// let mut out = Encoder::new();
+/// 7u32.pack(&mut out)?;
+/// assert_eq!(out.finish().into_bytes(), &[0, 0, 0, 7][..]);
+/// # Ok::<(), nfs3_types::xdr_codec::Error>(())
+/// ```
 #[derive(Debug)]
 pub struct Encoder {
     /// Starts with a slot for the record marker filled in by
@@ -48,10 +59,9 @@ impl Encoder {
         Self::with_head_capacity(0)
     }
 
-    /// Creates an encoder for a value of about `size_hint` encoded bytes.
+    /// Creates an encoder for a value of about `size_hint` bytes.
     ///
-    /// At most 1 KiB is reserved up front and the head grows on demand, so a
-    /// hint that includes a shared payload never reserves memory for it.
+    /// At most 1 KiB is reserved up front.
     #[must_use]
     pub fn with_size_hint(size_hint: usize) -> Self {
         Self::with_head_capacity(size_hint.min(MAX_INITIAL_HEAD))
@@ -108,7 +118,8 @@ impl Encoder {
         out.extend_from_slice(zero_padding(data.len()));
     }
 
-    /// Appends `data` and its padding, keeping a large payload as a separate chunk.
+    /// Appends `data` and its padding, keeping the first large payload as a
+    /// separate chunk; any further one is copied.
     pub(crate) fn put_padded_shared(&mut self, data: &Bytes) {
         if self.payload.is_some() || data.len() < MIN_SHARED_CHUNK {
             self.put_padded(data);
@@ -159,7 +170,10 @@ fn record_marker(len: usize) -> Result<[u8; MARKER_LEN]> {
     Ok(fragment_header::new(len, true).into_xdr_buf())
 }
 
-/// Encoded bytes: a head, an optional shared payload and a tail, sent in order.
+/// Encoded bytes in up to three chunks, so a shared payload is never copied.
+///
+/// Send them with [`chunks`](Self::chunks) in a vectored write, or join them
+/// with [`into_bytes`](Self::into_bytes).
 #[derive(Debug)]
 pub struct Encoded {
     head: BytesMut,
