@@ -1,6 +1,6 @@
 use nfs3_types::portmap::{self, PMAP_PROG, mapping};
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::Void;
+use nfs3_types::xdr_codec::{Decoder, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
@@ -11,6 +11,7 @@ use crate::vfs::NfsFileSystem;
 pub(crate) async fn handle_portmap<T>(
     context: RPCContext<T>,
     message: RpcCall,
+    args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
@@ -30,8 +31,8 @@ where
 
     let proc = PMAP_PROG::try_from(call.proc);
     match proc {
-        Ok(PMAP_PROG::PMAPPROC_NULL) => handle(context, message, pmapproc_null).await,
-        Ok(PMAP_PROG::PMAPPROC_GETPORT) => handle(context, message, pmapproc_getport).await,
+        Ok(PMAP_PROG::PMAPPROC_NULL) => handle(context, message, args, pmapproc_null).await,
+        Ok(PMAP_PROG::PMAPPROC_GETPORT) => handle(context, message, args, pmapproc_getport).await,
         _ => {
             warn!("Unimplemented message {}", call.proc);
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)

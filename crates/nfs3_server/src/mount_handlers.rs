@@ -3,7 +3,7 @@ use nfs3_types::mount::{
     mountstat3,
 };
 use nfs3_types::rpc::{accept_stat_data, auth_flavor};
-use nfs3_types::xdr_codec::{List, Opaque, Void};
+use nfs3_types::xdr_codec::{Decoder, List, Opaque, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
@@ -21,6 +21,7 @@ use crate::vfs::NfsFileSystem;
 pub(crate) async fn handle_mount<T>(
     context: RPCContext<T>,
     message: RpcCall,
+    args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
@@ -46,11 +47,11 @@ where
 
     debug!("{proc}({})", message.xid());
     match proc {
-        MOUNTPROC3_NULL => handle(context, message, mountproc3_null).await,
-        MOUNTPROC3_MNT => handle(context, message, mountproc3_mnt).await,
-        MOUNTPROC3_UMNT => handle(context, message, mountproc3_umnt).await,
-        MOUNTPROC3_UMNTALL => handle(context, message, mountproc3_umnt_all).await,
-        MOUNTPROC3_EXPORT => handle(context, message, mountproc3_export).await,
+        MOUNTPROC3_NULL => handle(context, message, args, mountproc3_null).await,
+        MOUNTPROC3_MNT => handle(context, message, args, mountproc3_mnt).await,
+        MOUNTPROC3_UMNT => handle(context, message, args, mountproc3_umnt).await,
+        MOUNTPROC3_UMNTALL => handle(context, message, args, mountproc3_umnt_all).await,
+        MOUNTPROC3_EXPORT => handle(context, message, args, mountproc3_export).await,
         MOUNTPROC3_DUMP => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)

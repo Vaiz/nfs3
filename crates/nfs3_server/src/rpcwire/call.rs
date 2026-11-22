@@ -1,23 +1,20 @@
 use anyhow::bail;
-use bytes::Bytes;
 use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, opaque_auth, rejected_reply,
     reply_body, rpc_msg,
 };
-use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Error, Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack, Void};
 
-/// A decoded RPC call header and its still-encoded procedure arguments.
+/// A decoded RPC call header.
 pub(crate) struct RpcCall {
     xid: u32,
     body: call_body<'static>,
-    args: Decoder,
 }
 
-impl TryFrom<Decoder> for RpcCall {
-    type Error = anyhow::Error;
-
-    fn try_from(mut args: Decoder) -> Result<Self, Self::Error> {
-        let rpc = match rpc_msg::unpack(&mut args) {
+impl RpcCall {
+    /// Decodes the call header, leaving `input` at the procedure arguments.
+    pub(crate) fn unpack(input: &mut Decoder) -> anyhow::Result<Self> {
+        let rpc = match rpc_msg::unpack(input) {
             Ok(ok) => ok,
             Err(err) => {
                 bail!("Failed to unpack RPC message: {err}");
@@ -32,29 +29,14 @@ impl TryFrom<Decoder> for RpcCall {
             }
         };
 
-        Ok(Self { xid, body, args })
+        Ok(Self { xid, body })
     }
-}
 
-impl RpcCall {
     pub(crate) const fn xid(&self) -> u32 {
         self.xid
     }
     pub(crate) const fn body(&self) -> &call_body<'static> {
         &self.body
-    }
-
-    /// Decodes the procedure arguments, which must span the rest of the record.
-    ///
-    /// Drops this call's reference to the record buffer, so only decoded values
-    /// sharing it keep it in memory.
-    pub(crate) fn unpack_args<I: Unpack>(&mut self) -> Result<I, Error> {
-        let mut args = std::mem::replace(&mut self.args, Decoder::copying(Bytes::new()));
-        let value = I::unpack(&mut args)?;
-        if !args.is_empty() {
-            return Err(Error::TrailingBytes(args.remaining()));
-        }
-        Ok(value)
     }
 
     pub(crate) fn into_success_reply<T>(self, message: &T) -> anyhow::Result<RpcCallOutcome>

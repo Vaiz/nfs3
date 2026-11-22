@@ -3,7 +3,7 @@ use std::time::Instant;
 use call::{RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
 use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
-use nfs3_types::xdr_codec::{Decoder, Encoded, Pack, Unpack};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::AsyncRead;
 use tokio::sync::mpsc;
@@ -26,12 +26,12 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: Decoder,
+    mut args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {
-    let message = RpcCall::try_from(message)?;
+    let message = RpcCall::unpack(&mut args)?;
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
@@ -67,9 +67,9 @@ where
     }
 
     match prog {
-        portmap::PROGRAM => portmap_handlers::handle_portmap(context, message).await,
-        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message).await,
-        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message).await,
+        portmap::PROGRAM => portmap_handlers::handle_portmap(context, message, args).await,
+        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message, args).await,
+        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message, args).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
@@ -84,7 +84,8 @@ where
 /// Handles the RPC message and returns a result. The handler is an async function
 pub(crate) async fn handle<I, O, T>(
     context: RPCContext<T>,
-    mut message: RpcCall,
+    message: RpcCall,
+    args: Decoder,
     handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
 ) -> anyhow::Result<RpcCallOutcome>
 where
@@ -92,7 +93,7 @@ where
     O: Pack + Send + 'static,
     T: NfsFileSystem,
 {
-    let args = match message.unpack_args::<I>() {
+    let args = match unpack_args::<I>(args) {
         Ok(args) => args,
         Err(err) => {
             error!("Failed to unpack message: {err}");
@@ -102,6 +103,18 @@ where
 
     let result = handler(context, message.xid(), args).await;
     message.into_success_reply(&result)
+}
+
+/// Decodes the procedure arguments, which must span the rest of the record.
+///
+/// Consumes `args`, so only decoded values that share the record buffer keep it
+/// in memory while the handler runs.
+fn unpack_args<I: Unpack>(mut args: Decoder) -> Result<I, Error> {
+    let value = I::unpack(&mut args)?;
+    if !args.is_empty() {
+        return Err(Error::TrailingBytes(args.remaining()));
+    }
+    Ok(value)
 }
 
 fn lock_transaction(
