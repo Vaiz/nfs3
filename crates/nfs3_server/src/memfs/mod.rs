@@ -2,6 +2,8 @@
 //!
 //! It is a simple implementation of a file system that stores files and directories in memory.
 //! This file system is used for testing purposes and is not intended for production use.
+//! Operations, including directory iteration, run when called. The returned futures
+//! deliver the completed results.
 //!
 //! # Limitations
 //!
@@ -41,6 +43,7 @@
 mod config;
 
 use std::collections::{HashMap, HashSet};
+use std::future::ready;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
@@ -54,7 +57,7 @@ use nfs3_types::xdr_codec::Opaque;
 
 use crate::vfs::{
     DirEntry, DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem,
-    ReadDirIterator, ReadDirPlusIterator,
+    ReadDirIterator, ReadDirPlusIterator, default_fsinfo,
 };
 
 const DELIMITER: char = '/';
@@ -695,13 +698,14 @@ impl MemFs {
         let content: Vec<_> = iter.copied().collect();
         Ok(MemFsIterator::new(Arc::clone(&self.fs), content))
     }
+    fn getattr_sync(&self, id: FileHandleU64) -> Result<fattr3, nfsstat3> {
+        let fs = self.fs.read().expect("lock is poisoned");
+        fs.get(id)
+            .map(|entry| entry.attr().clone())
+            .ok_or(nfsstat3::NFS3ERR_NOENT)
+    }
 }
 
-#[allow(
-    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
-    clippy::unused_async_trait_impl,
-    reason = "Read filesystem state at poll time so changes before the first poll remain visible"
-)]
 impl NfsReadFileSystem for MemFs {
     type Handle = FileHandleU64;
 
@@ -709,160 +713,187 @@ impl NfsReadFileSystem for MemFs {
         self.rootdir
     }
 
-    async fn lookup(
+    fn lookup(
         &self,
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
-    ) -> Result<FileHandleU64, nfsstat3> {
+    ) -> impl Future<Output = Result<FileHandleU64, nfsstat3>> + Send {
         let fs = self.fs.read().expect("lock is poisoned");
-        fs.lookup(*dirid, filename).map(Entry::fileid)
+        ready(fs.lookup(*dirid, filename).map(Entry::fileid))
     }
 
-    async fn getattr(&self, id: &FileHandleU64) -> Result<fattr3, nfsstat3> {
-        let fs = self.fs.read().expect("lock is poisoned");
-        let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        Ok(entry.attr().clone())
+    fn getattr(&self, id: &FileHandleU64) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send {
+        ready(self.getattr_sync(*id))
     }
 
-    async fn read(
+    fn read(
         &self,
         id: &FileHandleU64,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> impl Future<Output = Result<(Vec<u8>, bool), nfsstat3>> + Send {
         let fs = self.fs.read().expect("lock is poisoned");
-        let entry = fs.get(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry.as_file()?;
-        Ok(file.read(offset, count))
+        let result = fs
+            .get(*id)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)
+            .and_then(Entry::as_file)
+            .map(|file| file.read(offset, count));
+        ready(result)
     }
 
-    async fn readdir(
+    fn readdir(
         &self,
         dirid: &FileHandleU64,
         cookie: u64,
-    ) -> Result<impl ReadDirIterator, nfsstat3> {
-        let iter = Self::make_iter(self, *dirid, cookie)?;
-        Ok(iter)
+    ) -> impl Future<Output = Result<impl ReadDirIterator, nfsstat3>> + Send {
+        ready(self.make_iter(*dirid, cookie))
     }
 
-    async fn readdirplus(
+    fn readdirplus(
         &self,
         dirid: &FileHandleU64,
         cookie: u64,
-    ) -> Result<impl ReadDirPlusIterator<FileHandleU64>, nfsstat3> {
-        let iter = Self::make_iter(self, *dirid, cookie)?;
-        Ok(iter)
+    ) -> impl Future<Output = Result<impl ReadDirPlusIterator<FileHandleU64>, nfsstat3>> + Send
+    {
+        ready(self.make_iter(*dirid, cookie))
     }
 
-    async fn readlink(&self, _id: &FileHandleU64) -> Result<nfspath3<'_>, nfsstat3> {
+    fn readlink(
+        &self,
+        _id: &FileHandleU64,
+    ) -> impl Future<Output = Result<nfspath3<'_>, nfsstat3>> + Send {
         tracing::warn!("readlink not implemented");
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        ready(Err(nfsstat3::NFS3ERR_NOTSUPP))
     }
 
-    async fn lookup_by_path(&self, path: &str) -> Result<FileHandleU64, nfsstat3> {
-        self.path_to_id_impl(path)
+    fn lookup_by_path(
+        &self,
+        path: &str,
+    ) -> impl Future<Output = Result<FileHandleU64, nfsstat3>> + Send {
+        ready(self.path_to_id_impl(path))
+    }
+
+    fn fsinfo(
+        &self,
+        root_fileid: &FileHandleU64,
+    ) -> impl Future<Output = Result<nfs::FSINFO3resok, nfsstat3>> + Send {
+        ready(Ok(default_fsinfo(self.getattr_sync(*root_fileid).ok())))
     }
 }
 
-#[allow(
-    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
-    clippy::unused_async_trait_impl,
-    reason = "Dropping an unpolled future must not apply the requested filesystem change"
-)]
 impl NfsFileSystem for MemFs {
-    async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
+    fn setattr(
+        &self,
+        id: &FileHandleU64,
+        setattr: sattr3,
+    ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send {
         let mut fs = self.fs.write().expect("lock is poisoned");
-        let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        entry.set_attr(&setattr);
-        Ok(entry.attr().clone())
+        let result = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT).map(|entry| {
+            entry.set_attr(&setattr);
+            entry.attr().clone()
+        });
+        ready(result)
     }
 
-    async fn write(
+    fn write(
         &self,
         id: &FileHandleU64,
         offset: u64,
         data: &[u8],
         _stable: nfs::stable_how, // MemFs writes are always `FILE_SYNC`
-    ) -> Result<(fattr3, nfs::stable_how), nfsstat3> {
+    ) -> impl Future<Output = Result<(fattr3, nfs::stable_how), nfsstat3>> + Send {
         let mut fs = self.fs.write().expect("lock is poisoned");
-
-        let entry = fs.get_mut(*id).ok_or(nfsstat3::NFS3ERR_NOENT)?;
-        let file = entry
-            .as_file_mut()
-            .map_err(|_status| nfsstat3::NFS3ERR_INVAL)?;
-        let attr = file.write(offset, data)?;
-        Ok((attr, nfs::stable_how::FILE_SYNC))
+        let result = fs
+            .get_mut(*id)
+            .ok_or(nfsstat3::NFS3ERR_NOENT)
+            .and_then(|entry| {
+                entry
+                    .as_file_mut()
+                    .map_err(|_status| nfsstat3::NFS3ERR_INVAL)
+            })
+            .and_then(|file| file.write(offset, data))
+            .map(|attr| (attr, nfs::stable_how::FILE_SYNC));
+        ready(result)
     }
 
-    async fn create(
+    fn create(
         &self,
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
         attr: sattr3,
-    ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_file(*dirid, filename.clone_to_owned(), &attr, Vec::new(), None)
+    ) -> impl Future<Output = Result<(FileHandleU64, fattr3), nfsstat3>> + Send {
+        ready(self.add_file(*dirid, filename.clone_to_owned(), &attr, Vec::new(), None))
     }
 
-    async fn create_exclusive(
+    fn create_exclusive(
         &self,
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
         createverf: nfs::createverf3,
-    ) -> Result<FileHandleU64, nfsstat3> {
-        self.add_file(
-            *dirid,
-            filename.clone_to_owned(),
-            &sattr3::default(),
-            Vec::new(),
-            Some(createverf),
-        )
-        .map(|(id, _attr)| id)
+    ) -> impl Future<Output = Result<FileHandleU64, nfsstat3>> + Send {
+        let result = self
+            .add_file(
+                *dirid,
+                filename.clone_to_owned(),
+                &sattr3::default(),
+                Vec::new(),
+                Some(createverf),
+            )
+            .map(|(id, _attr)| id);
+        ready(result)
     }
 
-    async fn mkdir(
+    fn mkdir(
         &self,
         dirid: &FileHandleU64,
         dirname: &filename3<'_>,
-    ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
-        self.add_dir(*dirid, dirname.clone_to_owned())
+    ) -> impl Future<Output = Result<(FileHandleU64, fattr3), nfsstat3>> + Send {
+        ready(self.add_dir(*dirid, dirname.clone_to_owned()))
     }
 
-    async fn remove(
+    fn remove(
         &self,
         dirid: &FileHandleU64,
         filename: &filename3<'_>,
-    ) -> Result<(), nfsstat3> {
-        self.fs
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        let result = self
+            .fs
             .write()
             .expect("lock is poisoned")
-            .remove(*dirid, filename)
+            .remove(*dirid, filename);
+        ready(result)
     }
 
-    async fn rename<'a>(
+    fn rename<'a>(
         &self,
         from_dirid: &FileHandleU64,
         from_filename: &filename3<'a>,
         to_dirid: &FileHandleU64,
         to_filename: &filename3<'a>,
-    ) -> Result<(), nfsstat3> {
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
         let mut fs = self.fs.write().expect("lock is poisoned");
-        fs.rename(*from_dirid, from_filename, *to_dirid, to_filename)
+        ready(fs.rename(*from_dirid, from_filename, *to_dirid, to_filename))
     }
 
-    async fn symlink<'a>(
+    fn symlink<'a>(
         &self,
         _dirid: &FileHandleU64,
         _linkname: &filename3<'a>,
         _symlink: &nfspath3<'a>,
         _attr: &sattr3,
-    ) -> Result<(FileHandleU64, fattr3), nfsstat3> {
+    ) -> impl Future<Output = Result<(FileHandleU64, fattr3), nfsstat3>> + Send {
         tracing::warn!("symlink not implemented");
-        Err(nfsstat3::NFS3ERR_NOTSUPP)
+        ready(Err(nfsstat3::NFS3ERR_NOTSUPP))
     }
 
-    async fn commit(&self, _id: &FileHandleU64, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+    fn commit(
+        &self,
+        _id: &FileHandleU64,
+        _offset: u64,
+        _count: u32,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
         // In-memory filesystem: all writes are immediately "committed".
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -901,29 +932,19 @@ impl MemFsIterator {
     }
 }
 
-#[allow(
-    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
-    clippy::unused_async_trait_impl,
-    reason = "Dropping an unpolled next future must not skip an entry"
-)]
 impl ReadDirIterator for MemFsIterator {
-    async fn next(&mut self) -> NextResult<DirEntry> {
-        self.visit_next_entry(|id, entry| DirEntry {
+    fn next(&mut self) -> impl Future<Output = NextResult<DirEntry>> + Send {
+        ready(self.visit_next_entry(|id, entry| DirEntry {
             fileid: id.into(),
             name: entry.name().clone_to_owned(),
             cookie: id.into(),
-        })
+        }))
     }
 }
 
-#[allow(
-    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
-    clippy::unused_async_trait_impl,
-    reason = "Dropping an unpolled next future must not skip an entry"
-)]
 impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
-    async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
-        self.visit_next_entry(|id, entry| {
+    fn next(&mut self) -> impl Future<Output = NextResult<DirEntryPlus<FileHandleU64>>> + Send {
+        ready(self.visit_next_entry(|id, entry| {
             let attr = entry.attr().clone();
             DirEntryPlus {
                 fileid: id.into(),
@@ -932,6 +953,33 @@ impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
                 name_attributes: Some(attr),
                 name_handle: Some(id),
             }
-        })
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn memfs_operations_complete_at_call_time() -> Result<(), nfsstat3> {
+        let fs = MemFs::default();
+        let root = fs.root_dir();
+        let name = filename3(Opaque::borrowed(b"file"));
+
+        let missing = fs.lookup(&root, &name);
+        drop(fs.create(&root, &name, sattr3::default()));
+        assert_eq!(missing.await, Err(nfsstat3::NFS3ERR_NOENT));
+        let id = fs.lookup(&root, &name).await?;
+
+        let mut entries = fs.readdir(&root, 0).await?;
+        drop(entries.next());
+        assert!(matches!(entries.next().await, NextResult::Eof));
+
+        let found = fs.lookup(&root, &name);
+        drop(fs.remove(&root, &name));
+        assert_eq!(found.await?, id);
+        assert_eq!(fs.lookup(&root, &name).await, Err(nfsstat3::NFS3ERR_NOENT));
+        Ok(())
     }
 }

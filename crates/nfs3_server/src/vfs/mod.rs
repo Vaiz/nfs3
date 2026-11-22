@@ -150,30 +150,26 @@ pub trait NfsReadFileSystem: Send + Sync {
         &self,
         root_fileid: &Self::Handle,
     ) -> impl Future<Output = Result<fsinfo3, nfsstat3>> + Send {
-        async move {
-            let dir_attr = self
-                .getattr(root_fileid)
-                .await
-                .map_or(post_op_attr::None, post_op_attr::Some);
+        async move { Ok(default_fsinfo(self.getattr(root_fileid).await.ok())) }
+    }
+}
 
-            let res = fsinfo3 {
-                obj_attributes: dir_attr,
-                rtmax: MEBIBYTE,
-                rtpref: MEBIBYTE,
-                rtmult: MEBIBYTE,
-                wtmax: MEBIBYTE,
-                wtpref: MEBIBYTE,
-                wtmult: MEBIBYTE,
-                dtpref: MEBIBYTE,
-                maxfilesize: 128u64 * GIBIBYTE,
-                time_delta: nfstime3 {
-                    seconds: 0,
-                    nseconds: 1_000_000,
-                },
-                properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
-            };
-            Ok(res)
-        }
+pub(crate) fn default_fsinfo(attr: Option<fattr3>) -> fsinfo3 {
+    fsinfo3 {
+        obj_attributes: attr.map_or(post_op_attr::None, post_op_attr::Some),
+        rtmax: MEBIBYTE,
+        rtpref: MEBIBYTE,
+        rtmult: MEBIBYTE,
+        wtmax: MEBIBYTE,
+        wtpref: MEBIBYTE,
+        wtmult: MEBIBYTE,
+        dtpref: MEBIBYTE,
+        maxfilesize: 128u64 * GIBIBYTE,
+        time_delta: nfstime3 {
+            seconds: 0,
+            nseconds: 1_000_000,
+        },
+        properties: FSF3_SYMLINK | FSF3_HOMOGENEOUS | FSF3_CANSETTIME,
     }
 }
 
