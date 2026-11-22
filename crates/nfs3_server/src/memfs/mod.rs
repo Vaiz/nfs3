@@ -776,9 +776,9 @@ impl NfsReadFileSystem for MemFs {
 
     fn fsinfo(
         &self,
-        root_fileid: &FileHandleU64,
+        id: &FileHandleU64,
     ) -> impl Future<Output = Result<nfs::FSINFO3resok, nfsstat3>> + Send {
-        ready(Ok(default_fsinfo(self.getattr_sync(*root_fileid).ok())))
+        ready(Ok(default_fsinfo(self.getattr_sync(*id).ok())))
     }
 }
 

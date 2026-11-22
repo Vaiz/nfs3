@@ -1,7 +1,12 @@
+use bytes::Bytes;
+use nfs3_client::Nfs3Client;
 use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
-use nfs3_server::memfs::MemFsConfig;
-use nfs3_tests::{JustClientExt, TestContext};
+use nfs3_client::tokio::TokioIo;
+use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_server::vfs::adapters::ReadOnlyAdapter;
+use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirPlusIterator};
+use nfs3_tests::{JustClientExt, Server, TestContext};
 
 #[tokio::test]
 async fn lookup_root() -> Result<(), anyhow::Error> {
@@ -139,25 +144,101 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
     client.shutdown().await
 }
 
+struct CustomReadLimit {
+    fs: MemFs,
+    rtmax: u32,
+}
+
+impl NfsReadFileSystem for CustomReadLimit {
+    type Handle = FileHandleU64;
+
+    fn root_dir(&self) -> Self::Handle {
+        self.fs.root_dir()
+    }
+
+    async fn lookup(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+    ) -> Result<Self::Handle, nfsstat3> {
+        self.fs.lookup(dirid, filename).await
+    }
+
+    async fn getattr(&self, id: &Self::Handle) -> Result<fattr3, nfsstat3> {
+        self.fs.getattr(id).await
+    }
+
+    async fn read(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        count: u32,
+    ) -> Result<(Bytes, bool), nfsstat3> {
+        self.fs.read(id, offset, count).await
+    }
+
+    async fn readdirplus(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+    ) -> Result<impl ReadDirPlusIterator<Self::Handle>, nfsstat3> {
+        self.fs.readdirplus(dirid, cookie).await
+    }
+
+    async fn readlink(&self, id: &Self::Handle) -> Result<nfspath3<'_>, nfsstat3> {
+        self.fs.readlink(id).await
+    }
+
+    async fn fsinfo(&self, id: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
+        let mut info = self.fs.fsinfo(id).await?;
+        info.rtmax = self.rtmax;
+        info.rtpref = self.rtmax;
+        info.rtmult = 1;
+        Ok(info)
+    }
+}
+
 #[tokio::test]
-async fn read_count_is_capped_at_advertised_rtmax() -> anyhow::Result<()> {
-    const MAX_READ: u32 = 1024 * 1024;
-    let mut contents = vec![b'a'; MAX_READ as usize];
+async fn read_count_respects_custom_fsinfo_limits() -> anyhow::Result<()> {
+    for rtmax in [128, 1024 * 1024 + 1] {
+        check_custom_read_limit(rtmax).await?;
+    }
+    Ok(())
+}
+
+async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
+    let mut contents = vec![b'a'; rtmax as usize];
     contents.push(b'z');
     let mut config = MemFsConfig::default();
     config.add_file("/large.txt", contents);
-    let mut client = TestContext::setup_with_config(config, false, tracing::Level::DEBUG);
-    let root = client.root_dir().clone();
-    let rtmax = client
+    let fs = ReadOnlyAdapter::new(CustomReadLimit {
+        fs: MemFs::new(config).expect("initialize fixture filesystem"),
+        rtmax,
+    });
+    let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
+    let server = Server::new(server_io, fs)?;
+    let root = server.root_dir();
+    let server_task = tokio::spawn(server.run());
+    let mut client = Nfs3Client::new(TokioIo::new(client_io));
+
+    let info = client
         .fsinfo(&FSINFO3args {
             fsroot: root.clone(),
         })
         .await?
-        .unwrap()
-        .rtmax;
-    assert_eq!(rtmax, MAX_READ);
+        .unwrap();
+    assert_eq!((info.rtmax, info.rtpref, info.rtmult), (rtmax, rtmax, 1));
 
-    let file = client.just_lookup(&root, "large.txt").await.unwrap();
+    let file = client
+        .lookup(&LOOKUP3args {
+            what: diropargs3 {
+                dir: root,
+                name: b"large.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap()
+        .object;
     let first = client
         .read(&READ3args {
             file: file.clone(),
@@ -182,7 +263,8 @@ async fn read_count_is_capped_at_advertised_rtmax() -> anyhow::Result<()> {
     assert_eq!(last.data.as_ref(), b"z");
     assert!(last.eof);
 
-    client.shutdown().await
+    drop(client);
+    server_task.await?
 }
 
 #[tokio::test]
