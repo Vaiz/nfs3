@@ -106,7 +106,8 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
     ///
-    /// The server caps the count at the `rtmax` returned by [`Self::fsinfo`].
+    /// The server caps the count at the `rtmax` returned by [`Self::fsinfo`]
+    /// for [`Self::root_dir`].
     ///
     /// Returned buffers of 1 KiB or more are sent to the client without copying;
     /// a `Vec<u8>` converts into [`Bytes`] for free.
@@ -151,12 +152,15 @@ pub trait NfsReadFileSystem: Send + Sync {
         id: &Self::Handle,
     ) -> impl Future<Output = Result<nfspath3<'_>, nfsstat3>> + Send;
 
-    /// Get static information for the filesystem containing the given object.
+    /// Get static file system information.
     ///
-    /// This runs on the READ path, so it should be fast. The server uses the
-    /// returned `rtmax` to cap READ counts for the object.
-    fn fsinfo(&self, id: &Self::Handle) -> impl Future<Output = Result<fsinfo3, nfsstat3>> + Send {
-        async move { Ok(default_fsinfo(self.getattr(id).await.ok())) }
+    /// The server calls this with the export root on the READ path, so it
+    /// should be fast.
+    fn fsinfo(
+        &self,
+        root_fileid: &Self::Handle,
+    ) -> impl Future<Output = Result<fsinfo3, nfsstat3>> + Send {
+        async move { Ok(default_fsinfo(self.getattr(root_fileid).await.ok())) }
     }
 }
 

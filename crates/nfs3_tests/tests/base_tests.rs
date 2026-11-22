@@ -189,8 +189,11 @@ impl NfsReadFileSystem for CustomReadLimit {
         self.fs.readlink(id).await
     }
 
-    async fn fsinfo(&self, id: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
-        let mut info = self.fs.fsinfo(id).await?;
+    async fn fsinfo(&self, root_fileid: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
+        if *root_fileid != self.root_dir() {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+        let mut info = self.fs.fsinfo(root_fileid).await?;
         info.rtmax = self.rtmax;
         info.rtpref = self.rtmax;
         info.rtmult = 1;
@@ -199,7 +202,7 @@ impl NfsReadFileSystem for CustomReadLimit {
 }
 
 #[tokio::test]
-async fn read_count_respects_custom_fsinfo_limits() -> anyhow::Result<()> {
+async fn read_count_respects_root_fsinfo_limits() -> anyhow::Result<()> {
     for rtmax in [128, 1024 * 1024 + 1] {
         check_custom_read_limit(rtmax).await?;
     }
@@ -250,6 +253,7 @@ async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
     assert_eq!(first.count, rtmax);
     assert_eq!(first.data.len(), rtmax as usize);
     assert!(!first.eof);
+    assert_eq!(first.file_attributes.unwrap().size, u64::from(rtmax) + 1);
 
     let last = client
         .read(&READ3args {

@@ -96,8 +96,8 @@ where
         self.0.readlink(id).await
     }
 
-    async fn fsinfo(&self, id: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
-        let mut fsinfo = self.0.fsinfo(id).await?;
+    async fn fsinfo(&self, root_fileid: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
+        let mut fsinfo = self.0.fsinfo(root_fileid).await?;
         if let post_op_attr::Some(attr) = &mut fsinfo.obj_attributes {
             remove_write_permissions(attr);
         }
