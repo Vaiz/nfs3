@@ -19,8 +19,7 @@ fn vec_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 16);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
@@ -41,8 +40,7 @@ fn list_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 28);
+    assert!(cursor.is_empty());
     assert_eq!(original.0, deserialized.0);
 }
 
@@ -90,8 +88,7 @@ fn empty_collections() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 4);
+    assert!(cursor.is_empty());
     assert_eq!(empty_vec, deserialized);
 
     // Test empty List
@@ -103,8 +100,7 @@ fn empty_collections() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 4);
+    assert!(cursor.is_empty());
     assert_eq!(empty_list.0, deserialized.0);
 }
 
@@ -119,8 +115,7 @@ fn single_item_collections() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 8);
+    assert!(cursor.is_empty());
     assert_eq!(single_vec, deserialized);
 
     // Test single item List
@@ -132,8 +127,7 @@ fn single_item_collections() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 12);
+    assert!(cursor.is_empty());
     assert_eq!(single_list.0, deserialized.0);
 }
 
@@ -164,8 +158,7 @@ fn large_collections() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 404);
+    assert!(cursor.is_empty());
     assert_eq!(large_vec, deserialized);
 
     // Test bounded list with many items

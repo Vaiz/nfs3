@@ -13,8 +13,7 @@ fn void_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Void::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(unpack_len, 0);
+    assert!(cursor.is_empty());
     assert_eq!(void_val, deserialized);
 }
 
@@ -30,8 +29,7 @@ fn boolean_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = bool::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(unpack_len, 4);
+    assert!(cursor.is_empty());
     assert_eq!(true_val, deserialized);
 
     // Test false
@@ -44,8 +42,7 @@ fn boolean_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = bool::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(unpack_len, 4);
+    assert!(cursor.is_empty());
     assert_eq!(false_val, deserialized);
 }
 
@@ -62,8 +59,7 @@ fn integer_serialization() {
 
         let mut cursor = Decoder::copying(buffer);
         let deserialized = u32::unpack(&mut cursor).unwrap();
-        let unpack_len = cursor.position();
-        assert_eq!(unpack_len, 4);
+        assert!(cursor.is_empty());
         assert_eq!(original, deserialized);
     }
 }
@@ -86,8 +82,7 @@ fn u64_serialization() {
 
         let mut cursor = Decoder::copying(buffer);
         let deserialized = u64::unpack(&mut cursor).unwrap();
-        let unpack_len = cursor.position();
-        assert_eq!(unpack_len, 8);
+        assert!(cursor.is_empty());
         assert_eq!(original, deserialized);
     }
 }
@@ -150,8 +145,7 @@ fn large_data_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = Opaque::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(unpack_len, expected_size);
+    assert!(cursor.is_empty());
     assert_eq!(opaque.as_ref(), deserialized.as_ref());
 }
 

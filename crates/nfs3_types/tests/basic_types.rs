@@ -1,6 +1,6 @@
 // Basic XDR codec tests for fundamental data types and structures
 
-use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, decode, encode};
+use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, encode};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]
@@ -57,7 +57,7 @@ fn enum_pack() {
 #[test]
 fn enum_unpack() {
     fn unpack(buf: [u8; 4]) -> TestEnum {
-        decode(buf.to_vec()).unwrap()
+        TestEnum::unpack(&mut Decoder::copying(buf.to_vec())).unwrap()
     }
 
     assert_eq!(TestEnum::Field1, unpack([0, 0, 0, 1]));
@@ -76,8 +76,7 @@ fn enum_roundtrip() {
 
         let mut cursor = Decoder::copying(buffer);
         let deserialized = TestEnum::unpack(&mut cursor).unwrap();
-        let unpack_len = cursor.position();
-        assert_eq!(pack_len, unpack_len);
+        assert!(cursor.is_empty());
         assert_eq!(original, deserialized);
     }
 }
@@ -93,8 +92,7 @@ fn simple_struct_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = SimpleStruct::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 8);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
@@ -120,8 +118,7 @@ fn nested_struct_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = NestedStruct::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 12);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
@@ -139,8 +136,7 @@ fn struct_with_lifetime_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = StructWithLifetime::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 12);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
@@ -155,8 +151,7 @@ fn tuple_struct_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = TupleStruct::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 8);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
@@ -171,8 +166,7 @@ fn unit_struct_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = UnitStruct::unpack(&mut cursor).unwrap();
-    let len = cursor.position();
-    assert_eq!(len, 0);
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 

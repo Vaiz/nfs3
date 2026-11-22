@@ -1,13 +1,12 @@
 use bytes::{Buf, Bytes, BytesMut};
 
 use super::util::get_padding;
-use super::{Error, Result, Unpack};
+use super::{Error, Result};
 
 /// Reads XDR values from a complete in-memory buffer.
 ///
-/// Read values with [`Unpack::unpack`], or use [`decode`] when the buffer holds
-/// exactly one value. Malformed or truncated input returns an [`Error`], and
-/// lengths are checked before anything is allocated.
+/// Read values with [`Unpack::unpack`](super::Unpack::unpack). Malformed or truncated input returns
+/// an [`Error`], and lengths are checked before anything is allocated.
 ///
 /// Each decoder has a minimum shared length. Opaque data at least that long is
 /// returned as a reference-counted [`Bytes`] sharing the input buffer, without
@@ -29,7 +28,6 @@ use super::{Error, Result, Unpack};
 #[derive(Debug, Clone)]
 pub struct Decoder {
     buf: Bytes,
-    input_len: usize,
     /// Minimum shared length; `usize::MAX` disables sharing.
     min_shared_len: usize,
 }
@@ -40,7 +38,6 @@ impl Decoder {
     pub fn copying(buf: impl Into<Bytes>) -> Self {
         let buf = buf.into();
         Self {
-            input_len: buf.len(),
             buf,
             min_shared_len: usize::MAX,
         }
@@ -55,7 +52,6 @@ impl Decoder {
         let min_shared_len = buf.capacity().div_ceil(2);
         let buf = buf.freeze();
         Self {
-            input_len: buf.len(),
             buf,
             min_shared_len,
         }
@@ -71,12 +67,6 @@ impl Decoder {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.buf.is_empty()
-    }
-
-    /// Returns the number of bytes decoded so far.
-    #[must_use]
-    pub const fn position(&self) -> usize {
-        self.input_len - self.buf.len()
     }
 
     /// Returns the bytes that have not been decoded yet.
@@ -126,24 +116,22 @@ impl Decoder {
     }
 }
 
-/// Decodes a `T` that must occupy all of `buf`.
-///
-/// Sharing is disabled, as with [`Decoder::copying`]: all opaque data is copied.
-pub fn decode<T: Unpack>(buf: impl Into<Bytes>) -> Result<T> {
-    let mut input = Decoder::copying(buf);
-    let value = T::unpack(&mut input)?;
-    if !input.is_empty() {
-        return Err(Error::TrailingBytes(input.remaining()));
-    }
-    Ok(value)
-}
-
 #[cfg(test)]
 mod tests {
     use bytes::BufMut;
 
     use super::*;
-    use crate::xdr_codec::Opaque;
+    use crate::xdr_codec::{Opaque, Unpack};
+
+    /// Decodes a `T` that must occupy all of `buf`.
+    fn decode<T: Unpack>(buf: &'static [u8]) -> Result<T> {
+        let mut input = Decoder::copying(buf);
+        let value = T::unpack(&mut input)?;
+        if !input.is_empty() {
+            return Err(Error::TrailingBytes(input.remaining()));
+        }
+        Ok(value)
+    }
 
     fn byte_range(bytes: &[u8]) -> std::ops::Range<usize> {
         let start = bytes.as_ptr() as usize;

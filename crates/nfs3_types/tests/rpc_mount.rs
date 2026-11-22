@@ -42,8 +42,7 @@ fn rpc_call_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = call_body::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(len, unpack_len);
+    assert!(cursor.is_empty());
     assert_eq!(call.rpcvers, deserialized.rpcvers);
     assert_eq!(call.prog, deserialized.prog);
     assert_eq!(call.vers, deserialized.vers);
@@ -72,8 +71,7 @@ fn rpc_msg_serialization() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = rpc_msg::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(len, unpack_len);
+    assert!(cursor.is_empty());
     assert_eq!(msg.xid, deserialized.xid);
     match (&msg.body, &deserialized.body) {
         (msg_body::CALL(call1), msg_body::CALL(call2)) => {
@@ -135,8 +133,7 @@ fn mount3res_roundtrip() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = mountres3::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(pack_len, unpack_len);
+    assert!(cursor.is_empty());
 
     match (&success_res, &deserialized) {
         (mountres3::Ok(ok1), mountres3::Ok(ok2)) => {
@@ -154,8 +151,7 @@ fn mount3res_roundtrip() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = mountres3::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(pack_len, unpack_len);
+    assert!(cursor.is_empty());
     match (&error_res, &deserialized) {
         (mountres3::Err(err1), mountres3::Err(err2)) => {
             // Compare error codes by their discriminant values
@@ -192,8 +188,7 @@ fn opaque_auth_default() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(len, unpack_len);
+    assert!(cursor.is_empty());
     assert_eq!(auth.flavor, deserialized.flavor);
     assert_eq!(auth.body.as_ref(), deserialized.body.as_ref());
 }
@@ -211,8 +206,7 @@ fn opaque_auth_with_data() {
 
     let mut cursor = Decoder::copying(buffer);
     let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
-    let unpack_len = cursor.position();
-    assert_eq!(len, unpack_len);
+    assert!(cursor.is_empty());
     assert_eq!(auth.flavor, deserialized.flavor);
     assert_eq!(auth.body.as_ref(), deserialized.body.as_ref());
 }
@@ -239,7 +233,7 @@ fn mount_error_codes() {
 
         let mut cursor = Decoder::copying(buffer);
         let deserialized = mountres3::unpack(&mut cursor).unwrap();
-        let _ = cursor.position();
+        assert!(cursor.is_empty());
         match deserialized {
             mountres3::Err(deserialized_code) => {
                 assert_eq!(error_code as u32, deserialized_code as u32);
@@ -293,7 +287,7 @@ fn auth_flavors() {
 
         let mut cursor = Decoder::copying(buffer);
         let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
-        let _ = cursor.position();
+        assert!(cursor.is_empty());
         assert_eq!(auth.flavor, deserialized.flavor);
     }
 }

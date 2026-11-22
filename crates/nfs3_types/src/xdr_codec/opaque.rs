@@ -49,16 +49,6 @@ impl<'a> Opaque<'a> {
         Opaque::from_bytes(self.into_bytes())
     }
 
-    /// Converts into a `Vec<u8>`, without copying only if the data is `Bytes`
-    /// holding the sole reference to its allocation.
-    #[must_use]
-    pub fn into_vec(self) -> Vec<u8> {
-        match self.0 {
-            Repr::Borrowed(data) => data.to_vec(),
-            Repr::Shared(data) => data.into(),
-        }
-    }
-
     /// Converts into [`Bytes`], copying only if the data is borrowed.
     #[must_use]
     pub fn into_bytes(self) -> Bytes {

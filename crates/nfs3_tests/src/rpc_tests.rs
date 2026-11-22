@@ -119,9 +119,8 @@ impl RpcTestContext {
         }
 
         let final_value = T::unpack(&mut input)?;
-        let pos = input.position();
-        if pos != total_len as usize {
-            bail!("Decoder position does not match total length: {pos} != {total_len}");
+        if !input.is_empty() {
+            bail!("{} trailing bytes after the reply", input.remaining());
         }
         Ok((resp_msg, Some(final_value)))
     }
