@@ -144,7 +144,7 @@ where
     /// Reads one RPC record (all fragments) into a single buffer.
     async fn recv_record(io: &mut IO) -> io::Result<Decoder> {
         let mut record = RecordBuf::new(usize::MAX);
-        loop {
+        while !record.is_complete() {
             let mut marker = [0u8; 4];
             io.async_read_exact(&mut marker).await?;
             record.start_fragment(marker)?;
@@ -161,10 +161,8 @@ where
                     ));
                 }
             }
-            if record.is_complete() {
-                return Ok(record.into_decoder());
-            }
         }
+        Ok(record.into_decoder())
     }
 }
 

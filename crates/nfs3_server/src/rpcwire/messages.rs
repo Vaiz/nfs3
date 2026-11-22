@@ -42,7 +42,7 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
         }
 
         let mut record = RecordBuf::new(self.max_rpc_record_size);
-        loop {
+        while !record.is_complete() {
             record.start_fragment(self.read_marker().await?)?;
 
             let (buf, remaining) = record.buf_mut();
@@ -59,10 +59,8 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
                     ));
                 }
             }
-            if record.is_complete() {
-                return Ok(Some(record.into_decoder()));
-            }
         }
+        Ok(Some(record.into_decoder()))
     }
 
     async fn fill_read_ahead(&mut self) -> io::Result<usize> {
