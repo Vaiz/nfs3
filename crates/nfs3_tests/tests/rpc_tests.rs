@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use nfs3_client::nfs3_types;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::tcp::{Builder, NFSTcp};
@@ -83,7 +83,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
     let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
     let mut out = Encoder::new();
     call.pack(&mut out)?;
-    let payload = out.finish().into_bytes();
+    let payload = out.finish();
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let listener = Builder::new()
@@ -136,7 +136,8 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
     fn null_call_frame(xid: u32) -> anyhow::Result<Bytes> {
         let mut out = Encoder::new();
         nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL).pack(&mut out)?;
-        Ok(out.finish_record()?.into_bytes())
+        let mut record = out.finish_record()?;
+        Ok(record.copy_to_bytes(record.remaining()))
     }
 
     // The one-byte capacity forces the server to consume part of any marker

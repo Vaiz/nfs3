@@ -1,7 +1,7 @@
 //! RPC client implementation
 
 use std::fmt::Debug;
-use std::io::{self, IoSlice};
+use std::io;
 
 use nfs3_types::rpc::{
     RPC_VERSION_2, RecordBuf, accept_stat_data, call_body, msg_body, opaque_auth, reply_body,
@@ -105,9 +105,8 @@ where
         if out.len() != total_len {
             return Err(RpcError::WrongLength);
         }
-        let call = out.finish_record()?;
-        io.async_write_all_vectored(&mut call.chunks().map(IoSlice::new))
-            .await?;
+        let mut call = out.finish_record()?;
+        io.async_write_all_buf(&mut call).await?;
         Ok(())
     }
 
@@ -215,7 +214,7 @@ mod tests {
         let mut out = Encoder::new();
         msg.pack(&mut out).unwrap();
         result.pack(&mut out).unwrap();
-        let record = out.finish().into_bytes();
+        let record = out.finish();
 
         let mut wire = BytesMut::new();
         let mut rest = &*record;

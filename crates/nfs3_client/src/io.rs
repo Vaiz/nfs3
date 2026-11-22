@@ -2,7 +2,10 @@
 
 use std::io::{self, IoSlice};
 
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
+
+/// Slices passed to one vectored write by [`AsyncWrite::async_write_all_buf`].
+const MAX_WRITE_SLICES: usize = 16;
 
 /// Trait to read bytes asynchronously.
 pub trait AsyncRead: Send {
@@ -80,19 +83,20 @@ pub trait AsyncWrite: Send {
         self.async_write(buf)
     }
 
-    /// Write all bytes from several buffers, in order.
-    fn async_write_all_vectored(
+    /// Write all bytes of `buf`, with vectored writes, advancing it.
+    fn async_write_all_buf<B: Buf + Send>(
         &mut self,
-        mut bufs: &mut [IoSlice<'_>],
+        buf: &mut B,
     ) -> impl Future<Output = io::Result<()>> + Send {
         async move {
-            IoSlice::advance_slices(&mut bufs, 0);
-            while !bufs.is_empty() {
-                let n = self.async_write_vectored(bufs).await?;
+            while buf.has_remaining() {
+                let mut slices = [IoSlice::new(&[]); MAX_WRITE_SLICES];
+                let count = buf.chunks_vectored(&mut slices);
+                let n = self.async_write_vectored(&slices[..count]).await?;
                 if n == 0 {
                     return Err(io::ErrorKind::WriteZero.into());
                 }
-                IoSlice::advance_slices(&mut bufs, n);
+                buf.advance(n);
             }
             Ok(())
         }

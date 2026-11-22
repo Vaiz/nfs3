@@ -1,4 +1,3 @@
-use std::io::{self, IoSlice};
 use std::time::Instant;
 
 use call::{RpcCall, RpcCallOutcome};
@@ -6,7 +5,7 @@ use messages::RpcRecordReader;
 use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncRead;
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -129,26 +128,6 @@ fn lock_transaction(
     }
 }
 
-/// Writes an encoded reply record (marker included) with vectored writes.
-pub(crate) async fn write_reply<IO: AsyncWrite + Unpin>(
-    socket: &mut IO,
-    reply: &Encoded,
-) -> io::Result<()> {
-    let mut slices = match reply.chunks() {
-        [head, [], []] => return socket.write_all(head).await,
-        chunks => chunks.map(IoSlice::new),
-    };
-    let mut slices = &mut slices[..];
-    while !slices.is_empty() {
-        let written = socket.write_vectored(slices).await?;
-        if written == 0 {
-            return Err(io::ErrorKind::WriteZero.into());
-        }
-        IoSlice::advance_slices(&mut slices, written);
-    }
-    Ok(())
-}
-
 /// Reads RPC records and dispatches each complete call in its own task.
 pub(crate) async fn read_and_dispatch_loop<R, T>(
     mut record_reader: RpcRecordReader<R>,
@@ -180,99 +159,4 @@ where
         });
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::{self, IoSlice};
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    use bytes::Bytes;
-    use future_assert::FutureTestExt;
-    use nfs3_types::xdr_codec::{Encoded, Encoder, Opaque, Pack};
-    use tokio::io::AsyncWrite;
-
-    use super::write_reply;
-
-    /// Accepts at most `limit` bytes per write, across slices.
-    struct Trickle {
-        out: Vec<u8>,
-        limit: usize,
-    }
-
-    impl AsyncWrite for Trickle {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            self.poll_write_vectored(cx, &[IoSlice::new(buf)])
-        }
-
-        fn poll_write_vectored(
-            mut self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            bufs: &[IoSlice<'_>],
-        ) -> Poll<io::Result<usize>> {
-            let mut written = 0;
-            for buf in bufs {
-                let n = buf.len().min(self.limit - written);
-                self.out.extend_from_slice(&buf[..n]);
-                written += n;
-            }
-            Poll::Ready(Ok(written))
-        }
-
-        fn is_write_vectored(&self) -> bool {
-            true
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    /// A reply with a shared payload chunk followed by a non-empty tail.
-    fn chunked_reply() -> Encoded {
-        let payload: Vec<u8> = (0..=255u8).cycle().take(1025).collect();
-        let mut out = Encoder::new();
-        7u32.pack(&mut out).expect("pack");
-        Opaque::from_bytes(Bytes::from(payload))
-            .pack(&mut out)
-            .expect("pack");
-        8u32.pack(&mut out).expect("pack");
-        let reply = out.finish_record().expect("record fits");
-        assert!(reply.chunks().iter().all(|chunk| !chunk.is_empty()));
-        reply
-    }
-
-    #[test]
-    fn reply_chunks_survive_partial_writes() {
-        let reply = chunked_reply();
-        let mut socket = Trickle {
-            out: Vec::new(),
-            limit: 3,
-        };
-        write_reply(&mut socket, &reply)
-            .unwrap_ready()
-            .expect("all chunks written");
-        assert_eq!(socket.out, reply.chunks().concat());
-    }
-
-    #[test]
-    fn zero_progress_is_write_zero() {
-        let mut socket = Trickle {
-            out: Vec::new(),
-            limit: 0,
-        };
-        let err = write_reply(&mut socket, &chunked_reply())
-            .unwrap_ready()
-            .expect_err("no progress");
-        assert_eq!(err.kind(), io::ErrorKind::WriteZero);
-    }
 }

@@ -5,13 +5,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::context::RPCContext;
 use crate::rpcwire::messages::RpcRecordReader;
-use crate::rpcwire::{read_and_dispatch_loop, write_reply};
+use crate::rpcwire::read_and_dispatch_loop;
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::handle::FileHandleConverter;
@@ -76,8 +77,9 @@ where
         result = read_and_dispatch_loop(reader, context, replies) => result,
         result = async {
             while let Some(reply) = pending_replies.recv().await {
-                let Ok(reply) = reply else { anyhow::bail!("Error handling RPC message") };
-                write_reply(&mut writer, &reply).await?;
+                let Ok(mut reply) = reply else { anyhow::bail!("Error handling RPC message") };
+                // Vectored, so a shared READ payload is not copied.
+                writer.write_all_buf(&mut reply).await?;
             }
             Ok(())
         } => result,

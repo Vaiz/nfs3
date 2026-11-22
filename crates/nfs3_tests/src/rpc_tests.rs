@@ -83,8 +83,8 @@ impl RpcTestContext {
             "Encoded length does not match total length: {} != {total_len}",
             out.len()
         );
-        let buf = out.finish_record()?.into_bytes();
-        self.client_stream.write_all(&buf).await?;
+        let mut record = out.finish_record()?;
+        self.client_stream.write_all_buf(&mut record).await?;
         Ok(())
     }
 
