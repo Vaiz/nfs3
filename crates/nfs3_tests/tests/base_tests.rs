@@ -7,6 +7,7 @@ use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_server::tcp::Builder;
 use nfs3_server::vfs::adapters::ReadOnlyAdapter;
 use nfs3_server::vfs::{FileHandleU64, NfsReadFileSystem, ReadDirPlusIterator};
 use nfs3_tests::{JustClientExt, Server, TestContext};
@@ -149,7 +150,7 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
 
 struct CustomReadLimit {
     fs: MemFs,
-    rtmax: u32,
+    rtmax: Result<u32, nfsstat3>,
     fsinfo_calls: Arc<AtomicUsize>,
 }
 
@@ -199,11 +200,29 @@ impl NfsReadFileSystem for CustomReadLimit {
         }
         self.fsinfo_calls.fetch_add(1, Ordering::Relaxed);
         let mut info = self.fs.fsinfo(root_fileid).await?;
-        info.rtmax = self.rtmax;
-        info.rtpref = self.rtmax;
+        info.rtmax = self.rtmax?;
+        info.rtpref = info.rtmax;
         info.rtmult = 1;
         Ok(info)
     }
+}
+
+#[tokio::test]
+async fn bind_propagates_root_fsinfo_failure() -> anyhow::Result<()> {
+    let status = nfsstat3::NFS3ERR_IO;
+    let fs = CustomReadLimit {
+        fs: MemFs::new(MemFsConfig::default()).expect("initialize fixture filesystem"),
+        rtmax: Err(status),
+        fsinfo_calls: Arc::default(),
+    };
+    let error = Builder::new()
+        .read_only_filesystem(fs)
+        .bind("127.0.0.1:0".parse()?)
+        .await
+        .err()
+        .expect("binding must fail when root FSINFO fails");
+    assert_eq!(error.to_string(), format!("root FSINFO failed: {status}"));
+    Ok(())
 }
 
 #[tokio::test]
@@ -222,7 +241,7 @@ async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
     let fsinfo_calls = Arc::new(AtomicUsize::new(0));
     let fs = ReadOnlyAdapter::new(CustomReadLimit {
         fs: MemFs::new(config).expect("initialize fixture filesystem"),
-        rtmax,
+        rtmax: Ok(rtmax),
         fsinfo_calls: Arc::clone(&fsinfo_calls),
     });
     let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
