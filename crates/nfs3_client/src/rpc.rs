@@ -170,7 +170,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bytes::{Bytes, BytesMut};
+    use bytes::{Buf, Bytes, BytesMut};
     use nfs3_types::rpc::{
         accept_stat_data, accepted_reply, fragment_header, msg_body, opaque_auth, reply_body,
         rpc_msg,
@@ -211,10 +211,13 @@ mod tests {
                 reply_data: accept_stat_data::SUCCESS,
             })),
         };
-        let mut out = Encoder::new();
+        let mut out = Encoder::with_size_hint(0);
         msg.pack(&mut out).unwrap();
         result.pack(&mut out).unwrap();
-        let record = out.finish();
+        let mut record = out.finish_record().unwrap();
+        // Drop the single-fragment marker; each fragment gets its own below.
+        record.advance(4);
+        let record = record.copy_to_bytes(record.remaining());
 
         let mut wire = BytesMut::new();
         let mut rest = &*record;

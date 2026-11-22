@@ -30,6 +30,15 @@ fn nfs3_call(xid: u32, proc: NFS_PROGRAM) -> rpc_msg<'static, 'static> {
     }
 }
 
+/// Encodes a NULL call as a single-fragment RPC record.
+fn null_call_record(xid: u32) -> anyhow::Result<Bytes> {
+    let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
+    let mut out = Encoder::with_size_hint(call.packed_size());
+    call.pack(&mut out)?;
+    let mut record = out.finish_record()?;
+    Ok(record.copy_to_bytes(record.remaining()))
+}
+
 fn check_reply_header(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<()> {
     if msg.xid != xid {
         bail!("XID mismatch: expected {xid}, got {}", msg.xid);
@@ -80,10 +89,7 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
 
 #[tokio::test]
 async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
-    let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
-    let mut out = Encoder::new();
-    call.pack(&mut out)?;
-    let payload = out.finish();
+    let payload = null_call_record(1)?.slice(4..);
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let listener = Builder::new()
@@ -108,7 +114,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         let mut reply = vec![0; reply_header.fragment_length() as usize];
         stream.read_exact(&mut reply).await?;
         let reply = rpc_msg::unpack(&mut Decoder::copying(reply))?;
-        check_reply_header(call.xid, &reply)?;
+        check_reply_header(1, &reply)?;
 
         // The reader should close the connection as soon as the marker declares
         // a record over the limit, without waiting for the payload.
@@ -133,21 +139,14 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
-    fn null_call_frame(xid: u32) -> anyhow::Result<Bytes> {
-        let mut out = Encoder::new();
-        nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL).pack(&mut out)?;
-        let mut record = out.finish_record()?;
-        Ok(record.copy_to_bytes(record.remaining()))
-    }
-
     // The one-byte capacity forces the server to consume part of any marker
     // prefix written below before the client's write can complete.
     let (server, mut client) = tokio::io::duplex(1);
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let server = tokio::spawn(Server::new(server, fs)?.run());
     timeout(Duration::from_secs(5), async {
-        client.write_all(&null_call_frame(1)?).await?;
-        let second = null_call_frame(2)?;
+        client.write_all(&null_call_record(1)?).await?;
+        let second = null_call_record(2)?;
         client.write_all(&second[..3]).await?;
 
         for xid in [1, 2] {
@@ -164,7 +163,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
             }
         }
 
-        client.write_all(&null_call_frame(3)?).await?;
+        client.write_all(&null_call_record(3)?).await?;
         // The writer has started the reply but cannot finish it while we stop
         // reading after one byte. Half-close with an incomplete next marker.
         client.read_u8().await?;

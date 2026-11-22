@@ -24,19 +24,22 @@ const MARKER_LEN: usize = 4;
 
 /// Writes XDR values.
 ///
-/// Write values with [`Pack::pack`], then call [`finish`](Self::finish), or
-/// [`finish_record`](Self::finish_record) for an RPC record.
+/// Write values with [`Pack::pack`], then call
+/// [`finish_record`](Self::finish_record).
 ///
 /// Everything is copied, except the first [`Opaque`](super::Opaque) of at least
 /// 1 KiB that holds [`Bytes`], such as READ or WRITE data: the [`Encoded`]
 /// record keeps a reference-counted clone of it instead.
 ///
 /// ```
+/// use bytes::Buf;
 /// use nfs3_types::xdr_codec::{Encoder, Pack};
 ///
-/// let mut out = Encoder::new();
+/// let mut out = Encoder::with_size_hint(4);
 /// 7u32.pack(&mut out)?;
-/// assert_eq!(out.finish(), &[0, 0, 0, 7][..]);
+/// let mut record = out.finish_record()?;
+/// let bytes = record.copy_to_bytes(record.remaining());
+/// assert_eq!(bytes, &[0x80, 0, 0, 4, 0, 0, 0, 7][..]);
 /// # Ok::<(), nfs3_types::xdr_codec::Error>(())
 /// ```
 #[derive(Debug)]
@@ -48,19 +51,7 @@ pub struct Encoder {
     payload: Option<(Bytes, BytesMut)>,
 }
 
-impl Default for Encoder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Encoder {
-    /// Creates an empty encoder.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::with_head_capacity(0)
-    }
-
     /// Creates an encoder for a value of about `size_hint` bytes.
     ///
     /// At most 1 KiB is reserved up front.
@@ -131,7 +122,7 @@ impl Encoder {
     ///
     /// A shared payload is copied into it.
     #[must_use]
-    pub fn finish(mut self) -> Bytes {
+    pub(crate) fn finish(mut self) -> Bytes {
         self.head.advance(MARKER_LEN);
         self.into_encoded().into_bytes()
     }
@@ -233,7 +224,7 @@ mod tests {
     #[test]
     fn trailing_payload_is_padded() {
         let payload = Bytes::from(vec![0xCD; MIN_SHARED_CHUNK + 1]);
-        let mut out = Encoder::new();
+        let mut out = Encoder::with_size_hint(0);
         Opaque::from_bytes(payload).pack(&mut out).unwrap();
         let encoded = plain(out);
         let [head, _, tail] = encoded.chunks();
@@ -246,7 +237,7 @@ mod tests {
 
     #[test]
     fn small_shared_payloads_are_copied() {
-        let mut out = Encoder::new();
+        let mut out = Encoder::with_size_hint(0);
         Opaque::from_bytes(Bytes::from_static(b"abc"))
             .pack(&mut out)
             .unwrap();
