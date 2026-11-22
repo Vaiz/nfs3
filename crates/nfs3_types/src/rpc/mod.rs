@@ -7,11 +7,13 @@
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
 
-mod record;
+mod record_buf;
+mod record_marker;
 
 use nfs3_macros::XdrCodec;
-pub use record::{RecordBuf, fragment_header};
 
+pub use self::record_buf::RecordBuf;
+pub use self::record_marker::fragment_header;
 use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
