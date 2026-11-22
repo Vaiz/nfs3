@@ -188,18 +188,24 @@ mod tests {
     }
 
     impl AsyncRead for Mock {
-        async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        fn async_read(
+            &mut self,
+            buf: &mut [u8],
+        ) -> impl Future<Output = std::io::Result<usize>> + Send {
             let n = buf.len().min(self.input.len()).min(7);
             buf[..n].copy_from_slice(&self.input.split_to(n));
-            Ok(n)
+            std::future::ready(Ok(n))
         }
     }
 
     impl AsyncWrite for Mock {
-        async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        fn async_write(
+            &mut self,
+            buf: &[u8],
+        ) -> impl Future<Output = std::io::Result<usize>> + Send {
             let n = buf.len().min(7);
             self.output.extend_from_slice(&buf[..n]);
-            Ok(n)
+            std::future::ready(Ok(n))
         }
     }
 
