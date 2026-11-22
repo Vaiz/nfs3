@@ -252,7 +252,9 @@ impl opaque_auth<'static> {
     /// Panics if the `auth_unix` cannot be packed.
     #[must_use]
     pub fn auth_unix(auth: &auth_unix) -> Self {
-        let body = crate::xdr_codec::encode(auth).expect("failed to pack auth_unix");
+        let mut out = Encoder::new(auth.packed_size());
+        auth.pack(&mut out).expect("failed to pack auth_unix");
+        let body = out.into_bytes();
         Self {
             flavor: auth_flavor::AUTH_UNIX,
             body: Opaque::from_bytes(body),

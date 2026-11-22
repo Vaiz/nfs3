@@ -3,8 +3,8 @@ mod encoded;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 pub use encoded::Encoded;
 
+use super::Result;
 use super::util::{add_padding, zero_padding};
-use super::{Pack, Result};
 use crate::rpc::fragment_header;
 
 /// Shared payloads shorter than this are copied into the encoder head.
@@ -24,7 +24,7 @@ const MARKER_LEN: usize = 4;
 
 /// Writes XDR values.
 ///
-/// Write values with [`Pack::pack`], then call
+/// Write values with [`Pack::pack`](super::Pack::pack), then call
 /// [`finish_record`](Self::finish_record).
 ///
 /// Everything is copied, except the first [`Opaque`](super::Opaque) of at least
@@ -120,11 +120,11 @@ impl Encoder {
         }
     }
 
-    /// Completes the encoding of a plain XDR value into one buffer.
+    /// Returns the encoded bytes, without a record marker, as one buffer.
     ///
     /// A shared payload is copied into it.
     #[must_use]
-    pub(crate) fn finish(mut self) -> Bytes {
+    pub(crate) fn into_bytes(mut self) -> Bytes {
         self.head.advance(MARKER_LEN);
         self.into_encoded().into_bytes()
     }
@@ -149,19 +149,12 @@ impl Encoder {
     }
 }
 
-/// Encodes `value` into one contiguous buffer.
-pub(crate) fn encode<T: Pack + ?Sized>(value: &T) -> Result<Bytes> {
-    let mut out = Encoder::with_head_capacity(value.packed_size());
-    value.pack(&mut out)?;
-    Ok(out.finish())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xdr_codec::{Decoder, Opaque, Unpack};
+    use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack};
 
-    /// Like [`Encoder::finish`], but keeps the chunks.
+    /// Like [`Encoder::into_bytes`], but keeps the chunks.
     fn plain(mut out: Encoder) -> Encoded {
         out.head.advance(MARKER_LEN);
         out.into_encoded()

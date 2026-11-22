@@ -1,6 +1,7 @@
 // Basic XDR codec tests for fundamental data types and structures
 
-use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, encode};
+use super::encode;
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]

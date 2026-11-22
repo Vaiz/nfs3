@@ -1,6 +1,7 @@
 // Tests for XDR collection types (Vec, List, BoundedList)
 
-use crate::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack, encode};
+use super::encode;
+use crate::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack};
 
 #[test]
 fn vec_serialization() {

@@ -1,8 +1,9 @@
 // Tests for RPC and Mount protocol types
 
+use super::encode;
 use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
 use crate::rpc::{RPC_VERSION_2, auth_flavor, call_body, msg_body, opaque_auth, rpc_msg};
-use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, encode};
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack};
 
 #[test]
 fn rpc_call_len() {

@@ -1,7 +1,8 @@
 // Tests for NFS3-specific types and serialization
 
+use super::encode;
 use crate::nfs3::{Nfs3Option, Nfs3Result, dirlist3, entry3, filename3, nfsstat3};
-use crate::xdr_codec::{Decoder, List, Pack, Unpack, Void, encode};
+use crate::xdr_codec::{Decoder, List, Pack, Unpack, Void};
 
 #[test]
 fn nfs3_result_success_void() {

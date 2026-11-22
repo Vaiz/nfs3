@@ -1,6 +1,7 @@
 // Tests for XDR utility functions and edge cases
 
-use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, Void, encode};
+use super::encode;
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, Void};
 
 #[test]
 fn void_serialization() {
