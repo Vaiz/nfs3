@@ -197,6 +197,24 @@ fn opaque_auth_default() {
 }
 
 #[test]
+fn auth_sys_constructor_limits() {
+    let name = [b'm'; 256];
+    let valid = auth_unix::new(1, &name[..255], 2, 3, vec![42; 16]).unwrap();
+    let decoded = auth_unix::unpack(&mut Decoder::copying(encode(&valid).unwrap())).unwrap();
+    assert_eq!((decoded.stamp, decoded.uid, decoded.gid), (1, 2, 3));
+    assert_eq!(decoded.machinename.as_ref(), &name[..255]);
+    assert_eq!(decoded.gids.as_ref(), &[42; 16]);
+    assert!(matches!(
+        auth_unix::new(1, &name, 2, 3, vec![]),
+        Err(Error::InvalidLength(256))
+    ));
+    assert!(matches!(
+        auth_unix::new(1, b"host", 2, 3, vec![42; 17]),
+        Err(Error::InvalidLength(17))
+    ));
+}
+
+#[test]
 fn auth_sys_decode_limits() {
     for (name_len, gids_len, expected_error) in [
         (255, 16, None),

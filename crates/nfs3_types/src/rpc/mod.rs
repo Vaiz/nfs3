@@ -145,6 +145,28 @@ pub struct auth_unix {
     pub gids: BoundedVec<u32, MAX_GIDS>,
 }
 
+impl auth_unix {
+    /// Creates `AUTH_SYS` parameters from the machine name and Unix IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidLength`] if `machinename` is longer than 255
+    /// bytes or `gids` contains more than 16 supplemental group IDs.
+    pub fn new(stamp: u32, machinename: &[u8], uid: u32, gid: u32, gids: Vec<u32>) -> Result<Self> {
+        if machinename.len() > MAX_MACHINENAME_LEN {
+            return Err(Error::InvalidLength(machinename.len()));
+        }
+        let gids = gids.try_into()?;
+        Ok(Self {
+            stamp,
+            machinename: Opaque::owned(machinename.to_vec()),
+            uid,
+            gid,
+            gids,
+        })
+    }
+}
+
 impl Pack for auth_unix {
     fn packed_size(&self) -> usize {
         self.stamp.packed_size()

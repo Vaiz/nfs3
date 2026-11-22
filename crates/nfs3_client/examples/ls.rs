@@ -6,7 +6,6 @@ use nfs3_client::Nfs3ConnectionBuilder;
 use nfs3_client::nfs3_types::nfs3::{self, Nfs3Option};
 use nfs3_client::nfs3_types::portmap::PMAP_PORT;
 use nfs3_client::nfs3_types::rpc::{auth_unix, opaque_auth};
-use nfs3_client::nfs3_types::xdr_codec::{BoundedVec, Opaque};
 use nfs3_client::tokio::TokioConnector;
 
 #[tokio::main(flavor = "current_thread")]
@@ -25,13 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(PMAP_PORT);
 
     // This auth values are the same that Windows NFS client uses
-    let auth_unix = auth_unix {
-        stamp: 0xaaaa_aaaa,
-        machinename: Opaque::borrowed(b"unknown"),
-        uid: 0xffff_fffe,
-        gid: 0xffff_fffe,
-        gids: BoundedVec::default(),
-    };
+    let auth_unix = auth_unix::new(0xaaaa_aaaa, b"unknown", 0xffff_fffe, 0xffff_fffe, vec![])?;
     let credential = opaque_auth::auth_unix(&auth_unix);
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
