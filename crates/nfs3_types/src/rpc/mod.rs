@@ -14,6 +14,7 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
+use crate::xdr_codec::vec::BoundedVec;
 use crate::xdr_codec::{Decoder, Encoder, Error, Opaque, Pack, Result, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
@@ -172,14 +173,7 @@ impl Unpack for auth_unix {
         let machinename = Opaque::from_bytes(input.read_opaque(name_len)?);
         let uid = u32::unpack(input)?;
         let gid = u32::unpack(input)?;
-        let gids_len = u32::unpack(input)? as usize;
-        if gids_len > MAX_GIDS || gids_len > input.remaining() / 4 {
-            return Err(Error::InvalidLength(gids_len));
-        }
-        let mut gids = Vec::with_capacity(gids_len);
-        for _ in 0..gids_len {
-            gids.push(u32::unpack(input)?);
-        }
+        let gids = BoundedVec::<u32, MAX_GIDS>::unpack(input)?.into_inner();
         Ok(Self {
             stamp,
             machinename,

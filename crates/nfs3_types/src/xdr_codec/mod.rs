@@ -12,6 +12,7 @@ pub(crate) mod opaque;
 pub(crate) mod primitives;
 pub(crate) mod traits;
 pub(crate) mod util;
+pub(crate) mod vec;
 pub(crate) mod void;
 
 pub use nfs3_macros::XdrCodec;

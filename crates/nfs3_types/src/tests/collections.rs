@@ -1,7 +1,8 @@
 // Tests for XDR collection types (Vec, List, BoundedList)
 
 use super::encode;
-use crate::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack};
+use crate::xdr_codec::vec::BoundedVec;
+use crate::xdr_codec::{BoundedList, Decoder, Error, List, Pack, Unpack};
 
 #[test]
 fn vec_serialization() {
@@ -22,6 +23,26 @@ fn vec_serialization() {
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
     assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
+}
+
+#[test]
+fn bounded_vec_checks_count_before_reading_items() {
+    let bytes: &'static [u8] = &[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 42];
+    let mut input = Decoder::copying(bytes);
+    assert_eq!(
+        BoundedVec::<u64, 1>::unpack(&mut input)
+            .unwrap()
+            .into_inner(),
+        [42]
+    );
+    assert!(input.is_empty());
+
+    let mut input = Decoder::copying(bytes);
+    assert!(matches!(
+        BoundedVec::<u64, 0>::unpack(&mut input),
+        Err(Error::InvalidLength(1))
+    ));
+    assert_eq!(input.remaining(), 8);
 }
 
 #[test]
