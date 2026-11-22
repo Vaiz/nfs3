@@ -166,11 +166,8 @@ where
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
     let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
-    match context
-        .vfs
-        .read(&id, read3args.offset, read3args.count)
-        .await
-    {
+    let count = read3args.count.min(context.read_limit);
+    match context.vfs.read(&id, read3args.offset, count).await {
         Ok((bytes, eof)) => {
             debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());
             READ3res::Ok(READ3resok {

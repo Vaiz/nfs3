@@ -22,13 +22,13 @@ pub struct TestContext<IO> {
 
 impl TestContext<TokioIo<DuplexStream>> {
     #[must_use]
-    pub fn setup() -> Self {
-        Self::setup_with_config(Self::config(), false, tracing::Level::DEBUG)
+    pub async fn setup() -> Self {
+        Self::setup_with_config(Self::config(), false, tracing::Level::DEBUG).await
     }
 
     #[must_use]
-    pub fn setup_ro() -> Self {
-        Self::setup_with_config(Self::config(), true, tracing::Level::DEBUG)
+    pub async fn setup_ro() -> Self {
+        Self::setup_with_config(Self::config(), true, tracing::Level::DEBUG).await
     }
 
     fn config() -> MemFsConfig {
@@ -48,7 +48,7 @@ impl TestContext<TokioIo<DuplexStream>> {
     ///
     /// Panics if filesystem or server setup fails.
     #[must_use]
-    pub fn setup_with_config(
+    pub async fn setup_with_config(
         fs_config: MemFsConfig,
         readonly: bool,
         log_level: tracing::Level,
@@ -59,12 +59,16 @@ impl TestContext<TokioIo<DuplexStream>> {
         let memfs = MemFs::new(fs_config).expect("initialize the test filesystem");
         let (root_dir, server_handle) = if readonly {
             let memfs = ReadOnlyAdapter::new(memfs);
-            let server = Server::new(server, memfs).expect("initialize the read-only test server");
+            let server = Server::new(server, memfs)
+                .await
+                .expect("initialize the read-only test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)
         } else {
-            let server = Server::new(server, memfs).expect("initialize the read-write test server");
+            let server = Server::new(server, memfs)
+                .await
+                .expect("initialize the read-write test server");
             let root_dir = server.root_dir();
             let server_handle = tokio::task::spawn(server.run());
             (root_dir, server_handle)

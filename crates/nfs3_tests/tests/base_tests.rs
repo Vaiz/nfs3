@@ -1,10 +1,22 @@
+#[path = "base_tests/custom_read_limit.rs"]
+mod custom_read_limit;
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use custom_read_limit::CustomReadLimit;
+use nfs3_client::Nfs3Client;
 use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
-use nfs3_tests::{JustClientExt, TestContext};
+use nfs3_client::tokio::TokioIo;
+use nfs3_server::memfs::{MemFs, MemFsConfig};
+use nfs3_server::tcp::Builder;
+use nfs3_server::vfs::adapters::ReadOnlyAdapter;
+use nfs3_tests::{JustClientExt, Server, TestContext};
 
 #[tokio::test]
 async fn lookup_root() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     client.null().await?;
@@ -26,7 +38,7 @@ async fn lookup_root() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_getattr() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let getattr = client
@@ -42,7 +54,7 @@ async fn test_getattr() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_getattr_bad_handle() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let invalid_handle = nfs_fh3::default();
 
     let getattr = client
@@ -62,7 +74,7 @@ async fn test_getattr_bad_handle() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_setattr() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let object = client.just_lookup(&root, "a.txt").await.unwrap();
@@ -81,7 +93,7 @@ async fn test_setattr() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_access() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let access = client
@@ -98,7 +110,7 @@ async fn test_access() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readlink() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readlink = client
@@ -118,7 +130,7 @@ async fn test_readlink() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let read = client
@@ -139,8 +151,108 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
 }
 
 #[tokio::test]
+async fn bind_propagates_root_fsinfo_failure() -> anyhow::Result<()> {
+    let status = nfsstat3::NFS3ERR_IO;
+    let fs = CustomReadLimit {
+        fs: MemFs::new(MemFsConfig::default()).expect("initialize fixture filesystem"),
+        rtmax: Err(status),
+        fsinfo_calls: Arc::default(),
+    };
+    let error = Builder::new()
+        .read_only_filesystem(fs)
+        .bind("127.0.0.1:0".parse()?)
+        .await
+        .err()
+        .expect("binding must fail when root FSINFO fails");
+    assert_eq!(error.to_string(), format!("root FSINFO failed: {status}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_count_respects_root_fsinfo_limits() -> anyhow::Result<()> {
+    for rtmax in [128, 1024 * 1024 + 1] {
+        check_custom_read_limit(rtmax).await?;
+    }
+    Ok(())
+}
+
+async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
+    let mut contents = vec![b'a'; rtmax as usize];
+    contents.push(b'z');
+    let mut config = MemFsConfig::default();
+    config.add_file("/large.txt", contents);
+    let fsinfo_calls = Arc::new(AtomicUsize::new(0));
+    let fs = ReadOnlyAdapter::new(CustomReadLimit {
+        fs: MemFs::new(config).expect("initialize fixture filesystem"),
+        rtmax: Ok(rtmax),
+        fsinfo_calls: Arc::clone(&fsinfo_calls),
+    });
+    let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
+    let server = Server::new(server_io, fs).await?;
+    assert_eq!(
+        fsinfo_calls.load(Ordering::Relaxed),
+        1,
+        "FSINFO runs at startup"
+    );
+    let root = server.root_dir();
+    let server_task = tokio::spawn(server.run());
+    let mut client = Nfs3Client::new(TokioIo::new(client_io));
+
+    let info = client
+        .fsinfo(&FSINFO3args {
+            fsroot: root.clone(),
+        })
+        .await?
+        .unwrap();
+    assert_eq!((info.rtmax, info.rtpref, info.rtmult), (rtmax, rtmax, 1));
+
+    let file = client
+        .lookup(&LOOKUP3args {
+            what: diropargs3 {
+                dir: root,
+                name: b"large.txt".as_slice().into(),
+            },
+        })
+        .await?
+        .unwrap()
+        .object;
+    let first = client
+        .read(&READ3args {
+            file: file.clone(),
+            offset: 0,
+            count: rtmax + 1,
+        })
+        .await?
+        .unwrap();
+    assert_eq!(first.count, rtmax);
+    assert_eq!(first.data.len(), rtmax as usize);
+    assert!(!first.eof);
+    assert_eq!(first.file_attributes.unwrap().size, u64::from(rtmax) + 1);
+
+    let last = client
+        .read(&READ3args {
+            file,
+            offset: u64::from(first.count),
+            count: rtmax,
+        })
+        .await?
+        .unwrap();
+    assert_eq!(last.count, 1);
+    assert_eq!(last.data.as_ref(), b"z");
+    assert!(last.eof);
+    assert_eq!(
+        fsinfo_calls.load(Ordering::Relaxed),
+        2,
+        "only the startup lookup and the explicit FSINFO call"
+    );
+
+    drop(client);
+    server_task.await?
+}
+
+#[tokio::test]
 async fn test_read_file() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let LOOKUP3resok {
@@ -179,7 +291,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
     const COUNT: usize = 1024;
     let count = u32::try_from(COUNT)?;
 
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let create = client
@@ -227,7 +339,7 @@ async fn test_write() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_create_unchecked() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let create = client
@@ -251,7 +363,7 @@ async fn test_create_unchecked() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_create_guarded() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let create = client
@@ -276,7 +388,7 @@ async fn test_create_guarded() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_create_exclusive() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _create = client
@@ -322,7 +434,7 @@ async fn test_create_exclusive() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_mkdir() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let mkdir = client
@@ -347,7 +459,7 @@ async fn test_mkdir() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_symlink() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let symlink = client
@@ -376,7 +488,7 @@ async fn test_symlink() -> Result<(), anyhow::Error> {
 async fn test_mknod() -> Result<(), anyhow::Error> {
     use nfs3_client::RpcError;
 
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let mknod = client
@@ -400,7 +512,7 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_remove() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let remove = client
@@ -419,7 +531,7 @@ async fn test_remove() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_remove_noent() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let remove = client
@@ -442,7 +554,7 @@ async fn test_remove_noent() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rmdir_noent() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let rmdir = client
@@ -465,7 +577,7 @@ async fn test_rmdir_noent() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rmdir_notempty() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let rmdir = client
@@ -488,7 +600,7 @@ async fn test_rmdir_notempty() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rmdir() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _ = client
@@ -520,7 +632,7 @@ async fn test_rmdir() -> Result<(), anyhow::Error> {
 async fn test_link() -> Result<(), anyhow::Error> {
     use nfs3_client::RpcError;
 
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let link = client
@@ -543,7 +655,7 @@ async fn test_link() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readdir() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readdir = client
@@ -562,7 +674,7 @@ async fn test_readdir() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readdir_too_small() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readdir = client
@@ -585,7 +697,7 @@ async fn test_readdir_too_small() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readdirplus() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readdirplus = client
@@ -605,7 +717,7 @@ async fn test_readdirplus() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readdirplus_dircount_too_small() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readdirplus = client
@@ -632,7 +744,7 @@ async fn test_readdirplus_dircount_too_small() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_readdirplus_maxcount_too_small() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let readdirplus = client
@@ -659,7 +771,7 @@ async fn test_readdirplus_maxcount_too_small() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_fsstat() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let fsstat = client
@@ -675,7 +787,7 @@ async fn test_fsstat() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_fsinfo() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let fsinfo = client
@@ -691,7 +803,7 @@ async fn test_fsinfo() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_pathconf() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let pathconf = client
@@ -707,7 +819,7 @@ async fn test_pathconf() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_commit() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     // MemFs commits immediately; COMMIT on the root dir should succeed.
@@ -730,7 +842,7 @@ async fn test_unstable_write_then_commit() -> Result<(), anyhow::Error> {
     const DATA: &[u8] = b"unstable write data";
     let count = u32::try_from(DATA.len())?;
 
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let create = client

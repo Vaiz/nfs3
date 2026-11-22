@@ -6,7 +6,7 @@ mod iterator;
 
 use bytes::Bytes;
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::nfs3::{fattr3, filename3, nfsstat3, sattr3};
+use nfs3_types::nfs3::{FSINFO3resok, fattr3, filename3, nfsstat3, post_op_attr, sattr3};
 
 use super::{
     DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
@@ -94,6 +94,14 @@ where
         id: &Self::Handle,
     ) -> Result<nfs3_types::nfs3::nfspath3<'_>, nfsstat3> {
         self.0.readlink(id).await
+    }
+
+    async fn fsinfo(&self, root_fileid: &Self::Handle) -> Result<FSINFO3resok, nfsstat3> {
+        let mut fsinfo = self.0.fsinfo(root_fileid).await?;
+        if let post_op_attr::Some(attr) = &mut fsinfo.obj_attributes {
+            remove_write_permissions(attr);
+        }
+        Ok(fsinfo)
     }
 }
 

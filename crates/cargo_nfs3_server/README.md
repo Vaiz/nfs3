@@ -16,6 +16,9 @@ directory exports, whether read-only or writable. The cap counts the combined
 payload across all fragments of a record, excluding fragment markers. The server
 closes the connection if a record exceeds the cap.
 
+The CLI serves at most **1 MiB** per NFS READ request, as reported by FSINFO.
+Clients can continue a partial read at the next offset.
+
 ## Usage
 
 ### Installation
