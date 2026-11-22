@@ -23,6 +23,7 @@ pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;
 pub use self::traits::{Pack, Unpack};
+pub use self::vec::BoundedVec;
 pub use self::void::Void;
 
 pub type Result<T> = std::result::Result<T, Error>;
