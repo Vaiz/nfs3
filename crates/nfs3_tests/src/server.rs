@@ -14,8 +14,8 @@ where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
     FS: NfsFileSystem + 'static,
 {
-    pub fn new(io: IO, memfs: FS) -> anyhow::Result<Self> {
-        let context = RPCContext::test_ctx("/mnt", Arc::new(memfs));
+    pub async fn new(io: IO, memfs: FS) -> anyhow::Result<Self> {
+        let context = RPCContext::test_ctx("/mnt", Arc::new(memfs)).await?;
         let this = Self { context, io };
         Ok(this)
     }

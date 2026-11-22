@@ -65,16 +65,17 @@ impl Fs {
         let mut f = File::open(&path).await?;
         let len = f.metadata().await?.len();
         if start >= len || count == 0 {
-            return Ok((Vec::new(), u64::from(count) >= len));
+            return Ok((Vec::new(), start >= len));
         }
 
         let count = u64::from(count).min(len - start);
         f.seek(SeekFrom::Start(start)).await?;
 
-        let mut buf = vec![0; usize::try_from(count).unwrap_or(0)];
-        f.read_exact(&mut buf).await?;
+        let mut reader = f.take(count);
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).await?;
 
-        Ok((buf, start + count >= len))
+        Ok((buf, reader.limit() > 0 || start + count == len))
     }
 
     async fn get_or_create_iterator(
@@ -501,6 +502,23 @@ mod tests {
         let fs = Fs::new(&root_path);
         let root_handle = fs.root_dir();
         (temp_dir, fs, root_handle)
+    }
+
+    #[tokio::test]
+    async fn read_reports_eof_for_offsets_at_or_beyond_file_end() {
+        let (_temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let file = fs
+            .lookup(&root, &b"file.txt".as_slice().into())
+            .await
+            .expect("look up test file");
+
+        for (offset, count, expected_eof) in [(6, 0, false), (7, 0, true), (8, 1, true)] {
+            let (data, eof) = NfsReadFileSystem::read(&fs, &file, offset, count)
+                .await
+                .expect("read test file");
+            assert_eq!(data.as_ref(), b"");
+            assert_eq!(eof, expected_eof, "offset={offset}, count={count}");
+        }
     }
 
     #[tokio::test]

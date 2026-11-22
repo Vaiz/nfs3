@@ -89,6 +89,9 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
     ///
     /// Use port `0` to let the OS choose an available port. The deprecated `auto:port`
     /// syntax is only supported by the legacy string constructors.
+    ///
+    /// Initialization also queries the export root's FSINFO to set the READ
+    /// limit. If that query fails, binding returns an error.
     pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on {addr}");
@@ -99,5 +102,6 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
             self.generation_number,
             self.max_rpc_record_size,
         )
+        .await
     }
 }

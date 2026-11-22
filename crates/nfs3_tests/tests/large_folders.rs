@@ -51,7 +51,7 @@ fn get_file_name(i: usize) -> String {
 async fn test_dir(size: usize, dir: &str) -> anyhow::Result<()> {
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
     let config = get_config(dir, size);
-    let mut client = TestContext::setup_with_config(config, false, LOG_LEVEL);
+    let mut client = TestContext::setup_with_config(config, false, LOG_LEVEL).await;
 
     let root_dir = client.root_dir().clone();
     let dir = lookup(&mut client, root_dir.clone(), dir).await?;

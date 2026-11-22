@@ -91,6 +91,6 @@ mod tests {
             encoded.advance(written.len() - start);
         }
         assert_eq!(written, expected);
-        assert!(encoded.chunk().is_empty());
+        assert_eq!(encoded.chunk(), []);
     }
 }

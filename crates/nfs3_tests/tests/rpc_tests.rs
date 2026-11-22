@@ -143,7 +143,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
     // prefix written below before the client's write can complete.
     let (server, mut client) = tokio::io::duplex(1);
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
-    let server = tokio::spawn(Server::new(server, fs)?.run());
+    let server = tokio::spawn(Server::new(server, fs).await?.run());
     timeout(Duration::from_secs(5), async {
         client.write_all(&null_call_record(1)?).await?;
         let second = null_call_record(2)?;
@@ -182,7 +182,7 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn sequential_requests() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
     client.send_call(&rpc_msg, &Void).await?;
@@ -201,7 +201,7 @@ async fn sequential_requests() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn concurrent_requests() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg1 = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
     let rpc_msg2 = nfs3_call(2, NFS_PROGRAM::NFSPROC3_NULL);
@@ -226,7 +226,7 @@ async fn concurrent_requests() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn repeated_requests() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
     client.send_call(&rpc_msg, &Void).await?;
@@ -250,7 +250,7 @@ async fn repeated_requests() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn out_of_order_requests() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg1 = nfs3_call(200, NFS_PROGRAM::NFSPROC3_NULL);
     let rpc_msg2 = nfs3_call(100, NFS_PROGRAM::NFSPROC3_NULL);
@@ -270,7 +270,7 @@ async fn out_of_order_requests() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn null_with_body() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
     let null_body = 0x1234_5678u32;
@@ -285,7 +285,7 @@ async fn null_with_body() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn invalid_body() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = nfs3_call(1, NFS_PROGRAM::NFSPROC3_LOOKUP);
     client.send_call(&rpc_msg, &Void).await?;
@@ -299,7 +299,7 @@ async fn invalid_body() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn invalid_rpc_ver() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = rpc_msg {
         xid: 1,
@@ -338,7 +338,7 @@ async fn invalid_rpc_ver() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn unknown_program() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = rpc_msg {
         xid: 1,
@@ -374,7 +374,7 @@ async fn unknown_program() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn invalid_nfs_version() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = rpc_msg {
         xid: 1,
@@ -412,7 +412,7 @@ async fn invalid_nfs_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn invalid_procedure() -> anyhow::Result<()> {
-    let mut client = RpcTestContext::setup();
+    let mut client = RpcTestContext::setup().await;
 
     let rpc_msg = rpc_msg {
         xid: 1,

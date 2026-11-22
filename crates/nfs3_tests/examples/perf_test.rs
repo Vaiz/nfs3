@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
     const LOG_LEVEL: tracing::Level = tracing::Level::INFO;
 
     let config = get_config(DIR, SIZE);
-    let mut client = TestContext::setup_with_config(config, false, LOG_LEVEL);
+    let mut client = TestContext::setup_with_config(config, false, LOG_LEVEL).await;
 
     let start_time = std::time::Instant::now();
     let requests_count = test_dir(&mut client, DIR).await?;
