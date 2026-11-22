@@ -7,11 +7,9 @@
 
 //! This module contains the definitions of the `NFSv3` protocol as defined in RFC 1813.
 
-use std::io::{Read, Write};
-
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{List, Opaque, Pack, Unpack, Void};
+use crate::xdr_codec::{Decoder, Encoder, List, Opaque, Pack, Unpack, Void};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -77,12 +75,17 @@ where
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::Ok(v) => nfsstat3::NFS3_OK.pack(out)? + v.pack(out)?,
-            Self::Err((code, err)) => code.pack(out)? + err.pack(out)?,
-        };
-        Ok(len)
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
+            Self::Ok(v) => {
+                nfsstat3::NFS3_OK.pack(out)?;
+                v.pack(out)
+            }
+            Self::Err((code, err)) => {
+                code.pack(out)?;
+                err.pack(out)
+            }
+        }
     }
 }
 
@@ -91,18 +94,12 @@ where
     T: Unpack,
     E: Unpack,
 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (code, dsz): (nfsstat3, usize) = Unpack::unpack(input)?;
-        sz += dsz;
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        let code = nfsstat3::unpack(input)?;
         if code == nfsstat3::NFS3_OK {
-            let (val, fsz) = Unpack::unpack(input)?;
-            sz += fsz;
-            Ok((Self::Ok(val), sz))
+            Ok(Self::Ok(T::unpack(input)?))
         } else {
-            let (val, csz) = Unpack::unpack(input)?;
-            sz += csz;
-            Ok((Self::Err((code, val)), sz))
+            Ok(Self::Err((code, E::unpack(input)?)))
         }
     }
 }
@@ -580,7 +577,7 @@ pub struct WRITE3resok {
     pub verf: writeverf3,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct cookieverf3(pub [u8; NFS3_COOKIEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]
@@ -601,7 +598,7 @@ pub enum createmode3 {
     EXCLUSIVE = 2,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]
@@ -689,7 +686,7 @@ impl AsRef<[u8]> for filename3<'_> {
 impl filename3<'_> {
     #[must_use]
     pub fn clone_to_owned(&self) -> filename3<'static> {
-        self.0.to_vec().into()
+        filename3(self.0.clone().into_owned())
     }
     #[must_use]
     pub fn len(&self) -> usize {
@@ -781,11 +778,11 @@ impl AsRef<[u8]> for nfspath3<'_> {
 impl nfspath3<'_> {
     #[must_use]
     pub fn clone_to_owned(&self) -> nfspath3<'static> {
-        self.0.to_vec().into()
+        nfspath3(self.0.clone().into_owned())
     }
     #[must_use]
     pub fn into_owned(self) -> nfspath3<'static> {
-        nfspath3(Opaque::owned(self.0.into_owned()))
+        nfspath3(self.0.into_owned())
     }
 }
 
@@ -983,7 +980,7 @@ pub struct wcc_data {
     pub after: post_op_attr,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct writeverf3(pub [u8; NFS3_WRITEVERFSIZE]);
 
 pub type cookie3 = u64;
@@ -1002,6 +999,30 @@ pub type size3 = u64;
 
 pub type uid3 = u32;
 
+/// Implements the codec of an 8-byte verifier, which needs no padding.
+macro_rules! verifier_codec {
+    ($($name:ident),+) => {$(
+        impl Pack for $name {
+            fn packed_size(&self) -> usize {
+                self.0.len()
+            }
+
+            fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+                out.put_array(&self.0);
+                Ok(())
+            }
+        }
+
+        impl Unpack for $name {
+            fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+                input.read_array().map(Self)
+            }
+        }
+    )+};
+}
+
+verifier_codec!(cookieverf3, createverf3, writeverf3);
+
 impl Pack for mknoddata3 {
     fn packed_size(&self) -> usize {
         4 + match self {
@@ -1011,48 +1032,38 @@ impl Pack for mknoddata3 {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        Ok(match self {
-            Self::NF3CHR(val) => ftype3::NF3CHR.pack(out)? + val.pack(out)?,
-            Self::NF3BLK(val) => ftype3::NF3BLK.pack(out)? + val.pack(out)?,
-            Self::NF3SOCK(val) => ftype3::NF3SOCK.pack(out)? + val.pack(out)?,
-            Self::NF3FIFO(val) => ftype3::NF3FIFO.pack(out)? + val.pack(out)?,
-            &Self::default => return Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
-        })
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
+            Self::NF3CHR(val) => {
+                ftype3::NF3CHR.pack(out)?;
+                val.pack(out)
+            }
+            Self::NF3BLK(val) => {
+                ftype3::NF3BLK.pack(out)?;
+                val.pack(out)
+            }
+            Self::NF3SOCK(val) => {
+                ftype3::NF3SOCK.pack(out)?;
+                val.pack(out)
+            }
+            Self::NF3FIFO(val) => {
+                ftype3::NF3FIFO.pack(out)?;
+                val.pack(out)
+            }
+            Self::default => Err(crate::xdr_codec::Error::InvalidEnumValue(u32::MAX)),
+        }
     }
 }
 
 impl Unpack for mknoddata3 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let mut sz = 0;
-        let (v, dsz): (u32, _) = Unpack::unpack(input)?;
-        sz += dsz;
-
-        let v = match v {
-            4 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3CHR(val)
-            }
-            3 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3BLK(val)
-            }
-            6 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3SOCK(val)
-            }
-            7 => {
-                let (val, fsz) = Unpack::unpack(input)?;
-                sz += fsz;
-                Self::NF3FIFO(val)
-            }
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        Ok(match u32::unpack(input)? {
+            4 => Self::NF3CHR(Unpack::unpack(input)?),
+            3 => Self::NF3BLK(Unpack::unpack(input)?),
+            6 => Self::NF3SOCK(Unpack::unpack(input)?),
+            7 => Self::NF3FIFO(Unpack::unpack(input)?),
             _ => Self::default,
-        };
-
-        Ok((v, sz))
+        })
     }
 }
 

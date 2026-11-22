@@ -1,8 +1,6 @@
-use std::io::{Read, Write};
-
 use derive_where::derive_where;
 
-use crate::xdr_codec::{Pack, Unpack};
+use crate::xdr_codec::{Decoder, Encoder, Pack, Result, Unpack};
 
 /// Represents a sequence of optional values in NFS3.
 ///
@@ -28,23 +26,20 @@ where
     T: Pack,
 {
     fn packed_size(&self) -> usize {
-        let mut len = 0;
-        for item in &self.0 {
-            len += <bool as Pack>::packed_size(&true);
-            len += item.packed_size();
-        }
-        len += <bool as Pack>::packed_size(&false);
-        len
+        // Each item is preceded by a 4-byte `true`, and the list ends with `false`.
+        self.0
+            .iter()
+            .map(|item| 4 + item.packed_size())
+            .sum::<usize>()
+            + 4
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let mut len = 0;
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
         for item in &self.0 {
-            len += true.pack(out)?;
-            len += item.pack(out)?;
+            true.pack(out)?;
+            item.pack(out)?;
         }
-        len += false.pack(out)?;
-        Ok(len)
+        false.pack(out)
     }
 }
 
@@ -52,20 +47,12 @@ impl<T> Unpack for List<T>
 where
     T: Unpack,
 {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
+    fn unpack(input: &mut Decoder) -> Result<Self> {
         let mut items = Vec::new();
-        let mut len = 0;
-        loop {
-            let (more, more_len) = bool::unpack(input)?;
-            len += more_len;
-            if !more {
-                break;
-            }
-            let (item, item_len) = T::unpack(input)?;
-            len += item_len;
-            items.push(item);
+        while bool::unpack(input)? {
+            items.push(T::unpack(input)?);
         }
-        Ok((Self(items), len))
+        Ok(Self(items))
     }
 }
 
@@ -90,7 +77,7 @@ where
         }
     }
 
-    pub fn try_push(&mut self, item: T) -> Result<(), T> {
+    pub fn try_push(&mut self, item: T) -> std::result::Result<(), T> {
         let item_size = item.packed_size() + 4;
         if self.current_size + item_size > self.max_size {
             return Err(item);

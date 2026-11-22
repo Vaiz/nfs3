@@ -7,3 +7,6 @@ pub mod nfs3;
 pub mod portmap;
 pub mod rpc;
 pub mod xdr_codec;
+
+#[cfg(test)]
+mod tests;

@@ -1,9 +1,11 @@
-//! This module is mainly a reexport of the `xdr_codec` crate, with some additional types and
-//! traits.
+//! XDR encoding and decoding.
 //!
-//! > NOTE: `xdr_codec` crate has been updated in a long time, so it might be replaced in the
-//! > future.
+//! Values are decoded with [`Decoder`] and encoded with [`Encoder`]. Large
+//! opaque data, such as READ and WRITE payloads, is passed as reference-counted
+//! [`Bytes`](bytes::Bytes) sharing the network buffers instead of being copied.
 
+pub(crate) mod decoder;
+pub(crate) mod encoder;
 pub(crate) mod error;
 pub(crate) mod list;
 pub(crate) mod opaque;
@@ -14,6 +16,8 @@ pub(crate) mod void;
 
 pub use nfs3_macros::XdrCodec;
 
+pub use self::decoder::Decoder;
+pub use self::encoder::{Encoded, Encoder};
 pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;

@@ -13,7 +13,7 @@
 )]
 use nfs3_types::nfs3::*;
 use nfs3_types::rpc::accept_stat_data;
-use nfs3_types::xdr_codec::{BoundedList, Opaque, Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{BoundedList, Decoder, Opaque, Pack, Unpack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
@@ -33,6 +33,7 @@ use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 pub(crate) async fn handle_nfs<T>(
     context: RPCContext<T>,
     message: RpcCall,
+    args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
@@ -58,25 +59,25 @@ where
 
     debug!("{proc}({})", message.xid());
     match proc {
-        NFSPROC3_NULL => handle(context, message, nfsproc3_null).await,
-        NFSPROC3_GETATTR => handle(context, message, nfsproc3_getattr).await,
-        NFSPROC3_LOOKUP => handle(context, message, nfsproc3_lookup).await,
-        NFSPROC3_READ => handle(context, message, nfsproc3_read).await,
-        NFSPROC3_FSINFO => handle(context, message, nfsproc3_fsinfo).await,
-        NFSPROC3_ACCESS => handle(context, message, nfsproc3_access).await,
-        NFSPROC3_PATHCONF => handle(context, message, nfsproc3_pathconf).await,
-        NFSPROC3_FSSTAT => handle(context, message, nfsproc3_fsstat).await,
-        NFSPROC3_READDIR => handle(context, message, nfsproc3_readdir).await,
-        NFSPROC3_READDIRPLUS => handle(context, message, nfsproc3_readdirplus).await,
-        NFSPROC3_WRITE => handle(context, message, nfsproc3_write).await,
-        NFSPROC3_CREATE => handle(context, message, nfsproc3_create).await,
-        NFSPROC3_SETATTR => handle(context, message, nfsproc3_setattr).await,
-        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, message, nfsproc3_remove).await,
-        NFSPROC3_RENAME => handle(context, message, nfsproc3_rename).await,
-        NFSPROC3_MKDIR => handle(context, message, nfsproc3_mkdir).await,
-        NFSPROC3_SYMLINK => handle(context, message, nfsproc3_symlink).await,
-        NFSPROC3_READLINK => handle(context, message, nfsproc3_readlink).await,
-        NFSPROC3_COMMIT => handle(context, message, nfsproc3_commit).await,
+        NFSPROC3_NULL => handle(context, message, args, nfsproc3_null).await,
+        NFSPROC3_GETATTR => handle(context, message, args, nfsproc3_getattr).await,
+        NFSPROC3_LOOKUP => handle(context, message, args, nfsproc3_lookup).await,
+        NFSPROC3_READ => handle(context, message, args, nfsproc3_read).await,
+        NFSPROC3_FSINFO => handle(context, message, args, nfsproc3_fsinfo).await,
+        NFSPROC3_ACCESS => handle(context, message, args, nfsproc3_access).await,
+        NFSPROC3_PATHCONF => handle(context, message, args, nfsproc3_pathconf).await,
+        NFSPROC3_FSSTAT => handle(context, message, args, nfsproc3_fsstat).await,
+        NFSPROC3_READDIR => handle(context, message, args, nfsproc3_readdir).await,
+        NFSPROC3_READDIRPLUS => handle(context, message, args, nfsproc3_readdirplus).await,
+        NFSPROC3_WRITE => handle(context, message, args, nfsproc3_write).await,
+        NFSPROC3_CREATE => handle(context, message, args, nfsproc3_create).await,
+        NFSPROC3_SETATTR => handle(context, message, args, nfsproc3_setattr).await,
+        NFSPROC3_REMOVE | NFSPROC3_RMDIR => handle(context, message, args, nfsproc3_remove).await,
+        NFSPROC3_RENAME => handle(context, message, args, nfsproc3_rename).await,
+        NFSPROC3_MKDIR => handle(context, message, args, nfsproc3_mkdir).await,
+        NFSPROC3_SYMLINK => handle(context, message, args, nfsproc3_symlink).await,
+        NFSPROC3_READLINK => handle(context, message, args, nfsproc3_readlink).await,
+        NFSPROC3_COMMIT => handle(context, message, args, nfsproc3_commit).await,
         NFSPROC3_MKNOD | NFSPROC3_LINK => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
@@ -176,7 +177,7 @@ where
                 file_attributes,
                 count: u32::try_from(bytes.len()).expect("buffer is too big"),
                 eof,
-                data: Opaque::owned(bytes),
+                data: Opaque::from_bytes(bytes),
             })
         }
         Err(stat) => {
@@ -561,7 +562,12 @@ where
 
     match context
         .vfs
-        .write(&id, write3args.offset, &write3args.data, write3args.stable)
+        .write(
+            &id,
+            write3args.offset,
+            write3args.data.into_bytes(),
+            write3args.stable,
+        )
         .await
     {
         Ok((fattr, committed)) => {

@@ -1,14 +1,11 @@
-use std::io::Cursor;
 use std::time::Instant;
 
 use call::{RpcCall, RpcCallOutcome};
-use messages::{RpcRecord, RpcRecordReader};
-use nfs3_types::rpc::{
-    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body, fragment_header,
-};
-use nfs3_types::xdr_codec::{Pack, Unpack};
+use messages::RpcRecordReader;
+use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
-use tokio::io::{AsyncBufRead, AsyncWriteExt};
+use tokio::io::AsyncRead;
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 
@@ -29,12 +26,12 @@ const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
-    message: RpcRecord,
+    mut args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {
-    let message = RpcCall::try_from(message)?;
+    let message = RpcCall::unpack(&mut args)?;
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
@@ -44,11 +41,7 @@ where
         return message.into_rpc_mismatch();
     }
 
-    let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
-    if unix {
-        let auth = auth_unix::unpack(&mut Cursor::new(&call.cred.body.0))?.0;
-        context.auth = auth;
-    }
+    let unix = context.set_auth(call)?;
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
         warn!(
             "refusing a call from uid {} on {}",
@@ -74,9 +67,9 @@ where
     }
 
     match prog {
-        portmap::PROGRAM => portmap_handlers::handle_portmap(context, message).await,
-        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message).await,
-        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message).await,
+        portmap::PROGRAM => portmap_handlers::handle_portmap(context, message, args).await,
+        nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message, args).await,
+        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message, args).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
@@ -91,7 +84,8 @@ where
 /// Handles the RPC message and returns a result. The handler is an async function
 pub(crate) async fn handle<I, O, T>(
     context: RPCContext<T>,
-    mut message: RpcCall,
+    message: RpcCall,
+    args: Decoder,
     handler: impl AsyncFnOnce(RPCContext<T>, u32, I) -> O,
 ) -> anyhow::Result<RpcCallOutcome>
 where
@@ -99,21 +93,28 @@ where
     O: Pack + Send + 'static,
     T: NfsFileSystem,
 {
-    let mut cursor = message.take_data();
-    let (args, _) = match I::unpack(&mut cursor) {
-        Ok(ok) => ok,
+    let args = match unpack_exact::<I>(args) {
+        Ok(args) => args,
         Err(err) => {
             error!("Failed to unpack message: {err}");
             return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
         }
     };
-    if cursor.position() != cursor.get_ref().len() as u64 {
-        error!("Unpacked message size does not match expected size");
-        return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
-    }
 
     let result = handler(context, message.xid(), args).await;
     message.into_success_reply(&result)
+}
+
+/// Decodes a value that must span the rest of `input`.
+///
+/// Consumes `input`, so only decoded values that share its buffer keep it in
+/// memory afterwards.
+pub(crate) fn unpack_exact<T: Unpack>(mut input: Decoder) -> Result<T, Error> {
+    let value = T::unpack(&mut input)?;
+    if !input.is_empty() {
+        return Err(Error::TrailingBytes(input.remaining()));
+    }
+    Ok(value)
 }
 
 fn lock_transaction(
@@ -140,33 +141,14 @@ fn lock_transaction(
     }
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "The assertion bounds the length to the RPC fragment size"
-)]
-pub(crate) async fn write_fragment<IO: tokio::io::AsyncWrite + Unpin>(
-    socket: &mut IO,
-    buf: RpcRecord,
-) -> Result<(), anyhow::Error> {
-    // TODO: split into many fragments
-    let buf = buf.into_inner();
-    assert!(buf.len() < (1 << 31));
-    let fragment_header = fragment_header::new(buf.len() as u32, true);
-    let header_buf = fragment_header.into_xdr_buf();
-    socket.write_all(&header_buf).await?;
-    trace!("Writing fragment length: {}", buf.len());
-    socket.write_all(&buf).await?;
-    Ok(())
-}
-
 /// Reads RPC records and dispatches each complete call in its own task.
 pub(crate) async fn read_and_dispatch_loop<R, T>(
     mut record_reader: RpcRecordReader<R>,
     context: RPCContext<T>,
-    replies: mpsc::Sender<anyhow::Result<RpcRecord>>,
+    replies: mpsc::Sender<anyhow::Result<Encoded>>,
 ) -> anyhow::Result<()>
 where
-    R: AsyncBufRead + Unpin,
+    R: AsyncRead + Unpin,
     T: NfsFileSystem + 'static,
 {
     // Read before reserving so the next framing error can still be
@@ -190,4 +172,24 @@ where
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use nfs3_types::rpc::auth_unix;
+    use nfs3_types::xdr_codec::{Decoder, Error};
+
+    use super::unpack_exact;
+
+    #[test]
+    fn unpack_exact_rejects_trailing_bytes() {
+        let mut bytes = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix::default())
+            .body
+            .as_ref()
+            .to_vec();
+        bytes.extend_from_slice(&[0; 4]);
+
+        let result = unpack_exact::<auth_unix>(Decoder::copying(bytes));
+        assert!(matches!(result, Err(Error::TrailingBytes(4))));
+    }
 }

@@ -1,28 +1,20 @@
-use std::io::Cursor;
-
 use anyhow::bail;
 use nfs3_types::rpc::{
     accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, opaque_auth, rejected_reply,
     reply_body, rpc_msg,
 };
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack, Void};
 
-use super::messages::RpcRecord;
-
-/// A decoded RPC call header and its still-encoded procedure arguments.
+/// A decoded RPC call header.
 pub(crate) struct RpcCall {
     xid: u32,
     body: call_body<'static>,
-    data: Option<Vec<u8>>,
-    message_start: usize, // offset of the start of the message in the data buffer
 }
 
-impl TryFrom<RpcRecord> for RpcCall {
-    type Error = anyhow::Error;
-
-    fn try_from(packed: RpcRecord) -> Result<Self, Self::Error> {
-        let packed = packed.into_inner();
-        let (rpc, pos) = match rpc_msg::unpack(&mut Cursor::new(&packed)) {
+impl RpcCall {
+    /// Decodes the call header, leaving `input` at the procedure arguments.
+    pub(crate) fn unpack(input: &mut Decoder) -> anyhow::Result<Self> {
+        let rpc = match rpc_msg::unpack(input) {
             Ok(ok) => ok,
             Err(err) => {
                 bail!("Failed to unpack RPC message: {err}");
@@ -37,28 +29,14 @@ impl TryFrom<RpcRecord> for RpcCall {
             }
         };
 
-        Ok(Self {
-            xid,
-            body,
-            data: Some(packed),
-            message_start: pos,
-        })
+        Ok(Self { xid, body })
     }
-}
 
-impl RpcCall {
     pub(crate) const fn xid(&self) -> u32 {
         self.xid
     }
     pub(crate) const fn body(&self) -> &call_body<'static> {
         &self.body
-    }
-
-    pub(crate) const fn take_data(&mut self) -> Cursor<Vec<u8>> {
-        let data = self.data.take().expect("Data already taken");
-        let mut cursor = Cursor::new(data);
-        cursor.set_position(self.message_start as u64);
-        cursor
     }
 
     pub(crate) fn into_success_reply<T>(self, message: &T) -> anyhow::Result<RpcCallOutcome>
@@ -110,21 +88,17 @@ impl RpcCall {
 }
 
 pub(crate) enum RpcCallOutcome {
-    Reply(RpcRecord),
+    /// An encoded reply record, including its record marker, as chunks to write in order.
+    Reply(Encoded),
     NoReply,
 }
 
-fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<RpcRecord>
+fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<Encoded>
 where
     T: Pack + 'static,
 {
-    let size = rpc
-        .packed_size()
-        .checked_add(message.packed_size())
-        .expect("Failed to calculate size");
-
-    let mut cursor = Cursor::new(Vec::with_capacity(size));
-    rpc.pack(&mut cursor)?;
-    message.pack(&mut cursor)?;
-    Ok(RpcRecord::new(cursor.into_inner()))
+    let mut out = Encoder::new(rpc.packed_size().saturating_add(message.packed_size()));
+    rpc.pack(&mut out)?;
+    message.pack(&mut out)?;
+    Ok(out.finish_record()?)
 }

@@ -1,16 +1,15 @@
 // Tests for NFS3-specific types and serialization
 
-use std::io::Cursor;
-
-use nfs3_types::nfs3::{Nfs3Option, Nfs3Result, dirlist3, entry3, filename3, nfsstat3};
-use nfs3_types::xdr_codec::{List, Pack, Unpack, Void};
+use super::encode;
+use crate::nfs3::{Nfs3Option, Nfs3Result, dirlist3, entry3, filename3, nfsstat3};
+use crate::xdr_codec::{Decoder, List, Pack, Unpack, Void};
 
 #[test]
 fn nfs3_result_success_void() {
     // Test for a successful result with no additional data
     let original = Nfs3Result::<Void, Void>::Ok(Void);
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4);
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
@@ -20,8 +19,8 @@ fn nfs3_result_success_void() {
 fn nfs3_result_error_void() {
     // Test for an error result with no additional data
     let original = Nfs3Result::<Void, Void>::Err((nfsstat3::NFS3ERR_IO, Void));
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4);
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x05]);
@@ -31,8 +30,8 @@ fn nfs3_result_error_void() {
 fn nfs3_result_success_with_data() {
     // Test for a successful result with additional data
     let original = Nfs3Result::<u32, u32>::Ok(0x1234_5678u32);
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78]);
@@ -42,8 +41,8 @@ fn nfs3_result_success_with_data() {
 fn nfs3_result_error_with_data() {
     // Test for an error result with additional data
     let original = Nfs3Result::<u32, u32>::Err((nfsstat3::NFS3ERR_IO, 0x8765_4321u32));
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x05, 0x87, 0x65, 0x43, 0x21]);
@@ -53,8 +52,8 @@ fn nfs3_result_error_with_data() {
 fn nfs3_option_some_void() {
     // Test for a successful result with no additional data
     let original = Nfs3Option::<Void>::Some(Void);
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4);
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x01]);
@@ -64,8 +63,8 @@ fn nfs3_option_some_void() {
 fn nfs3_option_none_void() {
     // Test for None result with Void
     let original = Nfs3Option::<Void>::None;
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4);
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
@@ -75,8 +74,8 @@ fn nfs3_option_none_void() {
 fn nfs3_option_some_with_data() {
     // Test for a successful result with additional data
     let original = Nfs3Option::<u32>::Some(0x1234_5678u32);
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(original.packed_size(), len); // 4 bytes for the status + 4 bytes for the data
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x01, 0x12, 0x34, 0x56, 0x78]);
@@ -86,8 +85,8 @@ fn nfs3_option_some_with_data() {
 fn nfs3_option_none_with_data() {
     // Test for None result with additional u32
     let original = Nfs3Option::<u32>::None;
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4); // 4 bytes for the status
     assert_eq!(original.packed_size(), len); // 4 bytes for the status
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00]);
@@ -99,16 +98,15 @@ fn empty_dirlist3_serialization() {
         entries: List(vec![]),
         eof: true,
     };
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 8); // 4 bytes for entries + 4 bytes for eof
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = dirlist3::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 8);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = dirlist3::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(deserialized.entries.0, []);
     assert_eq!(original.eof, deserialized.eof);
 }
@@ -130,9 +128,8 @@ fn dirlist3_with_entries_serialization() {
         ]),
         eof: false,
     };
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 72); // 2 entries * (4 + 4 + 8 + 4) + 4 for eof
     assert_eq!(len, 72);
     assert_eq!(
@@ -153,9 +150,9 @@ fn dirlist3_with_entries_serialization() {
         ]
     );
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = dirlist3::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 72);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = dirlist3::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(original.entries.0, deserialized.entries.0);
     assert_eq!(original.eof, deserialized.eof);
 }
@@ -164,22 +161,22 @@ fn dirlist3_with_entries_serialization() {
 fn filename3_edge_cases() {
     // Test empty filename
     let empty_name = filename3::from(&b""[..]);
-    let mut buffer = Vec::new();
-    let len = empty_name.pack(&mut buffer).unwrap();
+    let buffer = encode(&empty_name).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
 
     // Test single character filename
     let single_char = filename3::from(&b"a"[..]);
-    let mut buffer = Vec::new();
-    let len = single_char.pack(&mut buffer).unwrap();
+    let buffer = encode(&single_char).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes length + 1 byte data + 3 bytes padding
     assert_eq!(buffer, [0, 0, 0, 1, b'a', 0, 0, 0]);
 
     // Test filename requiring no padding (multiple of 4)
     let quad_name = filename3::from(&b"test"[..]);
-    let mut buffer = Vec::new();
-    let len = quad_name.pack(&mut buffer).unwrap();
+    let buffer = encode(&quad_name).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 4, b't', b'e', b's', b't']);
 }
@@ -193,13 +190,13 @@ fn nfs3_result_roundtrip() {
     ];
 
     for original in void_cases {
-        let mut buffer = Vec::new();
-        let pack_len = original.pack(&mut buffer).unwrap();
+        let buffer = encode(&original).unwrap().to_vec();
+        let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
-        assert_eq!(pack_len, unpack_len);
+        let mut cursor = Decoder::copying(buffer);
+        let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
+        assert!(cursor.is_empty());
         assert_eq!(original, deserialized);
     }
 
@@ -210,13 +207,13 @@ fn nfs3_result_roundtrip() {
     ];
 
     for original in u32_cases {
-        let mut buffer = Vec::new();
-        let pack_len = original.pack(&mut buffer).unwrap();
+        let buffer = encode(&original).unwrap().to_vec();
+        let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, unpack_len) = Nfs3Result::<u32, u32>::unpack(&mut cursor).unwrap();
-        assert_eq!(pack_len, unpack_len);
+        let mut cursor = Decoder::copying(buffer);
+        let deserialized = Nfs3Result::<u32, u32>::unpack(&mut cursor).unwrap();
+        assert!(cursor.is_empty());
         assert_eq!(original, deserialized);
     }
 }
@@ -257,22 +254,24 @@ fn nfs3_error_codes() {
 
     for error_code in error_codes {
         let result = Nfs3Result::<Void, Void>::Err((error_code, Void));
-        let mut buffer = Vec::new();
-        let len = result.pack(&mut buffer).unwrap();
+        let buffer = encode(&result).unwrap().to_vec();
+        let len = buffer.len();
         assert_eq!(len, 4);
 
-        let mut cursor = Cursor::new(buffer);
-        let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
+        let mut cursor = Decoder::copying(buffer);
+        let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
+        assert!(cursor.is_empty());
         assert_eq!(result, deserialized);
     }
 
     // Test NFS3_OK separately as a success case
     let success_result = Nfs3Result::<Void, Void>::Ok(Void);
-    let mut buffer = Vec::new();
-    let len = success_result.pack(&mut buffer).unwrap();
+    let buffer = encode(&success_result).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, _) = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     deserialized.expect("Expected success result for NFS3_OK");
 }

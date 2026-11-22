@@ -14,6 +14,7 @@ categories = ["encoding", "network-programming"]
 
 [dependencies]
 nfs3_macros.workspace = true
+bytes.workspace = true
 
 derive-where.workspace = true
 

@@ -1,16 +1,17 @@
-use std::io::{self, Cursor};
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
+use bytes::{Buf, Bytes};
 use nfs3_client::nfs3_types;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_tests::{RpcTestContext, Server};
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
-use nfs3_types::xdr_codec::{Pack, Unpack, Void};
+use nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack, Void};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -27,6 +28,15 @@ fn nfs3_call(xid: u32, proc: NFS_PROGRAM) -> rpc_msg<'static, 'static> {
             verf: opaque_auth::default(),
         }),
     }
+}
+
+/// Encodes a NULL call as a single-fragment RPC record.
+fn null_call_record(xid: u32) -> anyhow::Result<Bytes> {
+    let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
+    let mut out = Encoder::new(call.packed_size());
+    call.pack(&mut out)?;
+    let mut record = out.finish_record()?;
+    Ok(record.copy_to_bytes(record.remaining()))
 }
 
 fn check_reply_header(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<()> {
@@ -79,9 +89,7 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
 
 #[tokio::test]
 async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
-    let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
-    let mut payload = Vec::new();
-    call.pack(&mut payload)?;
+    let payload = null_call_record(1)?.slice(4..);
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let listener = Builder::new()
@@ -95,7 +103,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         let mut stream = TcpStream::connect(addr).await?;
         let (head, tail) = payload.split_at(payload.len() / 2);
         for (fragment, last) in [(head, false), (tail, true)] {
-            let header = fragment_header::new(u32::try_from(fragment.len())?, last);
+            let header = fragment_header::new(fragment.len(), last)?;
             stream.write_all(&header.into_xdr_buf()).await?;
             stream.write_all(fragment).await?;
         }
@@ -105,12 +113,12 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         assert!(reply_header.eof());
         let mut reply = vec![0; reply_header.fragment_length() as usize];
         stream.read_exact(&mut reply).await?;
-        let (reply, _) = rpc_msg::unpack(&mut Cursor::new(reply))?;
-        check_reply_header(call.xid, &reply)?;
+        let reply = rpc_msg::unpack(&mut Decoder::copying(reply))?;
+        check_reply_header(1, &reply)?;
 
         // The reader should close the connection as soon as the marker declares
         // a record over the limit, without waiting for the payload.
-        let oversized = fragment_header::new(u32::try_from(limit.get())? + 1, true);
+        let oversized = fragment_header::new(limit.get() + 1, true)?;
         stream.write_all(&oversized.into_xdr_buf()).await?;
         assert_eq!(stream.read(&mut marker).await?, 0);
         Ok::<_, anyhow::Error>(())
@@ -131,22 +139,14 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
-    fn null_call_frame(xid: u32) -> anyhow::Result<Vec<u8>> {
-        let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
-        let marker = fragment_header::new(u32::try_from(call.packed_size())?, true);
-        let mut frame = marker.into_xdr_buf().to_vec();
-        call.pack(&mut frame)?;
-        Ok(frame)
-    }
-
     // The one-byte capacity forces the server to consume part of any marker
     // prefix written below before the client's write can complete.
     let (server, mut client) = tokio::io::duplex(1);
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let server = tokio::spawn(Server::new(server, fs)?.run());
     timeout(Duration::from_secs(5), async {
-        client.write_all(&null_call_frame(1)?).await?;
-        let second = null_call_frame(2)?;
+        client.write_all(&null_call_record(1)?).await?;
+        let second = null_call_record(2)?;
         client.write_all(&second[..3]).await?;
 
         for xid in [1, 2] {
@@ -156,14 +156,14 @@ async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> 
             assert!(marker.eof());
             let mut payload = vec![0; marker.fragment_length() as usize];
             client.read_exact(&mut payload).await?;
-            let (reply, _) = rpc_msg::unpack(&mut Cursor::new(payload))?;
+            let reply = rpc_msg::unpack(&mut Decoder::copying(payload))?;
             check_reply_header(xid, &reply)?;
             if xid == 1 {
                 client.write_all(&second[3..]).await?;
             }
         }
 
-        client.write_all(&null_call_frame(3)?).await?;
+        client.write_all(&null_call_record(3)?).await?;
         // The writer has started the reply but cannot finish it while we stop
         // reading after one byte. Half-close with an incomplete next marker.
         client.read_u8().await?;

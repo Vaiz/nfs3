@@ -7,58 +7,14 @@
 
 //! This module contains the definitions of the RPC protocol as defined in RFC 1057.
 
-use std::io::{Read, Write};
+mod record_buf;
+mod record_marker;
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Opaque, Pack, Unpack};
-
-/// RPC header
-///
-/// The RPC header is a 32-bit integer that contains the length of the fragment and an EOF flag.
-#[derive(Default, Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
-pub struct fragment_header {
-    pub header: u32,
-}
-
-impl fragment_header {
-    pub const EOF_FLAG: u32 = 0x8000_0000;
-    pub const MASK: u32 = 0x7FFF_FFFF;
-
-    /// Creates a new `fragment_header` with the given length and EOF flag.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length is greater than 2 GiB.
-    #[must_use]
-    pub fn new(length: u32, eof: bool) -> Self {
-        assert!(length <= Self::MASK);
-        let mut header = length;
-        if eof {
-            header |= Self::EOF_FLAG;
-        }
-        Self { header }
-    }
-    #[must_use]
-    pub const fn eof(&self) -> bool {
-        self.header & Self::EOF_FLAG != 0
-    }
-    #[must_use]
-    pub const fn fragment_length(&self) -> u32 {
-        self.header & Self::MASK
-    }
-    #[must_use]
-    pub const fn into_xdr_buf(self) -> [u8; 4] {
-        self.header.to_be_bytes()
-    }
-}
-
-impl From<[u8; 4]> for fragment_header {
-    fn from(bytes: [u8; 4]) -> Self {
-        let header = u32::from_be_bytes(bytes);
-        Self { header }
-    }
-}
+pub use self::record_buf::RecordBuf;
+pub use self::record_marker::fragment_header;
+use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
 
@@ -156,11 +112,12 @@ impl opaque_auth<'static> {
     /// Panics if the `auth_unix` cannot be packed.
     #[must_use]
     pub fn auth_unix(auth: &auth_unix) -> Self {
-        let mut out = Vec::with_capacity(auth.packed_size());
+        let mut out = Encoder::new(auth.packed_size());
         auth.pack(&mut out).expect("failed to pack auth_unix");
+        let body = out.into_bytes();
         Self {
             flavor: auth_flavor::AUTH_UNIX,
-            body: Opaque::owned(out),
+            body: Opaque::from_bytes(body),
         }
     }
 
@@ -232,37 +189,35 @@ impl Pack for accept_stat_data {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
-            Self::SUCCESS => accept_stat::SUCCESS.pack(out)?,
-            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out)?,
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
+            Self::SUCCESS => accept_stat::SUCCESS.pack(out),
+            Self::PROG_UNAVAIL => accept_stat::PROG_UNAVAIL.pack(out),
             Self::PROG_MISMATCH { low, high } => {
-                accept_stat::PROG_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
+                accept_stat::PROG_MISMATCH.pack(out)?;
+                low.pack(out)?;
+                high.pack(out)
             }
-            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out)?,
-            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out)?,
-            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out)?,
-        };
-        Ok(len)
+            Self::PROC_UNAVAIL => accept_stat::PROC_UNAVAIL.pack(out),
+            Self::GARBAGE_ARGS => accept_stat::GARBAGE_ARGS.pack(out),
+            Self::SYSTEM_ERR => accept_stat::SYSTEM_ERR.pack(out),
+        }
     }
 }
 
 impl Unpack for accept_stat_data {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (accept_stat, len) = accept_stat::unpack(input)?;
-        let (body, body_len) = match accept_stat {
-            accept_stat::SUCCESS => (Self::SUCCESS, 0),
-            accept_stat::PROG_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::PROG_MISMATCH { low, high }, low_len + high_len)
-            }
-            accept_stat::PROG_UNAVAIL => (Self::PROG_UNAVAIL, 0),
-            accept_stat::PROC_UNAVAIL => (Self::PROC_UNAVAIL, 0),
-            accept_stat::GARBAGE_ARGS => (Self::GARBAGE_ARGS, 0),
-            accept_stat::SYSTEM_ERR => (Self::SYSTEM_ERR, 0),
-        };
-        Ok((body, len + body_len))
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        Ok(match accept_stat::unpack(input)? {
+            accept_stat::SUCCESS => Self::SUCCESS,
+            accept_stat::PROG_MISMATCH => Self::PROG_MISMATCH {
+                low: u32::unpack(input)?,
+                high: u32::unpack(input)?,
+            },
+            accept_stat::PROG_UNAVAIL => Self::PROG_UNAVAIL,
+            accept_stat::PROC_UNAVAIL => Self::PROC_UNAVAIL,
+            accept_stat::GARBAGE_ARGS => Self::GARBAGE_ARGS,
+            accept_stat::SYSTEM_ERR => Self::SYSTEM_ERR,
+        })
     }
 }
 
@@ -291,34 +246,30 @@ impl Pack for rejected_reply {
         }
     }
 
-    fn pack(&self, out: &mut impl Write) -> crate::xdr_codec::Result<usize> {
-        let len = match self {
+    fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+        match self {
             Self::RPC_MISMATCH { low, high } => {
-                reject_stat::RPC_MISMATCH.pack(out)? + low.pack(out)? + high.pack(out)?
+                reject_stat::RPC_MISMATCH.pack(out)?;
+                low.pack(out)?;
+                high.pack(out)
             }
             Self::AUTH_ERROR(auth_stat) => {
-                reject_stat::AUTH_ERROR.pack(out)? + auth_stat.pack(out)?
+                reject_stat::AUTH_ERROR.pack(out)?;
+                auth_stat.pack(out)
             }
-        };
-        Ok(len)
+        }
     }
 }
 
 impl Unpack for rejected_reply {
-    fn unpack(input: &mut impl Read) -> crate::xdr_codec::Result<(Self, usize)> {
-        let (reject_stat, len) = reject_stat::unpack(input)?;
-        let (body, body_len) = match reject_stat {
-            reject_stat::RPC_MISMATCH => {
-                let (low, low_len) = u32::unpack(input)?;
-                let (high, high_len) = u32::unpack(input)?;
-                (Self::RPC_MISMATCH { low, high }, low_len + high_len)
-            }
-            reject_stat::AUTH_ERROR => {
-                let (auth_stat, auth_stat_len) = auth_stat::unpack(input)?;
-                (Self::AUTH_ERROR(auth_stat), auth_stat_len)
-            }
-        };
-        Ok((body, len + body_len))
+    fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+        Ok(match reject_stat::unpack(input)? {
+            reject_stat::RPC_MISMATCH => Self::RPC_MISMATCH {
+                low: u32::unpack(input)?,
+                high: u32::unpack(input)?,
+            },
+            reject_stat::AUTH_ERROR => Self::AUTH_ERROR(auth_stat::unpack(input)?),
+        })
     }
 }
 

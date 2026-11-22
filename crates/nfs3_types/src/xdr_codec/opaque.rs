@@ -1,132 +1,115 @@
-use std::borrow::Cow;
-use std::io::{Read, Write};
+use std::fmt;
 use std::ops::Deref;
 
-use crate::xdr_codec::util::{add_padding, get_padding, zero_padding};
-use crate::xdr_codec::{Error, Pack, Unpack};
+use bytes::Bytes;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Opaque<'a>(pub Cow<'a, [u8]>);
+use crate::xdr_codec::util::add_padding;
+use crate::xdr_codec::{Decoder, Encoder, Error, Pack, Result, Unpack};
+
+/// Variable-length XDR opaque data.
+///
+/// Either borrows a slice or holds a reference-counted [`Bytes`]. Decoded values
+/// hold `Bytes` that either shares the decoder's input buffer or is a copy (see
+/// [`Decoder`]).
+#[derive(Clone)]
+pub struct Opaque<'a>(Repr<'a>);
+
+#[derive(Clone)]
+enum Repr<'a> {
+    Borrowed(&'a [u8]),
+    Shared(Bytes),
+}
 
 impl Opaque<'static> {
-    /// Creates a new `Opaque` with owned data.
+    /// Creates an `Opaque` that owns `data` without copying it.
     #[must_use]
-    pub const fn owned(data: Vec<u8>) -> Self {
-        Opaque(Cow::Owned(data))
+    pub fn owned(data: Vec<u8>) -> Self {
+        Self::from_bytes(Bytes::from(data))
+    }
+
+    /// Creates an `Opaque` from reference-counted bytes without copying them.
+    #[must_use]
+    pub const fn from_bytes(data: Bytes) -> Self {
+        Self(Repr::Shared(data))
     }
 }
 
 impl<'a> Opaque<'a> {
-    /// Creates a new `Opaque`.
-    #[must_use]
-    pub const fn new(data: Cow<'a, [u8]>) -> Self {
-        Opaque(data)
-    }
-
-    /// Creates a new `Opaque` from a borrowed slice.
+    /// Creates an `Opaque` from a borrowed slice.
     #[must_use]
     pub const fn borrowed(data: &'a [u8]) -> Self {
-        Opaque(Cow::Borrowed(data))
+        Self(Repr::Borrowed(data))
     }
 
-    /// Creates a new `Opaque` from a `Vec<u8>`.
-    #[must_use]
-    pub const fn from_vec(data: Vec<u8>) -> Self {
-        Opaque(Cow::Owned(data))
-    }
-
-    /// Returns the length of the opaque data.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns true if the opaque data is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Extracts the owned data.
+    /// Converts into an `Opaque` that owns its bytes.
     ///
-    /// Clones the data if it is not already owned.
+    /// Copies borrowed data; `Bytes` data is moved as is.
     #[must_use]
-    pub fn into_owned(self) -> Vec<u8> {
-        self.0.into_owned()
+    pub(crate) fn into_owned(self) -> Opaque<'static> {
+        Opaque::from_bytes(self.into_bytes())
     }
 
+    /// Converts into [`Bytes`], copying only if the data is borrowed.
     #[must_use]
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
+    pub fn into_bytes(self) -> Bytes {
+        match self.0 {
+            Repr::Borrowed(data) => Bytes::copy_from_slice(data),
+            Repr::Shared(data) => data,
+        }
     }
 }
 
 impl Pack for Opaque<'_> {
     fn packed_size(&self) -> usize {
-        4 + add_padding(self.0.len())
+        4 + add_padding(self.len())
     }
 
-    fn pack(&self, out: &mut impl Write) -> Result<usize, Error> {
-        let mut bytes_written = 0;
-        let len: u32 = self
-            .0
-            .len()
-            .try_into()
-            .map_err(|_overflow| Error::ObjectTooLarge(self.0.len()))?;
-        bytes_written += len.pack(out)?;
-
-        out.write_all(&self.0).map_err(Error::Io)?;
-        bytes_written += self.0.len();
-
-        let padding = zero_padding(self.0.len());
-        out.write_all(padding).map_err(Error::Io)?;
-        bytes_written += padding.len();
-        Ok(bytes_written)
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        u32::try_from(self.len())
+            .map_err(|_overflow| Error::ObjectTooLarge(self.len()))?
+            .pack(out)?;
+        match &self.0 {
+            Repr::Borrowed(data) => out.put_padded(data),
+            Repr::Shared(data) => out.put_padded_shared(data),
+        }
+        Ok(())
     }
 }
 
 impl Unpack for Opaque<'static> {
-    fn unpack(input: &mut impl Read) -> Result<(Self, usize), Error> {
-        let (len, mut bytes_read) = u32::unpack(input)?;
-        let len = len as usize;
-
-        let mut buf = vec![0u8; len];
-        input.read_exact(&mut buf).map_err(Error::Io)?;
-        bytes_read += len;
-
-        let len = get_padding(len);
-        if len > 0 {
-            let mut pad_buf = [0u8; 4];
-            input.read_exact(&mut pad_buf[..len]).map_err(Error::Io)?;
-            bytes_read += len;
-        }
-
-        Ok((Opaque(Cow::Owned(buf)), bytes_read))
-    }
-}
-
-impl AsRef<[u8]> for Opaque<'_> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let len = u32::unpack(input)? as usize;
+        input.read_opaque(len).map(Self::from_bytes)
     }
 }
 
 impl Deref for Opaque<'_> {
     type Target = [u8];
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    fn deref(&self) -> &[u8] {
+        match &self.0 {
+            Repr::Borrowed(data) => data,
+            Repr::Shared(data) => data,
+        }
     }
 }
 
-impl From<Vec<u8>> for Opaque<'static> {
-    fn from(vec: Vec<u8>) -> Self {
-        Opaque(Cow::Owned(vec))
+impl AsRef<[u8]> for Opaque<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self
     }
 }
 
-impl<'a> From<&'a [u8]> for Opaque<'a> {
-    fn from(slice: &'a [u8]) -> Self {
-        Opaque(Cow::Borrowed(slice))
+impl fmt::Debug for Opaque<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Opaque").field(&&**self).finish()
     }
 }
+
+impl PartialEq for Opaque<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Eq for Opaque<'_> {}

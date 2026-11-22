@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use iterator::MirrorFsIterator;
 use iterator_cache::{IteratorCache, IteratorCacheCleaner};
 use nfs3_server::fs_util::metadata_to_fattr3;
@@ -169,9 +170,10 @@ impl NfsReadFileSystem for Fs {
         id: &Self::Handle,
         offset: u64,
         count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         let path = self.path(*id)?;
-        self.read(path, offset, count).await.map_err(map_io_error)
+        let (data, eof) = self.read(path, offset, count).await.map_err(map_io_error)?;
+        Ok((data.into(), eof))
     }
 
     async fn readdir(
@@ -240,7 +242,7 @@ impl NfsFileSystem for Fs {
         &self,
         id: &Self::Handle,
         offset: u64,
-        data: &[u8],
+        data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         let path = self.path(*id)?;
@@ -260,7 +262,7 @@ impl NfsFileSystem for Fs {
                 .open(&path)
                 .await?;
             file.seek(SeekFrom::Start(offset)).await?;
-            file.write_all(data).await?;
+            file.write_all(&data).await?;
             file.flush().await
         }
         .await

@@ -1,15 +1,13 @@
 // Tests for XDR collection types (Vec, List, BoundedList)
 
-use std::io::Cursor;
-
-use nfs3_types::xdr_codec::{BoundedList, List, Pack, Unpack};
+use super::encode;
+use crate::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack};
 
 #[test]
 fn vec_serialization() {
     let original = vec![0x1234, 0x5678, 0x9abc];
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 16); // 4 bytes for length + 12 bytes for data
     assert_eq!(len, 16);
     assert_eq!(
@@ -20,18 +18,17 @@ fn vec_serialization() {
         ]
     );
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 16);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(original, deserialized);
 }
 
 #[test]
 fn list_serialization() {
     let original = List(vec![0x1234, 0x5678, 0x9abc]);
-
-    let mut buffer = Vec::new();
-    let len = original.pack(&mut buffer).unwrap();
+    let buffer = encode(&original).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(original.packed_size(), 28);
     assert_eq!(len, 28);
     assert_eq!(
@@ -42,9 +39,9 @@ fn list_serialization() {
         ]
     );
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 28);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(original.0, deserialized.0);
 }
 
@@ -85,26 +82,26 @@ fn bounded_list_exact_boundary() {
 fn empty_collections() {
     // Test empty Vec
     let empty_vec: Vec<u32> = Vec::new();
-    let mut buffer = Vec::new();
-    let len = empty_vec.pack(&mut buffer).unwrap();
+    let buffer = encode(&empty_vec).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 4);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(empty_vec, deserialized);
 
     // Test empty List
     let empty_list = List(Vec::<u32>::new());
-    let mut buffer = Vec::new();
-    let len = empty_list.pack(&mut buffer).unwrap();
+    let buffer = encode(&empty_list).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 4); // Just the end marker
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 4);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(empty_list.0, deserialized.0);
 }
 
@@ -112,26 +109,26 @@ fn empty_collections() {
 fn single_item_collections() {
     // Test single item Vec
     let single_vec = vec![0x1234_5678];
-    let mut buffer = Vec::new();
-    let len = single_vec.pack(&mut buffer).unwrap();
+    let buffer = encode(&single_vec).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 8); // 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 8);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(single_vec, deserialized);
 
     // Test single item List
     let single_list = List(vec![0x1234_5678]);
-    let mut buffer = Vec::new();
-    let len = single_list.pack(&mut buffer).unwrap();
+    let buffer = encode(&single_list).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 12); // 4 bytes indicator + 4 bytes data + 4 bytes end marker
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0]);
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = List::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 12);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(single_list.0, deserialized.0);
 }
 
@@ -156,13 +153,13 @@ fn bounded_list_edge_cases() {
 fn large_collections() {
     // Test with larger collections to verify scaling
     let large_vec: Vec<u32> = (0..100).collect();
-    let mut buffer = Vec::new();
-    let len = large_vec.pack(&mut buffer).unwrap();
+    let buffer = encode(&large_vec).unwrap().to_vec();
+    let len = buffer.len();
     assert_eq!(len, 404); // 4 bytes length + 100 * 4 bytes data
 
-    let mut cursor = Cursor::new(buffer);
-    let (deserialized, len) = Vec::<u32>::unpack(&mut cursor).unwrap();
-    assert_eq!(len, 404);
+    let mut cursor = Decoder::copying(buffer);
+    let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
+    assert!(cursor.is_empty());
     assert_eq!(large_vec, deserialized);
 
     // Test bounded list with many items

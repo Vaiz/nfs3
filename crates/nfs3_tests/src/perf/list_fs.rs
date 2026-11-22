@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use nfs3_server::vfs::{
     DirEntryPlus, FileHandleU64, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirPlusIterator,
     VFSCapabilities,
@@ -65,7 +66,7 @@ impl NfsReadFileSystem for ListFs {
         _id: &FileHandleU64,
         _offset: u64,
         _count: u32,
-    ) -> Result<(Vec<u8>, bool), nfsstat3> {
+    ) -> Result<(Bytes, bool), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ISDIR)
     }
 
@@ -103,7 +104,7 @@ impl NfsFileSystem for ListFs {
         &self,
         _id: &FileHandleU64,
         _offset: u64,
-        _data: &[u8],
+        _data: Bytes,
         _stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
         Err(nfsstat3::NFS3ERR_ROFS)
