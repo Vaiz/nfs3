@@ -154,8 +154,8 @@ pub trait NfsReadFileSystem: Send + Sync {
 
     /// Get static file system information.
     ///
-    /// The server calls this with the export root on the READ path, so it
-    /// should be fast.
+    /// The server caches the export root's `rtmax` on the first successful
+    /// lookup for READ. That limit remains fixed for the server's lifetime.
     fn fsinfo(
         &self,
         root_fileid: &Self::Handle,

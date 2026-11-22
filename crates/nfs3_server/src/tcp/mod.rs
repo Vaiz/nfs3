@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{OnceCell, mpsc};
 use tracing::{debug, info};
 
 use crate::context::RPCContext;
@@ -38,6 +38,7 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     export_name: Arc<str>,
     max_rpc_record_size: Option<NonZeroUsize>,
     transaction_tracker: Arc<TransactionTracker>,
+    read_limit: Arc<OnceCell<u32>>,
     file_handle_converter: FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
 }
@@ -143,6 +144,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             export_name,
             max_rpc_record_size,
             transaction_tracker: Self::new_transaction_tracker(),
+            read_limit: Arc::default(),
             stop_notify: Arc::new(tokio::sync::Notify::new()),
             file_handle_converter,
         })
@@ -286,6 +288,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 mount_signal: self.mount_signal.clone(),
                 export_name: Arc::clone(&self.export_name),
                 transaction_tracker: Arc::clone(&self.transaction_tracker),
+                read_limit: Arc::clone(&self.read_limit),
                 file_handle_converter: self.file_handle_converter,
             };
             info!("Accepting connection from {}", context.client_addr);

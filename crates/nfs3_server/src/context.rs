@@ -3,7 +3,7 @@ use std::sync::Arc;
 use derive_where::derive_where;
 use nfs3_types::rpc::{auth_flavor, auth_unix, call_body};
 use nfs3_types::xdr_codec::{Decoder, Error};
-use tokio::sync::mpsc;
+use tokio::sync::{OnceCell, mpsc};
 
 use crate::rpcwire::unpack_exact;
 use crate::transaction_tracker::TransactionTracker;
@@ -21,6 +21,7 @@ pub struct RPCContext<T: NfsFileSystem> {
     pub mount_signal: Option<mpsc::Sender<bool>>,
     pub export_name: Arc<str>,
     pub transaction_tracker: Arc<TransactionTracker>,
+    pub(crate) read_limit: Arc<OnceCell<u32>>,
     #[derive_where(skip(Debug))]
     pub(crate) file_handle_converter: FileHandleConverter,
 }
@@ -57,6 +58,7 @@ where
                 256,
                 1024,
             )),
+            read_limit: Arc::default(),
             file_handle_converter: FileHandleConverter::new(),
         }
     }

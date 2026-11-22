@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use bytes::Bytes;
 use nfs3_client::Nfs3Client;
 use nfs3_client::nfs3_types::nfs3::*;
@@ -147,6 +150,7 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
 struct CustomReadLimit {
     fs: MemFs,
     rtmax: u32,
+    fsinfo_calls: Arc<AtomicUsize>,
 }
 
 impl NfsReadFileSystem for CustomReadLimit {
@@ -193,6 +197,7 @@ impl NfsReadFileSystem for CustomReadLimit {
         if *root_fileid != self.root_dir() {
             return Err(nfsstat3::NFS3ERR_INVAL);
         }
+        self.fsinfo_calls.fetch_add(1, Ordering::Relaxed);
         let mut info = self.fs.fsinfo(root_fileid).await?;
         info.rtmax = self.rtmax;
         info.rtpref = self.rtmax;
@@ -214,9 +219,11 @@ async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
     contents.push(b'z');
     let mut config = MemFsConfig::default();
     config.add_file("/large.txt", contents);
+    let fsinfo_calls = Arc::new(AtomicUsize::new(0));
     let fs = ReadOnlyAdapter::new(CustomReadLimit {
         fs: MemFs::new(config).expect("initialize fixture filesystem"),
         rtmax,
+        fsinfo_calls: Arc::clone(&fsinfo_calls),
     });
     let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
     let server = Server::new(server_io, fs)?;
@@ -266,6 +273,11 @@ async fn check_custom_read_limit(rtmax: u32) -> anyhow::Result<()> {
     assert_eq!(last.count, 1);
     assert_eq!(last.data.as_ref(), b"z");
     assert!(last.eof);
+    assert_eq!(
+        fsinfo_calls.load(Ordering::Relaxed),
+        2,
+        "one explicit FSINFO call and one lookup shared by both READs"
+    );
 
     drop(client);
     server_task.await?
