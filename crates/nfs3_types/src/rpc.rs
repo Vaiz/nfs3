@@ -12,7 +12,7 @@ use std::io;
 use bytes::BytesMut;
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
+use crate::xdr_codec::{self, Decoder, Encoder, Opaque, Pack, Unpack};
 
 /// RPC header
 ///
@@ -26,19 +26,19 @@ impl fragment_header {
     pub const EOF_FLAG: u32 = 0x8000_0000;
     pub const MASK: u32 = 0x7FFF_FFFF;
 
-    /// Creates a new `fragment_header` with the given length and EOF flag.
+    /// Creates the header of a `length`-byte fragment; `eof` marks the last
+    /// fragment of a record.
     ///
-    /// # Panics
-    ///
-    /// Panics if the length is greater than 2 GiB.
-    #[must_use]
-    pub fn new(length: u32, eof: bool) -> Self {
-        assert!(length <= Self::MASK);
-        let mut header = length;
+    /// Fails if `length` exceeds [`MASK`](Self::MASK).
+    pub fn new(length: usize, eof: bool) -> xdr_codec::Result<Self> {
+        let mut header = u32::try_from(length)
+            .ok()
+            .filter(|length| *length <= Self::MASK)
+            .ok_or(xdr_codec::Error::ObjectTooLarge(length))?;
         if eof {
             header |= Self::EOF_FLAG;
         }
-        Self { header }
+        Ok(Self { header })
     }
     #[must_use]
     pub const fn eof(&self) -> bool {
@@ -435,7 +435,18 @@ pub enum msg_body<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Decoder, EAGER_RESERVE, RecordBuf, io};
+    use super::{Decoder, EAGER_RESERVE, RecordBuf, fragment_header, io};
+    use crate::xdr_codec::Error;
+
+    #[test]
+    fn fragment_length_is_limited_to_31_bits() {
+        let header = fragment_header::new(0x7fff_ffff, true).unwrap();
+        assert_eq!(header.into_xdr_buf(), [0xff; 4]);
+        assert_eq!(
+            fragment_header::new(0x8000_0000, true).unwrap_err(),
+            Error::ObjectTooLarge(0x8000_0000)
+        );
+    }
 
     #[test]
     fn eager_reservation_is_capped_and_then_grows_with_data() {

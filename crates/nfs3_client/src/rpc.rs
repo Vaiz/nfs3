@@ -224,7 +224,7 @@ mod tests {
         for (i, &len) in fragments.iter().enumerate() {
             let last = i + 1 == fragments.len();
             let len = if last { rest.len() } else { len };
-            let header = fragment_header::new(u32::try_from(len).unwrap(), last);
+            let header = fragment_header::new(len, last).unwrap();
             wire.extend_from_slice(&header.into_xdr_buf());
             wire.extend_from_slice(&rest[..len]);
             rest = &rest[len..];

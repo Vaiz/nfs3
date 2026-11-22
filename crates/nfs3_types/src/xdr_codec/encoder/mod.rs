@@ -4,7 +4,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 pub use encoded::Encoded;
 
 use super::util::{add_padding, zero_padding};
-use super::{Error, Pack, Result};
+use super::{Pack, Result};
 use crate::rpc::fragment_header;
 
 /// Shared payloads shorter than this are copied into the encoder head.
@@ -132,7 +132,7 @@ impl Encoder {
     /// The record starts with the record marker (length and last-fragment bit).
     /// Fails if the record is too long for one fragment.
     pub fn finish_record(mut self) -> Result<Encoded> {
-        let marker = record_marker(self.len())?;
+        let marker = fragment_header::new(self.len(), true)?.into_xdr_buf();
         self.head[..MARKER_LEN].copy_from_slice(&marker);
         Ok(self.into_encoded())
     }
@@ -145,14 +145,6 @@ impl Encoder {
             tail: tail.freeze(),
         }
     }
-}
-
-fn record_marker(len: usize) -> Result<[u8; MARKER_LEN]> {
-    let len = u32::try_from(len)
-        .ok()
-        .filter(|len| *len <= fragment_header::MASK)
-        .ok_or(Error::ObjectTooLarge(len))?;
-    Ok(fragment_header::new(len, true).into_xdr_buf())
 }
 
 /// Encodes `value` into one contiguous buffer.
@@ -245,15 +237,6 @@ mod tests {
         assert_eq!(
             encoded.chunks(),
             [&b"\x80\0\0\x08\0\0\0\x03abc\0"[..], &[], &[]]
-        );
-    }
-
-    #[test]
-    fn record_length_limit_excludes_marker() {
-        assert_eq!(record_marker(0x7fff_ffff).unwrap(), [0xff; 4]);
-        assert_eq!(
-            record_marker(0x8000_0000).unwrap_err(),
-            Error::ObjectTooLarge(0x8000_0000)
         );
     }
 }

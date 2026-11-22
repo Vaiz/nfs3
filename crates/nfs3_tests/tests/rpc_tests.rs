@@ -103,7 +103,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
         let mut stream = TcpStream::connect(addr).await?;
         let (head, tail) = payload.split_at(payload.len() / 2);
         for (fragment, last) in [(head, false), (tail, true)] {
-            let header = fragment_header::new(u32::try_from(fragment.len())?, last);
+            let header = fragment_header::new(fragment.len(), last)?;
             stream.write_all(&header.into_xdr_buf()).await?;
             stream.write_all(fragment).await?;
         }
@@ -118,7 +118,7 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
 
         // The reader should close the connection as soon as the marker declares
         // a record over the limit, without waiting for the payload.
-        let oversized = fragment_header::new(u32::try_from(limit.get())? + 1, true);
+        let oversized = fragment_header::new(limit.get() + 1, true)?;
         stream.write_all(&oversized.into_xdr_buf()).await?;
         assert_eq!(stream.read(&mut marker).await?, 0);
         Ok::<_, anyhow::Error>(())
