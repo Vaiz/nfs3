@@ -10,9 +10,9 @@ use super::{Error, Result, Unpack};
 /// lengths are checked before anything is allocated.
 ///
 /// Each decoder has a minimum shared length. Opaque data at least that long is
-/// returned as a reference into the input buffer, without copying, and keeps
-/// the whole buffer in memory. Shorter opaque data is copied into its own
-/// allocation.
+/// returned as a reference-counted [`Bytes`] sharing the input buffer, without
+/// copying, and keeps the whole buffer in memory. Shorter opaque data is copied
+/// into its own allocation.
 ///
 /// - [`Decoder::new`] disables sharing: all opaque data is copied.
 /// - [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record) sets the minimum to half of the
@@ -107,8 +107,8 @@ impl Decoder {
 
     /// Reads `len` bytes of opaque data followed by its padding.
     ///
-    /// The data references the input if `len` is at least the minimum shared
-    /// length and is copied otherwise. The length is validated against the
+    /// The data shares the input (reference-counted) if `len` is at least the
+    /// minimum shared length and is copied otherwise. The length is validated against the
     /// remaining input before anything is allocated.
     pub(crate) fn read_opaque(&mut self, len: usize) -> Result<Bytes> {
         if len > self.buf.len() || get_padding(len) > self.buf.len() - len {
