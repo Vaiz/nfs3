@@ -16,7 +16,7 @@ use crate::rpcwire::handle_rpc_message;
 async fn over_limit_credential_gets_badcred_with_call_xid() -> anyhow::Result<()> {
     let xid = 42;
     let fs = MemFs::new(MemFsConfig::default()).expect("create test filesystem");
-    let context = RPCContext::test_ctx("/", Arc::new(fs));
+    let context = RPCContext::test_ctx("/", Arc::new(fs)).await?;
     let request = rpc_msg {
         xid,
         body: msg_body::CALL(call_body {
