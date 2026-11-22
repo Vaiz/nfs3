@@ -169,6 +169,7 @@ where
 #[cfg(test)]
 mod tests {
     use bytes::{Buf, Bytes, BytesMut};
+    use future_assert::FutureTestExt;
     use nfs3_types::rpc::{
         accept_stat_data, accepted_reply, fragment_header, msg_body, opaque_auth, reply_body,
         rpc_msg,
@@ -230,8 +231,8 @@ mod tests {
         wire.freeze()
     }
 
-    #[tokio::test]
-    async fn fragmented_reply_is_reassembled() {
+    #[test]
+    fn fragmented_reply_is_reassembled() {
         let payload = Opaque::owned((0..=255u8).cycle().take(5000).collect());
         let mut client = RpcClient::new(Mock {
             input: Bytes::new(),
@@ -239,7 +240,7 @@ mod tests {
         });
         client.io.input = reply(client.xid, &payload, &[0, 13, 2000, 0]);
 
-        let result: Opaque<'static> = client.call(1, 1, 0, &payload).await.unwrap();
+        let result: Opaque<'static> = client.call(1, 1, 0, &payload).unwrap_ready().unwrap();
         assert_eq!(result, payload);
         assert!(client.io.input.is_empty());
 
@@ -250,8 +251,8 @@ mod tests {
         assert!(output.ends_with(&payload[payload.len() - 100..]));
     }
 
-    #[tokio::test]
-    async fn truncated_reply_is_an_io_error() {
+    #[test]
+    fn truncated_reply_is_an_io_error() {
         let mut client = RpcClient::new(Mock {
             input: Bytes::new(),
             output: Vec::new(),
@@ -261,7 +262,7 @@ mod tests {
 
         let err = client
             .call::<_, Opaque<'static>>(1, 1, 0, &Void)
-            .await
+            .unwrap_ready()
             .unwrap_err();
         assert!(
             matches!(err, RpcError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof)

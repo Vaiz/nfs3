@@ -28,6 +28,7 @@ smol = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, default-features = false, features = ["net", "io-util"] }
 
 [dev-dependencies]
+future_assert.workspace = true
 jiff.workspace = true
 tokio = { workspace = true, default-features = false, features = ["rt", "macros", "net", "io-util"] }
 
