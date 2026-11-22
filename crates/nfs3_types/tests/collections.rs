@@ -17,7 +17,7 @@ fn vec_serialization() {
         ]
     );
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 16);
@@ -39,7 +39,7 @@ fn list_serialization() {
         ]
     );
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 28);
@@ -88,7 +88,7 @@ fn empty_collections() {
     assert_eq!(len, 4); // Just the length field
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 4);
@@ -101,7 +101,7 @@ fn empty_collections() {
     assert_eq!(len, 4); // Just the end marker
     assert_eq!(buffer, [0, 0, 0, 0]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 4);
@@ -117,7 +117,7 @@ fn single_item_collections() {
     assert_eq!(len, 8); // 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 8);
@@ -130,7 +130,7 @@ fn single_item_collections() {
     assert_eq!(len, 12); // 4 bytes indicator + 4 bytes data + 4 bytes end marker
     assert_eq!(buffer, [0, 0, 0, 1, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = List::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 12);
@@ -162,7 +162,7 @@ fn large_collections() {
     let len = buffer.len();
     assert_eq!(len, 404); // 4 bytes length + 100 * 4 bytes data
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = Vec::<u32>::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 404);

@@ -40,7 +40,7 @@ fn rpc_call_serialization() {
     assert_eq!(len, 32);
     assert_eq!(call.packed_size(), len);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = call_body::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(len, unpack_len);
@@ -70,7 +70,7 @@ fn rpc_msg_serialization() {
     assert_eq!(len, 40);
     assert_eq!(msg.packed_size(), len);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = rpc_msg::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(len, unpack_len);
@@ -133,7 +133,7 @@ fn mount3res_roundtrip() {
     let pack_len = buffer.len();
     assert_eq!(pack_len, success_res.packed_size());
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = mountres3::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(pack_len, unpack_len);
@@ -152,7 +152,7 @@ fn mount3res_roundtrip() {
     let pack_len = buffer.len();
     assert_eq!(pack_len, error_res.packed_size());
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = mountres3::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(pack_len, unpack_len);
@@ -190,7 +190,7 @@ fn opaque_auth_default() {
     assert_eq!(len, 8); // 4 bytes flavor + 4 bytes length (no data)
     assert_eq!(buffer, [0, 0, 0, 0, 0, 0, 0, 0]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(len, unpack_len);
@@ -209,7 +209,7 @@ fn opaque_auth_with_data() {
     assert_eq!(len, 12); // 4 bytes flavor + 4 bytes length + 4 bytes data
     assert_eq!(buffer, [0, 0, 0, 1, 0, 0, 0, 4, 0x12, 0x34, 0x56, 0x78]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
     let unpack_len = cursor.position();
     assert_eq!(len, unpack_len);
@@ -237,7 +237,7 @@ fn mount_error_codes() {
         let len = buffer.len();
         assert_eq!(len, 4);
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::copying(buffer);
         let deserialized = mountres3::unpack(&mut cursor).unwrap();
         let _ = cursor.position();
         match deserialized {
@@ -291,7 +291,7 @@ fn auth_flavors() {
         let len = buffer.len();
         assert_eq!(len, 8); // 4 bytes flavor + 4 bytes length
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::copying(buffer);
         let deserialized = opaque_auth::unpack(&mut cursor).unwrap();
         let _ = cursor.position();
         assert_eq!(auth.flavor, deserialized.flavor);

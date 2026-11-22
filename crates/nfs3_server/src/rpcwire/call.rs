@@ -49,7 +49,7 @@ impl RpcCall {
     /// Drops this call's reference to the record buffer, so only decoded values
     /// sharing it keep it in memory.
     pub(crate) fn unpack_args<I: Unpack>(&mut self) -> Result<I, Error> {
-        let mut args = std::mem::replace(&mut self.args, Decoder::new(Bytes::new()));
+        let mut args = std::mem::replace(&mut self.args, Decoder::copying(Bytes::new()));
         let value = I::unpack(&mut args)?;
         if !args.is_empty() {
             return Err(Error::TrailingBytes(args.remaining()));

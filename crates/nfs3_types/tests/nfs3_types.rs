@@ -103,7 +103,7 @@ fn empty_dirlist3_serialization() {
     assert_eq!(len, 8);
     assert_eq!(buffer, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = dirlist3::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 8);
@@ -150,7 +150,7 @@ fn dirlist3_with_entries_serialization() {
         ]
     );
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = dirlist3::unpack(&mut cursor).unwrap();
     let len = cursor.position();
     assert_eq!(len, 72);
@@ -195,7 +195,7 @@ fn nfs3_result_roundtrip() {
         let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::copying(buffer);
         let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
         let unpack_len = cursor.position();
         assert_eq!(pack_len, unpack_len);
@@ -213,7 +213,7 @@ fn nfs3_result_roundtrip() {
         let pack_len = buffer.len();
         assert_eq!(pack_len, original.packed_size());
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::copying(buffer);
         let deserialized = Nfs3Result::<u32, u32>::unpack(&mut cursor).unwrap();
         let unpack_len = cursor.position();
         assert_eq!(pack_len, unpack_len);
@@ -261,7 +261,7 @@ fn nfs3_error_codes() {
         let len = buffer.len();
         assert_eq!(len, 4);
 
-        let mut cursor = Decoder::new(buffer);
+        let mut cursor = Decoder::copying(buffer);
         let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
         let _ = cursor.position();
         assert_eq!(result, deserialized);
@@ -273,7 +273,7 @@ fn nfs3_error_codes() {
     let len = buffer.len();
     assert_eq!(len, 4);
 
-    let mut cursor = Decoder::new(buffer);
+    let mut cursor = Decoder::copying(buffer);
     let deserialized = Nfs3Result::<Void, Void>::unpack(&mut cursor).unwrap();
     let _ = cursor.position();
     deserialized.expect("Expected success result for NFS3_OK");

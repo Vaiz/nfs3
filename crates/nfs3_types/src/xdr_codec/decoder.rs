@@ -14,7 +14,7 @@ use super::{Error, Result, Unpack};
 /// copying, and keeps the whole buffer in memory. Shorter opaque data is copied
 /// into its own allocation.
 ///
-/// - [`Decoder::new`] disables sharing: all opaque data is copied.
+/// - [`Decoder::copying`] disables sharing: all opaque data is copied.
 /// - [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record) sets the minimum to half of the
 ///   record's allocation, so READ and WRITE payloads are shared, and a shared value never keeps
 ///   more than twice its size in memory.
@@ -22,7 +22,7 @@ use super::{Error, Result, Unpack};
 /// ```
 /// use nfs3_types::xdr_codec::{Decoder, Unpack};
 ///
-/// let mut input = Decoder::new(&[0, 0, 0, 7][..]);
+/// let mut input = Decoder::copying(&[0, 0, 0, 7][..]);
 /// assert_eq!(u32::unpack(&mut input)?, 7);
 /// # Ok::<(), nfs3_types::xdr_codec::Error>(())
 /// ```
@@ -37,7 +37,7 @@ pub struct Decoder {
 impl Decoder {
     /// Creates a decoder over `buf` with sharing disabled: all opaque data is
     /// copied into its own allocation.
-    pub fn new(buf: impl Into<Bytes>) -> Self {
+    pub fn copying(buf: impl Into<Bytes>) -> Self {
         let buf = buf.into();
         Self {
             input_len: buf.len(),
@@ -128,9 +128,9 @@ impl Decoder {
 
 /// Decodes a `T` that must occupy all of `buf`.
 ///
-/// Sharing is disabled, as with [`Decoder::new`]: all opaque data is copied.
+/// Sharing is disabled, as with [`Decoder::copying`]: all opaque data is copied.
 pub fn decode<T: Unpack>(buf: impl Into<Bytes>) -> Result<T> {
-    let mut input = Decoder::new(buf);
+    let mut input = Decoder::copying(buf);
     let value = T::unpack(&mut input)?;
     if !input.is_empty() {
         return Err(Error::TrailingBytes(input.remaining()));
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn length_beyond_input_is_rejected_before_allocating() {
         // Claims a 4 GiB - 1 opaque with only four bytes of input.
-        let mut input = Decoder::new(&[0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4][..]);
+        let mut input = Decoder::copying(&[0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4][..]);
         assert_eq!(
             Opaque::unpack(&mut input).unwrap_err(),
             Error::InvalidLength(0xffff_ffff)
@@ -232,7 +232,7 @@ mod tests {
 
         // A slice of a larger buffer: the allocation is unknown.
         let parent = small_and_large(112).freeze();
-        let mut input = Decoder::new(parent.slice(8..));
+        let mut input = Decoder::copying(parent.slice(8..));
         let large = Opaque::unpack(&mut input).unwrap();
         assert!(!byte_range(&parent).contains(&(large.as_ptr() as usize)));
     }
