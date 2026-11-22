@@ -26,13 +26,12 @@ where
     T: Pack,
 {
     fn packed_size(&self) -> usize {
-        let mut len = 0;
-        for item in &self.0 {
-            len += <bool as Pack>::packed_size(&true);
-            len += item.packed_size();
-        }
-        len += <bool as Pack>::packed_size(&false);
-        len
+        // Each item is preceded by a 4-byte `true`, and the list ends with `false`.
+        self.0
+            .iter()
+            .map(|item| 4 + item.packed_size())
+            .sum::<usize>()
+            + 4
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {

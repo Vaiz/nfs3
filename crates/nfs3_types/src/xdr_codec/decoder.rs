@@ -86,24 +86,14 @@ impl Decoder {
         Ok(out)
     }
 
-    /// Skips and validates the zero padding that follows `len` data bytes.
-    pub(crate) fn skip_padding(&mut self, len: usize) -> Result<()> {
-        let padding = get_padding(len);
-        let bytes = self.buf.get(..padding).ok_or(Error::UnexpectedEof)?;
-        if bytes.iter().any(|&b| b != 0) {
-            return Err(Error::NonZeroPadding);
-        }
-        self.buf.advance(padding);
-        Ok(())
-    }
-
     /// Reads `len` bytes of opaque data followed by its padding.
     ///
     /// The data shares the input (reference-counted) if `len` is at least the
     /// minimum shared length and is copied otherwise. The length is validated against the
     /// remaining input before anything is allocated.
     pub(crate) fn read_opaque(&mut self, len: usize) -> Result<Bytes> {
-        if len > self.buf.len() || get_padding(len) > self.buf.len() - len {
+        let padding = get_padding(len);
+        if len > self.buf.len() || padding > self.buf.len() - len {
             return Err(Error::InvalidLength(len));
         }
         let data = if len >= self.min_shared_len {
@@ -113,7 +103,10 @@ impl Decoder {
             self.buf.advance(len);
             data
         };
-        self.skip_padding(len)?;
+        if self.buf[..padding].iter().any(|&b| b != 0) {
+            return Err(Error::NonZeroPadding);
+        }
+        self.buf.advance(padding);
         Ok(data)
     }
 }

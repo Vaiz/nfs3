@@ -113,21 +113,3 @@ impl PartialEq for Opaque<'_> {
 }
 
 impl Eq for Opaque<'_> {}
-
-impl From<Vec<u8>> for Opaque<'static> {
-    fn from(data: Vec<u8>) -> Self {
-        Self::owned(data)
-    }
-}
-
-impl From<Bytes> for Opaque<'static> {
-    fn from(data: Bytes) -> Self {
-        Self::from_bytes(data)
-    }
-}
-
-impl<'a> From<&'a [u8]> for Opaque<'a> {
-    fn from(data: &'a [u8]) -> Self {
-        Self::borrowed(data)
-    }
-}
