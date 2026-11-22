@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 use std::io;
 
+use bytes::BufMut;
 use nfs3_types::rpc::{
     RPC_VERSION_2, RecordBuf, accept_stat_data, call_body, msg_body, opaque_auth, reply_body,
     rpc_msg,
@@ -148,11 +149,11 @@ where
             let mut marker = [0u8; 4];
             io.async_read_exact(&mut marker).await?;
             record.start_fragment(marker)?;
-            while record.remaining() != 0 {
-                let (buf, remaining) = record.buf_mut();
+            while let Some(mut buf) = record.buf_mut() {
                 // Read only what fits in the reserved capacity, so memory keeps
                 // following the received data.
-                let len = remaining.min(buf.capacity() - buf.len());
+                let len = buf.chunk_mut().len();
+                let buf = buf.get_mut();
                 let expected = buf.len() + len;
                 io.async_read_exact_buf(buf, len).await?;
                 if buf.len() != expected {

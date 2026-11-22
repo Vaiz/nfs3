@@ -45,14 +45,14 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
         while !record.is_complete() {
             record.start_fragment(self.read_marker().await?)?;
 
-            let (buf, remaining) = record.buf_mut();
-            let buffered = remaining.min(self.read_ahead.len());
-            buf.extend_from_slice(&self.read_ahead[..buffered]);
-            self.read_ahead.advance(buffered);
+            if let Some(mut buf) = record.buf_mut() {
+                let buffered = buf.remaining_mut().min(self.read_ahead.len());
+                buf.put_slice(&self.read_ahead[..buffered]);
+                self.read_ahead.advance(buffered);
+            }
 
-            while record.remaining() != 0 {
-                let (buf, remaining) = record.buf_mut();
-                if self.input.read_buf(&mut buf.limit(remaining)).await? == 0 {
+            while let Some(mut buf) = record.buf_mut() {
+                if self.input.read_buf(&mut buf).await? == 0 {
                     return Err(io::Error::new(
                         io::ErrorKind::UnexpectedEof,
                         "incomplete RPC fragment payload",

@@ -2,7 +2,8 @@
 
 use std::io;
 
-use bytes::BytesMut;
+use bytes::buf::Limit;
+use bytes::{BufMut, BytesMut};
 
 use super::fragment_header;
 use crate::xdr_codec::Decoder;
@@ -17,9 +18,9 @@ const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
 ///
 /// The caller does the I/O: it passes each fragment marker to
 /// [`start_fragment`](Self::start_fragment), appends the fragment data to
-/// [`buf_mut`](Self::buf_mut) until [`remaining`](Self::remaining) is zero,
-/// and, once [`is_complete`](Self::is_complete), turns the record, without
-/// markers, into a decoder with [`into_decoder`](Self::into_decoder).
+/// [`buf_mut`](Self::buf_mut) until it returns `None`, and, once
+/// [`is_complete`](Self::is_complete), turns the record, without markers, into
+/// a decoder with [`into_decoder`](Self::into_decoder).
 ///
 /// Memory follows the data actually received: about 1 MiB at most is reserved
 /// from an advertised length and beyond that the buffer at most doubles, so a
@@ -75,24 +76,21 @@ impl RecordBuf {
         Ok(())
     }
 
-    /// Returns the number of bytes of the current fragment not received yet.
-    #[must_use]
-    pub fn remaining(&self) -> usize {
-        self.fragment_end.saturating_sub(self.buf.len())
-    }
-
-    /// Returns the buffer to append fragment data to and the number of bytes
-    /// it still expects, reserving room if the buffer is full.
+    /// Returns the buffer to append the current fragment's data to, limited to
+    /// the bytes not received yet, or `None` once the fragment is complete.
     ///
-    /// Append at most the returned number of bytes: a record with data past
-    /// its last fragment is never complete.
-    pub fn buf_mut(&mut self) -> (&mut BytesMut, usize) {
-        let remaining = self.remaining();
+    /// Reserves room if the buffer is full. Appending through
+    /// [`Limit::get_mut`] past the limit leaves the record never complete.
+    pub fn buf_mut(&mut self) -> Option<Limit<&mut BytesMut>> {
+        let remaining = self
+            .fragment_end
+            .checked_sub(self.buf.len())
+            .filter(|remaining| *remaining != 0)?;
         if self.buf.capacity() == self.buf.len() {
             self.buf
                 .reserve(remaining.min(EAGER_RESERVE.max(self.buf.len())));
         }
-        (&mut self.buf, remaining)
+        Some((&mut self.buf).limit(remaining))
     }
 
     /// Returns `true` once the last fragment of the record is complete.
@@ -119,40 +117,45 @@ impl RecordBuf {
 
 #[cfg(test)]
 mod tests {
+    use bytes::BufMut;
+
     use super::{EAGER_RESERVE, RecordBuf, io};
 
     #[test]
     fn eager_reservation_is_capped_and_then_grows_with_data() {
         let mut record = RecordBuf::new(usize::MAX);
         record.start_fragment([0, 0, 0, 100]).unwrap();
-        let (buf, remaining) = record.buf_mut();
-        assert_eq!((buf.capacity(), remaining), (100, 100));
+        let buf = record.buf_mut().unwrap();
+        assert_eq!((buf.get_ref().capacity(), buf.remaining_mut()), (100, 100));
 
         let mut record = RecordBuf::new(usize::MAX);
         record.start_fragment([0x7f, 0xff, 0xff, 0xff]).unwrap();
-        let (buf, remaining) = record.buf_mut();
-        assert_eq!(remaining, 0x7fff_ffff);
-        assert_eq!(buf.capacity(), EAGER_RESERVE);
-        buf.resize(EAGER_RESERVE, 0);
-        assert!(record.buf_mut().0.capacity() <= 2 * EAGER_RESERVE);
+        let mut buf = record.buf_mut().unwrap();
+        assert_eq!(buf.remaining_mut(), 0x7fff_ffff);
+        assert_eq!(buf.get_ref().capacity(), EAGER_RESERVE);
+        buf.put_bytes(0, EAGER_RESERVE);
+        let buf = record.buf_mut().unwrap();
+        assert!(buf.get_ref().capacity() <= 2 * EAGER_RESERVE);
     }
 
     #[test]
     fn fragments_are_joined_within_the_limit() {
         let mut record = RecordBuf::new(3);
         record.start_fragment([0, 0, 0, 2]).unwrap();
-        record.buf_mut().0.extend_from_slice(b"ab");
+        record.buf_mut().unwrap().put_slice(b"ab");
+        assert!(record.buf_mut().is_none());
         assert!(!record.is_complete());
         let err = record.start_fragment([0x80, 0, 0, 2]).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         record.start_fragment([0x80, 0, 0, 1]).unwrap();
         assert!(!record.is_complete());
-        record.buf_mut().0.extend_from_slice(b"c");
+        record.buf_mut().unwrap().put_slice(b"c");
         assert!(record.is_complete());
         assert_eq!(record.into_decoder().into_remaining(), b"abc"[..]);
 
         let mut record = RecordBuf::new(0);
         record.start_fragment([0x80, 0, 0, 0]).unwrap();
+        assert!(record.buf_mut().is_none());
         assert!(record.is_complete());
         assert_eq!(record.into_decoder().into_remaining(), b""[..]);
     }
@@ -161,8 +164,8 @@ mod tests {
     fn data_past_the_last_fragment_is_never_complete() {
         let mut record = RecordBuf::new(usize::MAX);
         record.start_fragment([0x80, 0, 0, 1]).unwrap();
-        record.buf_mut().0.extend_from_slice(b"ab");
-        assert_eq!(record.remaining(), 0);
+        record.buf_mut().unwrap().get_mut().extend_from_slice(b"ab");
+        assert!(record.buf_mut().is_none());
         assert!(!record.is_complete());
     }
 }
