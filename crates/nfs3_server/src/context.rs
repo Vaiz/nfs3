@@ -28,12 +28,24 @@ pub struct RPCContext<T: NfsFileSystem> {
 impl<T: NfsFileSystem> RPCContext<T> {
     /// Decodes the call's `AUTH_UNIX` credential into `auth`.
     ///
-    /// Returns whether the call uses `AUTH_UNIX`.
+    /// Returns whether the call uses `AUTH_UNIX`, or an error if the credential
+    /// is malformed or exceeds the RFC 5531 limits.
     pub(crate) fn set_auth(&mut self, call: &call_body) -> Result<bool, Error> {
         if call.cred.flavor != auth_flavor::AUTH_UNIX {
             return Ok(false);
         }
-        self.auth = unpack_exact(Decoder::copying(call.cred.body.clone().into_bytes()))?;
+        let body = &call.cred.body;
+        if body.len() > 400 {
+            return Err(Error::InvalidLength(body.len()));
+        }
+        let auth: auth_unix = unpack_exact(Decoder::copying(body.clone().into_bytes()))?;
+        if auth.machinename.len() > 255 {
+            return Err(Error::InvalidLength(auth.machinename.len()));
+        }
+        if auth.gids.len() > 16 {
+            return Err(Error::InvalidLength(auth.gids.len()));
+        }
+        self.auth = auth;
         Ok(true)
     }
 }

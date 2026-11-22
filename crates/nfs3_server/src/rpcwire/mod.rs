@@ -17,6 +17,10 @@ use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 pub(crate) mod call;
 pub(crate) mod messages;
 
+#[cfg(all(test, feature = "memfs", feature = "__test_reexports"))]
+#[path = "../tests/rpc_auth.rs"]
+mod rpc_auth_tests;
+
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
 
@@ -41,7 +45,13 @@ where
         return message.into_rpc_mismatch();
     }
 
-    let unix = context.set_auth(call)?;
+    let unix = match context.set_auth(call) {
+        Ok(unix) => unix,
+        Err(err) => {
+            warn!("Invalid AUTH_SYS credential for XID {xid}: {err}");
+            return message.into_auth_error(auth_stat::AUTH_BADCRED);
+        }
+    };
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
         warn!(
             "refusing a call from uid {} on {}",
