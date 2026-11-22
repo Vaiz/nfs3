@@ -4,7 +4,7 @@ use std::io::{self, IoSlice};
 
 use bytes::{Buf, BytesMut};
 
-/// Slices passed to one vectored write by [`AsyncWrite::async_write_all_buf`].
+/// Slices passed to one vectored write by [`AsyncWrite::async_write_all`].
 const MAX_WRITE_SLICES: usize = 16;
 
 /// Trait to read bytes asynchronously.
@@ -54,21 +54,6 @@ pub trait AsyncWrite: Send {
     /// Write bytes to the stream from the provided buffer.
     fn async_write(&mut self, buf: &[u8]) -> impl Future<Output = io::Result<usize>> + Send;
 
-    /// Write all bytes to the stream from the provided buffer.
-    fn async_write_all(&mut self, buf: &[u8]) -> impl Future<Output = io::Result<()>> + Send {
-        async move {
-            let mut buf = buf;
-            while !buf.is_empty() {
-                let n = self.async_write(buf).await?;
-                if n == 0 {
-                    return Err(io::ErrorKind::WriteZero.into());
-                }
-                buf = &buf[n..];
-            }
-            Ok(())
-        }
-    }
-
     /// Write bytes from several buffers, in order.
     ///
     /// The default implementation writes the first non-empty buffer.
@@ -84,7 +69,7 @@ pub trait AsyncWrite: Send {
     }
 
     /// Write all bytes of `buf`, with vectored writes, advancing it.
-    fn async_write_all_buf<B: Buf + Send>(
+    fn async_write_all<B: Buf + Send>(
         &mut self,
         buf: &mut B,
     ) -> impl Future<Output = io::Result<()>> + Send {

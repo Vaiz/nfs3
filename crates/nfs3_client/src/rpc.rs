@@ -106,7 +106,7 @@ where
             return Err(RpcError::WrongLength);
         }
         let mut call = out.finish_record()?;
-        io.async_write_all_buf(&mut call).await?;
+        io.async_write_all(&mut call).await?;
         Ok(())
     }
 
