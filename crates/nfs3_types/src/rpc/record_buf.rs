@@ -50,8 +50,15 @@ impl RecordBuf {
     ///
     /// Fails with [`io::ErrorKind::InvalidData`] if the record would exceed the
     /// size limit.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the previous fragment is not exactly complete or was the last.
     pub fn start_fragment(&mut self, marker: [u8; 4]) -> io::Result<()> {
-        debug_assert_eq!(self.remaining(), 0, "previous fragment is incomplete");
+        assert!(
+            !self.last && self.buf.len() == self.fragment_end,
+            "previous fragment is incomplete or was the last"
+        );
         let header = fragment_header::from(marker);
         self.fragment_end = self
             .buf
@@ -76,6 +83,9 @@ impl RecordBuf {
 
     /// Returns the buffer to append fragment data to and the number of bytes
     /// it still expects, reserving room if the buffer is full.
+    ///
+    /// Append at most the returned number of bytes: a record with data past
+    /// its last fragment is never complete.
     pub fn buf_mut(&mut self) -> (&mut BytesMut, usize) {
         let remaining = self.remaining();
         if self.buf.capacity() == self.buf.len() {
@@ -88,7 +98,7 @@ impl RecordBuf {
     /// Returns `true` once the last fragment of the record is complete.
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        self.last && self.remaining() == 0
+        self.last && self.buf.len() == self.fragment_end
     }
 
     /// Returns a decoder over the complete record.
@@ -96,10 +106,13 @@ impl RecordBuf {
     /// The decoder's minimum shared length is half of the record's allocation
     /// (see [`Decoder`]), so READ and WRITE payloads are shared with the record
     /// instead of copied.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the record is not [complete](Self::is_complete).
     #[must_use]
     pub fn into_decoder(self) -> Decoder {
-        debug_assert!(self.is_complete(), "record is incomplete");
-        debug_assert_eq!(self.buf.len(), self.fragment_end, "fragment overrun");
+        assert!(self.is_complete(), "record is incomplete");
         Decoder::sharing(self.buf)
     }
 }
@@ -142,5 +155,14 @@ mod tests {
         record.start_fragment([0x80, 0, 0, 0]).unwrap();
         assert!(record.is_complete());
         assert_eq!(record.into_decoder().into_remaining(), b""[..]);
+    }
+
+    #[test]
+    fn data_past_the_last_fragment_is_never_complete() {
+        let mut record = RecordBuf::new(usize::MAX);
+        record.start_fragment([0x80, 0, 0, 1]).unwrap();
+        record.buf_mut().0.extend_from_slice(b"ab");
+        assert_eq!(record.remaining(), 0);
+        assert!(!record.is_complete());
     }
 }
