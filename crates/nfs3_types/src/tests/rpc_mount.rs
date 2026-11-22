@@ -200,18 +200,20 @@ fn opaque_auth_default() {
 fn auth_sys_decode_limits() {
     for (name_len, gids_len, expected_error) in [
         (255, 16, None),
-        (256, 16, Some(Error::InvalidLength(256))),
-        (255, 17, Some(Error::InvalidLength(17))),
+        (256, 16, Some((Error::InvalidLength(256), 8))),
+        (255, 17, Some((Error::InvalidLength(17), 276))),
     ] {
         let auth = auth_unix {
             machinename: Opaque::owned(vec![b'm'; name_len]),
             gids: vec![42; gids_len],
             ..auth_unix::default()
         };
-        let mut input = Decoder::copying(encode(&auth).unwrap());
+        let bytes = encode(&auth).unwrap();
+        let mut input = Decoder::copying(bytes.clone());
         let result = auth_unix::unpack(&mut input);
-        if let Some(expected_error) = expected_error {
+        if let Some((expected_error, prefix_len)) = expected_error {
             assert_eq!(result.unwrap_err(), expected_error);
+            assert_eq!(input.into_remaining(), bytes.slice(prefix_len..));
         } else {
             let decoded = result.unwrap();
             assert_eq!(decoded.machinename, auth.machinename);

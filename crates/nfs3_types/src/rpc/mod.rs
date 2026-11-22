@@ -165,15 +165,20 @@ impl Pack for auth_unix {
 impl Unpack for auth_unix {
     fn unpack(input: &mut Decoder) -> Result<Self> {
         let stamp = u32::unpack(input)?;
-        let machinename = Opaque::unpack(input)?;
-        if machinename.len() > MAX_MACHINENAME_LEN {
-            return Err(Error::InvalidLength(machinename.len()));
+        let name_len = u32::unpack(input)? as usize;
+        if name_len > MAX_MACHINENAME_LEN {
+            return Err(Error::InvalidLength(name_len));
         }
+        let machinename = Opaque::from_bytes(input.read_opaque(name_len)?);
         let uid = u32::unpack(input)?;
         let gid = u32::unpack(input)?;
-        let gids = Vec::unpack(input)?;
-        if gids.len() > MAX_GIDS {
-            return Err(Error::InvalidLength(gids.len()));
+        let gids_len = u32::unpack(input)? as usize;
+        if gids_len > MAX_GIDS || gids_len > input.remaining() / 4 {
+            return Err(Error::InvalidLength(gids_len));
+        }
+        let mut gids = Vec::with_capacity(gids_len);
+        for _ in 0..gids_len {
+            gids.push(u32::unpack(input)?);
         }
         Ok(Self {
             stamp,
