@@ -10,6 +10,10 @@ use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
 
+const MAX_AUTH_BYTES: usize = 400;
+const MAX_MACHINENAME_LEN: usize = 255;
+const MAX_GIDS: usize = 16;
+
 #[derive_where(Clone, Debug)]
 pub struct RPCContext<T: NfsFileSystem> {
     pub local_port: u16,
@@ -35,14 +39,14 @@ impl<T: NfsFileSystem> RPCContext<T> {
             return Ok(false);
         }
         let body = &call.cred.body;
-        if body.len() > 400 {
+        if body.len() > MAX_AUTH_BYTES {
             return Err(Error::InvalidLength(body.len()));
         }
         let auth: auth_unix = unpack_exact(Decoder::copying(body.clone().into_bytes()))?;
-        if auth.machinename.len() > 255 {
+        if auth.machinename.len() > MAX_MACHINENAME_LEN {
             return Err(Error::InvalidLength(auth.machinename.len()));
         }
-        if auth.gids.len() > 16 {
+        if auth.gids.len() > MAX_GIDS {
             return Err(Error::InvalidLength(auth.gids.len()));
         }
         self.auth = auth;

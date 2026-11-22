@@ -17,10 +17,6 @@ use crate::{mount_handlers, nfs_handlers, portmap_handlers};
 pub(crate) mod call;
 pub(crate) mod messages;
 
-#[cfg(all(test, feature = "memfs", feature = "__test_reexports"))]
-#[path = "../tests/rpc_auth.rs"]
-mod rpc_auth_tests;
-
 // Information from RFC 5531
 // https://datatracker.ietf.org/doc/html/rfc5531
 
@@ -28,7 +24,7 @@ const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
-async fn handle_rpc_message<T>(
+pub(crate) async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
     mut args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
