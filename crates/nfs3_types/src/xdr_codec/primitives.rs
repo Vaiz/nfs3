@@ -22,7 +22,11 @@ impl Unpack for Vec<u32> {
         if len > input.remaining() / 4 {
             return Err(Error::InvalidLength(len));
         }
-        (0..len).map(|_| u32::unpack(input)).collect()
+        let mut items = Self::with_capacity(len);
+        for _ in 0..len {
+            items.push(u32::unpack(input)?);
+        }
+        Ok(items)
     }
 }
 

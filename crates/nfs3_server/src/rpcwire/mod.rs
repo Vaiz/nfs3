@@ -93,7 +93,7 @@ where
     O: Pack + Send + 'static,
     T: NfsFileSystem,
 {
-    let args = match unpack_args::<I>(args) {
+    let args = match unpack_exact::<I>(args) {
         Ok(args) => args,
         Err(err) => {
             error!("Failed to unpack message: {err}");
@@ -105,14 +105,14 @@ where
     message.into_success_reply(&result)
 }
 
-/// Decodes the procedure arguments, which must span the rest of the record.
+/// Decodes a value that must span the rest of `input`.
 ///
-/// Consumes `args`, so only decoded values that share the record buffer keep it
-/// in memory while the handler runs.
-fn unpack_args<I: Unpack>(mut args: Decoder) -> Result<I, Error> {
-    let value = I::unpack(&mut args)?;
-    if !args.is_empty() {
-        return Err(Error::TrailingBytes(args.remaining()));
+/// Consumes `input`, so only decoded values that share its buffer keep it in
+/// memory afterwards.
+pub(crate) fn unpack_exact<T: Unpack>(mut input: Decoder) -> Result<T, Error> {
+    let value = T::unpack(&mut input)?;
+    if !input.is_empty() {
+        return Err(Error::TrailingBytes(input.remaining()));
     }
     Ok(value)
 }
@@ -172,4 +172,24 @@ where
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use nfs3_types::rpc::auth_unix;
+    use nfs3_types::xdr_codec::{Decoder, Error};
+
+    use super::unpack_exact;
+
+    #[test]
+    fn unpack_exact_rejects_trailing_bytes() {
+        let mut bytes = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix::default())
+            .body
+            .as_ref()
+            .to_vec();
+        bytes.extend_from_slice(&[0; 4]);
+
+        let result = unpack_exact::<auth_unix>(Decoder::copying(bytes));
+        assert!(matches!(result, Err(Error::TrailingBytes(4))));
+    }
 }

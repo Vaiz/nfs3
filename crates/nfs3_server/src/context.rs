@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use derive_where::derive_where;
 use nfs3_types::rpc::{auth_flavor, auth_unix, call_body};
-use nfs3_types::xdr_codec::{Decoder, Error, Unpack};
+use nfs3_types::xdr_codec::{Decoder, Error};
 use tokio::sync::mpsc;
 
+use crate::rpcwire::unpack_exact;
 use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
@@ -32,8 +33,7 @@ impl<T: NfsFileSystem> RPCContext<T> {
         if call.cred.flavor != auth_flavor::AUTH_UNIX {
             return Ok(false);
         }
-        let mut decoder = Decoder::copying(call.cred.body.clone().into_bytes());
-        self.auth = auth_unix::unpack(&mut decoder)?;
+        self.auth = unpack_exact(Decoder::copying(call.cred.body.clone().into_bytes()))?;
         Ok(true)
     }
 }
