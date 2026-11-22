@@ -1,16 +1,19 @@
 use std::sync::Arc;
 
 use derive_where::derive_where;
-use nfs3_types::rpc::auth_unix;
+use nfs3_types::rpc::{auth_flavor, auth_unix, call_body};
+use nfs3_types::xdr_codec::{Decoder, Error, Unpack};
 use tokio::sync::mpsc;
 
 use crate::transaction_tracker::TransactionTracker;
+use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
 
 #[derive_where(Clone, Debug)]
-pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
+pub struct RPCContext<T: NfsFileSystem> {
     pub local_port: u16,
     pub client_addr: String,
+    // TODO: should it be removed from this struct?
     pub auth: auth_unix,
     #[derive_where(skip(Debug))]
     pub vfs: Arc<T>,
@@ -19,6 +22,20 @@ pub struct RPCContext<T: crate::vfs::NfsFileSystem> {
     pub transaction_tracker: Arc<TransactionTracker>,
     #[derive_where(skip(Debug))]
     pub(crate) file_handle_converter: FileHandleConverter,
+}
+
+impl<T: NfsFileSystem> RPCContext<T> {
+    /// Decodes the call's `AUTH_UNIX` credential into `auth`.
+    ///
+    /// Returns whether the call uses `AUTH_UNIX`.
+    pub(crate) fn set_auth(&mut self, call: &call_body) -> Result<bool, Error> {
+        if call.cred.flavor != auth_flavor::AUTH_UNIX {
+            return Ok(false);
+        }
+        let mut decoder = Decoder::copying(call.cred.body.clone().into_bytes());
+        self.auth = auth_unix::unpack(&mut decoder)?;
+        Ok(true)
+    }
 }
 
 #[doc(hidden)]

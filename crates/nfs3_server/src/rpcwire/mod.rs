@@ -3,9 +3,7 @@ use std::time::Instant;
 
 use call::{RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
-use nfs3_types::rpc::{
-    RPC_VERSION_2, accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body,
-};
+use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -44,11 +42,7 @@ where
         return message.into_rpc_mismatch();
     }
 
-    let unix = call.cred.flavor == auth_flavor::AUTH_UNIX;
-    if unix {
-        let auth = auth_unix::unpack(&mut Decoder::copying(call.cred.body.clone().into_bytes()))?;
-        context.auth = auth;
-    }
+    let unix = context.set_auth(call)?;
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
         warn!(
             "refusing a call from uid {} on {}",
