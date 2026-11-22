@@ -59,7 +59,9 @@ fn prepare(workload: Workload) -> Fixture {
     let payload = vec![0xAB; workload.2 as usize];
     let mut config = MemFsConfig::default();
     config.add_file("/file", payload.clone());
-    let server = Server::new(server, MemFs::new(config).unwrap()).unwrap();
+    let server = runtime
+        .block_on(Server::new(server, MemFs::new(config).unwrap()))
+        .unwrap();
     let client = Nfs3Client::new(TokioIo::new(client));
     Fixture {
         runtime,

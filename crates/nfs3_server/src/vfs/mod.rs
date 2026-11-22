@@ -154,8 +154,9 @@ pub trait NfsReadFileSystem: Send + Sync {
 
     /// Get static file system information.
     ///
-    /// The server caches the export root's `rtmax` on the first successful
-    /// lookup for READ. That limit remains fixed for the server's lifetime.
+    /// During initialization, the server queries the export root and keeps
+    /// its `rtmax` as the READ limit for the server's lifetime. If that
+    /// query fails, the server does not start.
     fn fsinfo(
         &self,
         root_fileid: &Self::Handle,

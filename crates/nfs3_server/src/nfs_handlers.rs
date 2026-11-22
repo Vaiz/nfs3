@@ -166,20 +166,7 @@ where
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
     let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
-    let read_limit = context
-        .read_limit
-        .get_or_try_init(|| async {
-            let fsinfo = context.vfs.fsinfo(&context.vfs.root_dir()).await?;
-            Ok(fsinfo.rtmax)
-        })
-        .await;
-    let count = match read_limit {
-        Ok(&limit) => read3args.count.min(limit),
-        Err(stat) => {
-            warn!("read fsinfo error {xid} --> {stat}");
-            return READ3res::Err((stat, READ3resfail { file_attributes }));
-        }
-    };
+    let count = read3args.count.min(context.read_limit);
     match context.vfs.read(&id, read3args.offset, count).await {
         Ok((bytes, eof)) => {
             debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());

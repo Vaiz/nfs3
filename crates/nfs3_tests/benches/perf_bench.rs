@@ -28,11 +28,11 @@ struct PerfCtx {
     root_dir: nfs_fh3,
 }
 
-fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx {
+async fn setup_perf<FS: nfs3_server::vfs::NfsFileSystem + 'static>(fs: FS) -> PerfCtx {
     nfs3_tests::init_logging(tracing::Level::WARN);
 
     let (server_io, client_io) = tokio::io::duplex(1024 * 1024);
-    let server = Server::new(server_io, fs).unwrap();
+    let server = Server::new(server_io, fs).await.unwrap();
     let root_dir = server.root_dir();
     let server_handle = tokio::task::spawn(server.run());
 
@@ -70,7 +70,7 @@ async fn get_file_handle(ctx: &PerfCtx) -> nfs_fh3 {
 fn bench_getattr(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let (ctx, fh) = rt.block_on(async {
-        let ctx = setup_perf(ReadFs::new(64));
+        let ctx = setup_perf(ReadFs::new(64)).await;
         let fh = get_file_handle(&ctx).await;
         (ctx, fh)
     });
@@ -109,7 +109,7 @@ fn bench_getattr(c: &mut Criterion) {
 /// LOOKUP by name from root — exercises name resolution path.
 fn bench_lookup(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let ctx = rt.block_on(async { setup_perf(ReadFs::new(64)) });
+    let ctx = rt.block_on(async { setup_perf(ReadFs::new(64)).await });
 
     c.bench_function("perf_lookup", |b| {
         b.to_async(&rt).iter(|| async {
@@ -136,7 +136,7 @@ fn bench_read(c: &mut Criterion) {
     for size in [4 * 1024_usize, 64 * 1024, 256 * 1024, 1024 * 1024] {
         let count = u32::try_from(size).expect("benchmark read size fits in u32");
         let (ctx, fh) = rt.block_on(async {
-            let ctx = setup_perf(ReadFs::new(size));
+            let ctx = setup_perf(ReadFs::new(size)).await;
             let fh = get_file_handle(&ctx).await;
             (ctx, fh)
         });
@@ -173,7 +173,7 @@ fn bench_write(c: &mut Criterion) {
         let payload = vec![0xBB_u8; size];
 
         let (ctx, fh) = rt.block_on(async {
-            let ctx = setup_perf(WriteFs::new(size as u64));
+            let ctx = setup_perf(WriteFs::new(size as u64)).await;
             let fh = get_file_handle(&ctx).await;
             (ctx, fh)
         });
@@ -207,7 +207,7 @@ fn bench_readdirplus(c: &mut Criterion) {
     let mut group = c.benchmark_group("perf_readdirplus");
 
     for entry_count in [100_usize, 1_000, 10_000] {
-        let ctx = rt.block_on(async { setup_perf(ListFs::new(entry_count)) });
+        let ctx = rt.block_on(async { setup_perf(ListFs::new(entry_count)).await });
 
         group.bench_with_input(
             BenchmarkId::from_parameter(entry_count),

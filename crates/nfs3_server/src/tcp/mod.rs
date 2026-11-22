@@ -7,10 +7,10 @@ use std::time::Duration;
 use anyhow;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
-use tokio::sync::{OnceCell, mpsc};
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use crate::context::RPCContext;
+use crate::context::{RPCContext, root_read_limit};
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::read_and_dispatch_loop;
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
@@ -38,7 +38,7 @@ pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     export_name: Arc<str>,
     max_rpc_record_size: Option<NonZeroUsize>,
     transaction_tracker: Arc<TransactionTracker>,
-    read_limit: Arc<OnceCell<u32>>,
+    read_limit: u32,
     file_handle_converter: FileHandleConverter,
     stop_notify: Arc<tokio::sync::Notify>,
 }
@@ -123,7 +123,7 @@ where
 }
 
 impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
-    fn new(
+    async fn new(
         listener: TcpListener,
         fs: T,
         export_name: Arc<str>,
@@ -131,6 +131,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
         max_rpc_record_size: Option<NonZeroUsize>,
     ) -> io::Result<Self> {
         let local_addr = listener.local_addr()?;
+        let read_limit = root_read_limit(&fs).await?;
         let file_handle_converter = generation_number.map_or_else(
             FileHandleConverter::new,
             FileHandleConverter::with_generation_number,
@@ -144,7 +145,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             export_name,
             max_rpc_record_size,
             transaction_tracker: Self::new_transaction_tracker(),
-            read_limit: Arc::default(),
+            read_limit,
             stop_notify: Arc::new(tokio::sync::Notify::new()),
             file_handle_converter,
         })
@@ -206,7 +207,8 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                         num_tries_left -= 1;
                     }
                     Ok(listener) => {
-                        return Self::new(listener, fs, Arc::from("/"), generation_number, None);
+                        return Self::new(listener, fs, Arc::from("/"), generation_number, None)
+                            .await;
                     }
                 }
             }
@@ -215,7 +217,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             // Otherwise, try this.
             Self::bind_legacy_addr(ip, port).await?
         };
-        Self::new(listener, fs, Arc::from("/"), generation_number, None)
+        Self::new(listener, fs, Arc::from("/"), generation_number, None).await
     }
 
     async fn bind_legacy_addr(ip: &str, port: u16) -> io::Result<TcpListener> {
@@ -288,7 +290,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 mount_signal: self.mount_signal.clone(),
                 export_name: Arc::clone(&self.export_name),
                 transaction_tracker: Arc::clone(&self.transaction_tracker),
-                read_limit: Arc::clone(&self.read_limit),
+                read_limit: self.read_limit,
                 file_handle_converter: self.file_handle_converter,
             };
             info!("Accepting connection from {}", context.client_addr);

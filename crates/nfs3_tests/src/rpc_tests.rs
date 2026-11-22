@@ -17,7 +17,7 @@ pub struct RpcTestContext {
 
 impl RpcTestContext {
     #[must_use]
-    pub fn setup() -> Self {
+    pub async fn setup() -> Self {
         let mut config = MemFsConfig::default();
 
         config.add_file("/a.txt", b"hello world\n");
@@ -25,7 +25,7 @@ impl RpcTestContext {
         config.add_dir("/another_dir");
         config.add_file("/another_dir/thisworks.txt", b"i hope\n");
 
-        Self::setup_with_config(config, tracing::Level::DEBUG)
+        Self::setup_with_config(config, tracing::Level::DEBUG).await
     }
 
     /// Starts a test server with the given filesystem configuration.
@@ -34,12 +34,14 @@ impl RpcTestContext {
     ///
     /// Panics if filesystem or server setup fails.
     #[must_use]
-    pub fn setup_with_config(fs_config: MemFsConfig, log_level: tracing::Level) -> Self {
+    pub async fn setup_with_config(fs_config: MemFsConfig, log_level: tracing::Level) -> Self {
         init_logging(log_level);
 
         let memfs = MemFs::new(fs_config).expect("initialize the test filesystem");
         let (server, client) = tokio::io::duplex(1024 * 1024);
-        let server = Server::new(server, memfs).expect("initialize the RPC test server");
+        let server = Server::new(server, memfs)
+            .await
+            .expect("initialize the RPC test server");
         let root_dir = server.root_dir();
         let server_handle = tokio::task::spawn(server.run());
 

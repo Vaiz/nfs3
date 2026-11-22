@@ -3,7 +3,7 @@ use nfs3_tests::{JustClientExt, TestContext};
 
 #[tokio::test]
 async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let create = client
@@ -36,7 +36,7 @@ async fn test_rename_in_same_folder() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_noent() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let rename = client
@@ -63,7 +63,7 @@ async fn test_rename_noent() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _ = client
@@ -101,7 +101,7 @@ async fn test_rename_target_file_exists() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_directory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _ = client.just_mkdir(&root, "dir_to_rename").await.unwrap();
@@ -132,7 +132,7 @@ async fn test_rename_directory() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_directory_over_existing_empty_directory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _ = client.just_mkdir(&root, "src_dir").await.unwrap();
@@ -164,7 +164,7 @@ async fn test_rename_directory_over_existing_empty_directory() -> Result<(), any
 
 #[tokio::test]
 async fn test_rename_directory_over_existing_nonempty_directory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let _src = client.just_mkdir(&root, "src_dir").await.unwrap();
@@ -195,7 +195,7 @@ async fn test_rename_directory_over_existing_nonempty_directory() -> Result<(), 
 
 #[tokio::test]
 async fn test_rename_directory_to_self() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
     let dir = client.just_mkdir(&root, "dir_self").await.unwrap();
 
@@ -224,7 +224,7 @@ async fn test_rename_directory_to_self() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_file_in_subdirectory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let subdir = client.just_mkdir(&root, "subdir").await.unwrap();
@@ -258,7 +258,7 @@ async fn test_rename_file_in_subdirectory() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_file_across_directories() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let src_dir = client.just_mkdir(&root, "src_dir").await.unwrap();
@@ -294,7 +294,7 @@ async fn test_rename_file_across_directories() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let src_dir = client.just_mkdir(&root, "src_dir").await.unwrap();
@@ -325,7 +325,7 @@ async fn test_rename_directory_across_directories() -> Result<(), anyhow::Error>
 
 #[tokio::test]
 async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let src_dir = client.just_mkdir(&root, "src_nonempty_dir").await.unwrap();
@@ -369,7 +369,7 @@ async fn test_rename_nonempty_directory() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_rename_directory_into_its_own_subdirectory() -> Result<(), anyhow::Error> {
-    let mut client = TestContext::setup();
+    let mut client = TestContext::setup().await;
     let root = client.root_dir().clone();
 
     let parent_dir = client.just_mkdir(&root, "parent_dir").await.unwrap();
