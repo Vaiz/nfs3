@@ -92,12 +92,20 @@ When working on code changes:
 This project follows strict code quality standards:
 
 - **Clippy**: All clippy warnings must be addressed
-- **Visibility**: Use `pub(crate)` instead of `pub` for crate-internal APIs to avoid accidental exposure.
+- **Visibility**: Make an item `pub` only if another workspace crate uses it in non-test code; use `pub(crate)` otherwise.
+  Tests never justify `pub`. Put tests that need private APIs in the crate's own `src/tests/`.
+  Before updating a PR, sweep the `pub` items in its diff against the base branch.
 - **Formatting**: Code must be formatted with rustfmt using nightly toolchain
 - **Tests**: All changes must maintain test coverage
 - **Documentation**: Public APIs must be documented
 
-### 5. Documentation Audience
+### 5. API Design
+
+- **Design for the workspace**: the crates are tightly coupled. Shape APIs around their real callers here, not hypothetical general-purpose ones.
+- **Expose capabilities, not structure**: return a trait or plain type (`impl Buf`, `Bytes`) rather than internal layout (chunk lists, fields).
+- **Simplicity over micro-optimisation**: don't add lazy initialisation, special cases or extra state to save a tiny allocation or copy. Do it only if a measurement shows the benefit.
+
+### 6. Documentation Audience
 
 - Write for the document's intended reader. The CLI README explains flags,
   limits, and behavior users see when running the binary. The library README
@@ -110,7 +118,7 @@ This project follows strict code quality standards:
   commits. Check both technical accuracy and whether each detail belongs in
   that document for its intended reader.
 
-### 6. Common Patterns
+### 7. Common Patterns
 
 #### Checking Project Health
 ```
