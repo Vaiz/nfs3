@@ -1,6 +1,6 @@
 // Basic XDR codec tests for fundamental data types and structures
 
-use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, encode};
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, XdrCodec, encode};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, XdrCodec)]
 #[repr(u32)]

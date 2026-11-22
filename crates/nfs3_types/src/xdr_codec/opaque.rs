@@ -45,7 +45,7 @@ impl<'a> Opaque<'a> {
     ///
     /// Copies borrowed data; `Bytes` data is moved as is.
     #[must_use]
-    pub fn into_owned(self) -> Opaque<'static> {
+    pub(crate) fn into_owned(self) -> Opaque<'static> {
         Opaque::from_bytes(self.into_bytes())
     }
 

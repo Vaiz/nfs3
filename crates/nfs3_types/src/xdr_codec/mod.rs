@@ -17,7 +17,8 @@ pub(crate) mod void;
 pub use nfs3_macros::XdrCodec;
 
 pub use self::decoder::Decoder;
-pub use self::encoder::{Encoded, Encoder, encode};
+pub(crate) use self::encoder::encode;
+pub use self::encoder::{Encoded, Encoder};
 pub use self::error::Error;
 pub use self::list::{BoundedList, List};
 pub use self::opaque::Opaque;

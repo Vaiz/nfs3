@@ -4,13 +4,14 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
+use bytes::Bytes;
 use nfs3_client::nfs3_types;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_tests::{RpcTestContext, Server};
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
-use nfs3_types::xdr_codec::{Decoder, Pack, Unpack, Void, encode};
+use nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack, Void};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -80,7 +81,9 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
 #[tokio::test]
 async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
     let call = nfs3_call(1, NFS_PROGRAM::NFSPROC3_NULL);
-    let payload = encode(&call)?;
+    let mut out = Encoder::new();
+    call.pack(&mut out)?;
+    let payload = out.finish().into_bytes();
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let listener = Builder::new()
@@ -130,12 +133,10 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
-    fn null_call_frame(xid: u32) -> anyhow::Result<Vec<u8>> {
-        let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
-        let marker = fragment_header::new(u32::try_from(call.packed_size())?, true);
-        let mut frame = marker.into_xdr_buf().to_vec();
-        frame.extend_from_slice(&encode(&call)?);
-        Ok(frame)
+    fn null_call_frame(xid: u32) -> anyhow::Result<Bytes> {
+        let mut out = Encoder::new();
+        nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL).pack(&mut out)?;
+        Ok(out.finish_record()?.into_bytes())
     }
 
     // The one-byte capacity forces the server to consume part of any marker

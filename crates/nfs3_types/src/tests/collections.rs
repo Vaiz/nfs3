@@ -1,6 +1,6 @@
 // Tests for XDR collection types (Vec, List, BoundedList)
 
-use nfs3_types::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack, encode};
+use crate::xdr_codec::{BoundedList, Decoder, List, Pack, Unpack, encode};
 
 #[test]
 fn vec_serialization() {

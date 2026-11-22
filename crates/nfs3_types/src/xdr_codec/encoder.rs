@@ -22,8 +22,7 @@ const MARKER_LEN: usize = 4;
 /// Writes XDR values.
 ///
 /// Write values with [`Pack::pack`], then call [`finish`](Self::finish), or
-/// [`finish_record`](Self::finish_record) for an RPC record. Use [`encode`] to
-/// get a single value as one buffer.
+/// [`finish_record`](Self::finish_record) for an RPC record.
 ///
 /// Everything is copied, except the first [`Opaque`](super::Opaque) of at least
 /// 1 KiB that holds [`Bytes`], such as READ or WRITE data: [`Encoded`] keeps a
@@ -206,7 +205,7 @@ impl Encoded {
 }
 
 /// Encodes `value` into one contiguous buffer.
-pub fn encode<T: Pack + ?Sized>(value: &T) -> Result<Bytes> {
+pub(crate) fn encode<T: Pack + ?Sized>(value: &T) -> Result<Bytes> {
     let mut out = Encoder::with_head_capacity(value.packed_size());
     value.pack(&mut out)?;
     Ok(out.finish().into_bytes())

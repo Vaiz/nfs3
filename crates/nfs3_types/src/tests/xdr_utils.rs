@@ -1,6 +1,6 @@
 // Tests for XDR utility functions and edge cases
 
-use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, Void, encode};
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, Void, encode};
 
 #[test]
 fn void_serialization() {

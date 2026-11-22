@@ -688,11 +688,6 @@ impl filename3<'_> {
     pub fn clone_to_owned(&self) -> filename3<'static> {
         filename3(self.0.clone().into_owned())
     }
-
-    #[must_use]
-    pub fn into_owned(self) -> filename3<'static> {
-        filename3(self.0.into_owned())
-    }
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()

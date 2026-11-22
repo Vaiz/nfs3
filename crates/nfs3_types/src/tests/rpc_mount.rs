@@ -1,8 +1,8 @@
 // Tests for RPC and Mount protocol types
 
-use nfs3_types::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
-use nfs3_types::rpc::{RPC_VERSION_2, auth_flavor, call_body, msg_body, opaque_auth, rpc_msg};
-use nfs3_types::xdr_codec::{Decoder, Opaque, Pack, Unpack, encode};
+use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
+use crate::rpc::{RPC_VERSION_2, auth_flavor, call_body, msg_body, opaque_auth, rpc_msg};
+use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack, encode};
 
 #[test]
 fn rpc_call_len() {
