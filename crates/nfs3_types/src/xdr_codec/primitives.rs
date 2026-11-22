@@ -33,7 +33,7 @@ impl Pack for u32 {
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_u32(*self);
+        out.put_array(&self.to_be_bytes());
         Ok(())
     }
 }
@@ -50,7 +50,7 @@ impl Pack for u64 {
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_u64(*self);
+        out.put_array(&self.to_be_bytes());
         Ok(())
     }
 }
@@ -87,7 +87,7 @@ impl<const N: usize> Pack for [u8; N] {
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_padded(self);
+        out.put_array(self);
         Ok(())
     }
 }

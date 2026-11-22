@@ -94,12 +94,11 @@ impl Encoder {
         }
     }
 
-    pub(crate) fn put_u32(&mut self, value: u32) {
-        self.out().put_u32(value);
-    }
-
-    pub(crate) fn put_u64(&mut self, value: u64) {
-        self.out().put_u64(value);
+    /// Copies a fixed-size `data` and its padding.
+    pub(crate) fn put_array<const N: usize>(&mut self, data: &[u8; N]) {
+        let out = self.out();
+        out.extend_from_slice(data);
+        out.extend_from_slice(zero_padding(N));
     }
 
     /// Copies `data` and adds padding.
@@ -167,6 +166,13 @@ mod tests {
     fn plain(mut out: Encoder) -> Encoded {
         out.head.advance(MARKER_LEN);
         out.into_encoded()
+    }
+
+    #[test]
+    fn array_is_padded() {
+        let mut out = Encoder::new(0);
+        [1u8, 2, 3].pack(&mut out).unwrap();
+        assert_eq!(out.finish(), &[1, 2, 3, 0][..]);
     }
 
     #[test]
