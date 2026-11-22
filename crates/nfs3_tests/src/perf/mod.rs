@@ -1,3 +1,9 @@
+#![allow(
+    unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
+    clippy::unused_async_trait_impl,
+    reason = "Benchmark RPC overhead with backend futures that complete on the first poll without real I/O"
+)]
+
 mod list_fs;
 mod read_fs;
 mod write_fs;

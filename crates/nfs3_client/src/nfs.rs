@@ -1,3 +1,4 @@
+use derive_where::derive_where;
 use nfs3_types::nfs3::{
     ACCESS3args, ACCESS3res, COMMIT3args, COMMIT3res, CREATE3args, CREATE3res, FSINFO3args,
     FSINFO3res, FSSTAT3args, FSSTAT3res, GETATTR3args, GETATTR3res, LINK3args, LINK3res,
@@ -15,7 +16,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the `NFSv3` service
-#[derive(Debug)]
+#[derive_where(Debug)]
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
 }

@@ -1,5 +1,7 @@
 //! Adapters VFS types
 
+use std::future::ready;
+
 mod iterator;
 
 pub use iterator::ReadDirPlusToReadDir;
@@ -102,76 +104,85 @@ where
         VFSCapabilities::ReadOnly
     }
 
-    async fn setattr(&self, _id: &Self::Handle, _setattr: sattr3) -> Result<fattr3, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    fn setattr(
+        &self,
+        _id: &Self::Handle,
+        _setattr: sattr3,
+    ) -> impl Future<Output = Result<fattr3, nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn write(
+    fn write(
         &self,
         _id: &Self::Handle,
         _offset: u64,
         _data: &[u8],
         _stable: nfs3_types::nfs3::stable_how,
-    ) -> Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(fattr3, nfs3_types::nfs3::stable_how), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn create(
+    fn create(
         &self,
         _dirid: &Self::Handle,
         _filename: &filename3<'_>,
         _attr: sattr3,
-    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(Self::Handle, fattr3), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn create_exclusive(
+    fn create_exclusive(
         &self,
         _dirid: &Self::Handle,
         _filename: &filename3<'_>,
         _createverf: nfs3_types::nfs3::createverf3,
-    ) -> Result<Self::Handle, nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<Self::Handle, nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn mkdir(
+    fn mkdir(
         &self,
         _dirid: &Self::Handle,
         _dirname: &filename3<'_>,
-    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(Self::Handle, fattr3), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn remove(
+    fn remove(
         &self,
         _dirid: &Self::Handle,
         _filename: &filename3<'_>,
-    ) -> Result<(), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn rename<'a>(
+    fn rename<'a>(
         &self,
         _from_dirid: &Self::Handle,
         _from_filename: &filename3<'a>,
         _to_dirid: &Self::Handle,
         _to_filename: &filename3<'a>,
-    ) -> Result<(), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn symlink<'a>(
+    fn symlink<'a>(
         &self,
         _dirid: &Self::Handle,
         _linkname: &filename3<'a>,
         _symlink: &nfs3_types::nfs3::nfspath3<'a>,
         _attr: &sattr3,
-    ) -> Result<(Self::Handle, fattr3), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    ) -> impl Future<Output = Result<(Self::Handle, fattr3), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
-        Err(nfsstat3::NFS3ERR_ROFS)
+    fn commit(
+        &self,
+        _id: &Self::Handle,
+        _offset: u64,
+        _count: u32,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        ready(Err(nfsstat3::NFS3ERR_ROFS))
     }
 }
 

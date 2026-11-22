@@ -2,6 +2,7 @@ mod iterator;
 mod iterator_cache;
 mod symbols_cache;
 
+use std::future::ready;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -141,6 +142,11 @@ impl NfsReadFileSystem for Fs {
         SymbolsCache::ROOT_ID
     }
 
+    #[allow(
+        unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
+        clippy::unused_async_trait_impl,
+        reason = "Dropping an unpolled lookup must not touch the backing filesystem or populate the cache"
+    )]
     async fn lookup(
         &self,
         dirid: &Self::Handle,
@@ -461,9 +467,14 @@ impl NfsFileSystem for Fs {
         Ok((link_id, fattr))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+    fn commit(
+        &self,
+        _id: &Self::Handle,
+        _offset: u64,
+        _count: u32,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
         // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
-        Ok(())
+        ready(Ok(()))
     }
 }
 

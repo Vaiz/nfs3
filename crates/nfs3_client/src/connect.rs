@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::LazyLock;
 use std::sync::atomic::AtomicU16;
 
+use derive_where::derive_where;
 use nfs3_types::mount::{dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
@@ -12,7 +13,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
 
 /// Contains the connection to the NFS server.
-#[derive(Debug)]
+#[derive_where(Debug)]
 pub struct Nfs3Connection<IO> {
     pub host: String,
     pub mount_port: u16,

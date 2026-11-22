@@ -1,3 +1,4 @@
+use derive_where::derive_where;
 use nfs3_types::portmap::{PMAP_PROG, PROGRAM, VERSION, mapping, pmaplist};
 use nfs3_types::xdr_codec::{Pack, Unpack, Void};
 
@@ -7,7 +8,7 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the portmapper service
-#[derive(Debug)]
+#[derive_where(Debug)]
 pub struct PortmapperClient<IO> {
     rpc: RpcClient<IO>,
 }

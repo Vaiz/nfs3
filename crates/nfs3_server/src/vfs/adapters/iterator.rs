@@ -55,6 +55,11 @@ mod tests {
         }
     }
 
+    #[allow(
+        unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
+        clippy::unused_async_trait_impl,
+        reason = "Match production iterators: dropping an unpolled next future must not skip an entry"
+    )]
     impl ReadDirPlusIterator<FileHandleU64> for MockReadDirPlusIterator {
         async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {
             if self.index >= self.entries.len() {

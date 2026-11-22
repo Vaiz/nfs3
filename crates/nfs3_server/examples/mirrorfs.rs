@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::Metadata;
+use std::future::ready;
 use std::io::SeekFrom;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
@@ -737,8 +738,13 @@ impl NfsFileSystem for MirrorFs {
         .map(|(id, attr)| (FileHandleU64::new(id), attr))
     }
 
-    async fn commit(&self, _id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
-        Ok(())
+    fn commit(
+        &self,
+        _id: &Self::Handle,
+        _offset: u64,
+        _count: u32,
+    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
+        ready(Ok(()))
     }
 }
 
