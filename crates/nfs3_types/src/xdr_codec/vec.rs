@@ -16,8 +16,7 @@ impl<T: Unpack, const N: usize> Unpack for BoundedVec<T, N> {
             return Err(Error::InvalidLength(len));
         }
 
-        // Grow only after decoding an item; the count alone does not prove it is present.
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(len);
         for _ in 0..len {
             items.push(T::unpack(input)?);
         }
