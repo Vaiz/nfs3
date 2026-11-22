@@ -7,7 +7,7 @@ use derive_where::derive_where;
 use nfs3_types::mount::{MNTPATHLEN, dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
-use nfs3_types::xdr_codec::{self, Opaque};
+use nfs3_types::xdr_codec;
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
@@ -86,6 +86,8 @@ where
     /// Creates a new `NFSv3` connection builder.
     /// The `mount_path` is the path to mount on the server.
     pub fn new(connector: C, host: impl AsRef<str>, mount_path: impl AsRef<str>) -> Self {
+        let mount_path =
+            dirpath::from_slice(mount_path.as_ref().as_bytes()).map(dirpath::into_owned);
         Self {
             host: host.as_ref().into(),
             connector,
@@ -93,9 +95,7 @@ where
             portmapper_port: nfs3_types::portmap::PMAP_PORT,
             mount_port: None,
             nfs3_port: None,
-            mount_path: Opaque::owned(mount_path.as_ref().as_bytes().to_vec())
-                .try_into()
-                .map(dirpath),
+            mount_path,
             credential: opaque_auth::default(),
             verifier: opaque_auth::default(),
         }

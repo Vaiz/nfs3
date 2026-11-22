@@ -130,10 +130,21 @@ impl<const N: usize> BoundedOpaque<'_, N> {
         BoundedOpaque(Opaque::borrowed(self.as_ref()))
     }
 
+    /// Borrow a slice as a `BoundedOpaque`.
+    pub fn from_slice(data: &[u8]) -> Result<BoundedOpaque<'_, N>> {
+        Opaque::borrowed(data).try_into()
+    }
+
     /// Converts into [`Bytes`], copying only if the data is borrowed.
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
         self.0.into_bytes()
+    }
+
+    /// Converts into an owned `BoundedOpaque`.
+    #[must_use]
+    pub fn into_owned(self) -> BoundedOpaque<'static, N> {
+        BoundedOpaque(self.0.into_owned())
     }
 }
 

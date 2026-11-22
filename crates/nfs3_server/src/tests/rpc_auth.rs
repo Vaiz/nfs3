@@ -64,21 +64,35 @@ async fn oversized_auth_bodies_get_rpc_auth_errors() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn unsupported_rpc_version_does_not_require_v2_fields() -> anyhow::Result<()> {
+    let fs = MemFs::new(MemFsConfig::default()).expect("create test filesystem");
+    let context = RPCContext::test_ctx("/", Arc::new(fs)).await?;
+    let xid = 42u32;
+    let mut out = Encoder::new(0);
+    xid.pack(&mut out)?;
+    msg_type::CALL.pack(&mut out)?;
+    (RPC_VERSION_2 + 1).pack(&mut out)?;
+
+    let reply = decode_reply(context, out).await?;
+    assert_eq!(reply.xid, xid);
+    assert!(matches!(
+        reply.body,
+        msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::RPC_MISMATCH {
+            low: RPC_VERSION_2,
+            high: RPC_VERSION_2
+        }))
+    ));
+    Ok(())
+}
+
 async fn assert_auth_error(
     context: RPCContext<MemFs>,
     out: Encoder,
     xid: u32,
     expected: auth_stat,
 ) -> anyhow::Result<()> {
-    let mut record = out.finish_record()?;
-    record.advance(4);
-    let input = Decoder::copying(record.copy_to_bytes(record.remaining()));
-    let RpcCallOutcome::Reply(mut reply) = handle_rpc_message(context, input).await? else {
-        panic!("expected a reply for XID {xid}");
-    };
-    let mut input = Decoder::copying(reply.copy_to_bytes(reply.remaining()));
-    fragment_header::unpack(&mut input)?;
-    let reply = rpc_msg::unpack(&mut input)?;
+    let reply = decode_reply(context, out).await?;
     assert_eq!(reply.xid, xid);
     assert!(
         matches!(
@@ -89,4 +103,19 @@ async fn assert_auth_error(
         "unexpected reply: {reply:?}"
     );
     Ok(())
+}
+
+async fn decode_reply(
+    context: RPCContext<MemFs>,
+    out: Encoder,
+) -> anyhow::Result<rpc_msg<'static, 'static>> {
+    let mut record = out.finish_record()?;
+    record.advance(4);
+    let input = Decoder::copying(record.copy_to_bytes(record.remaining()));
+    let RpcCallOutcome::Reply(mut reply) = handle_rpc_message(context, input).await? else {
+        panic!("expected an RPC reply");
+    };
+    let mut input = Decoder::copying(reply.copy_to_bytes(reply.remaining()));
+    fragment_header::unpack(&mut input)?;
+    Ok(rpc_msg::unpack(&mut input)?)
 }

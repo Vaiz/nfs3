@@ -17,7 +17,7 @@ mod sealed {
 /// 56 bytes can be freely used by the implementation.
 ///
 /// Use [`FileHandleU64`] for numeric IDs or `BoundedOpaque<'static, 56>`
-/// for byte IDs. Construct a byte ID with `Opaque::owned(bytes).try_into()`.
+/// for byte IDs. Construct a byte ID with `BoundedOpaque::from_slice(bytes)?.into_owned()`.
 /// The bounded type checks the length, not the ID format; the filesystem
 /// must still validate unrecognized IDs when it receives a handle.
 /// This trait cannot be implemented outside this crate.
@@ -51,10 +51,9 @@ impl FileHandle for BoundedOpaque<'static, MAX_HANDLE_SIZE> {
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() > MAX_HANDLE_SIZE {
-            return None;
-        }
-        Opaque::owned(bytes.to_vec()).try_into().ok()
+        BoundedOpaque::from_slice(bytes)
+            .ok()
+            .map(BoundedOpaque::into_owned)
     }
 }
 

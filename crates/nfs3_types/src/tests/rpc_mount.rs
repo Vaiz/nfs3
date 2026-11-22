@@ -92,11 +92,7 @@ fn rpc_msg_serialization() {
 fn mount3res_success_packed_size() {
     // Test for a successful mountres3 with no additional data
     let res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(
-            Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
-                .try_into()
-                .unwrap(),
-        ),
+        fhandle: fhandle3(BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap()),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&res).unwrap().to_vec();
@@ -132,11 +128,7 @@ fn mount3res_error_packed_size() {
 fn mount3res_roundtrip() {
     // Test successful mount response
     let success_res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(
-            Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
-                .try_into()
-                .unwrap(),
-        ),
+        fhandle: fhandle3(BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap()),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&success_res).unwrap().to_vec();
@@ -176,7 +168,7 @@ fn mount3res_roundtrip() {
 #[test]
 fn fhandle3_edge_cases() {
     // Test empty file handle
-    let empty_fh = fhandle3(Opaque::borrowed(&[]).try_into().unwrap());
+    let empty_fh = fhandle3(BoundedOpaque::empty());
     let buffer = encode(&empty_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 4); // Just the length field
@@ -184,7 +176,7 @@ fn fhandle3_edge_cases() {
 
     // Test maximum size file handle (64 bytes)
     let max_data = vec![0x42; 64];
-    let max_fh = fhandle3(Opaque::borrowed(&max_data).try_into().unwrap());
+    let max_fh = fhandle3(BoundedOpaque::from_slice(&max_data).unwrap());
     let buffer = encode(&max_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 68); // 4 bytes length + 64 bytes data
@@ -309,9 +301,7 @@ fn opaque_auth_body_limit() {
 fn opaque_auth_with_data() {
     let auth = opaque_auth {
         flavor: auth_flavor::AUTH_UNIX,
-        body: Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
-            .try_into()
-            .unwrap(),
+        body: BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap(),
     };
     let buffer = encode(&auth).unwrap().to_vec();
     let len = buffer.len();
@@ -393,7 +383,7 @@ fn auth_flavors() {
     for flavor in auth_flavors {
         let auth = opaque_auth {
             flavor,
-            body: Opaque::borrowed(&[]).try_into().unwrap(),
+            body: BoundedOpaque::empty(),
         };
         let buffer = encode(&auth).unwrap().to_vec();
         let len = buffer.len();

@@ -14,9 +14,7 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
-use crate::xdr_codec::{
-    BoundedOpaque, BoundedVec, Decoder, Encoder, Error, Opaque, Pack, Result, Unpack,
-};
+use crate::xdr_codec::{BoundedOpaque, BoundedVec, Decoder, Encoder, Opaque, Pack, Result, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
 const MAX_AUTH_BYTES: usize = 400;
@@ -159,16 +157,14 @@ impl auth_unix {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidLength`] if `machinename` is longer than 255
-    /// bytes or `gids` contains more than 16 supplemental group IDs.
+    /// Returns [`InvalidLength`](crate::xdr_codec::Error::InvalidLength) if
+    /// `machinename` exceeds 255 bytes or `gids` contains more than 16 entries.
     pub fn new(stamp: u32, machinename: &[u8], uid: u32, gid: u32, gids: Vec<u32>) -> Result<Self> {
-        if machinename.len() > MAX_MACHINENAME_LEN {
-            return Err(Error::InvalidLength(machinename.len()));
-        }
+        let machinename = BoundedOpaque::from_slice(machinename)?;
         let gids = gids.try_into()?;
         Ok(Self {
             stamp,
-            machinename: Opaque::owned(machinename.to_vec()).try_into()?,
+            machinename: machinename.into_owned(),
             uid,
             gid,
             gids,

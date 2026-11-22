@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use call::{DecodedCall, RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
-use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
+use nfs3_types::rpc::{accept_stat_data, auth_stat, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::AsyncRead;
@@ -38,11 +38,6 @@ where
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
-
-    if call.rpcvers != RPC_VERSION_2 {
-        warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
-        return message.into_rpc_mismatch();
-    }
 
     let unix = match context.set_auth(call) {
         Ok(unix) => unix,

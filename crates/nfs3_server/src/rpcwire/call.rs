@@ -1,7 +1,7 @@
 use anyhow::bail;
 use nfs3_types::rpc::{
-    accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, msg_type, opaque_auth,
-    rejected_reply, reply_body, rpc_msg,
+    RPC_VERSION_2, accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, msg_type,
+    opaque_auth, rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack, Void};
 use tracing::warn;
@@ -26,6 +26,14 @@ impl RpcCall {
         }
 
         let rpcvers = u32::unpack(input)?;
+        if rpcvers != RPC_VERSION_2 {
+            warn!("Invalid RPC version {rpcvers} != {RPC_VERSION_2}, XID: {xid}");
+            return Self::reject(
+                xid,
+                rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2),
+            )
+            .map(DecodedCall::Rejected);
+        }
         let program = u32::unpack(input)?;
         let version = u32::unpack(input)?;
         let procedure = u32::unpack(input)?;
@@ -33,14 +41,16 @@ impl RpcCall {
             Ok(credential) => credential,
             Err(err) => {
                 warn!("Invalid RPC credential for XID {xid}: {err}");
-                return Self::auth_error(xid, auth_stat::AUTH_BADCRED).map(DecodedCall::Rejected);
+                return Self::reject(xid, rejected_reply::auth_error(auth_stat::AUTH_BADCRED))
+                    .map(DecodedCall::Rejected);
             }
         };
         let verifier = match opaque_auth::unpack(input) {
             Ok(verifier) => verifier,
             Err(err) => {
                 warn!("Invalid RPC verifier for XID {xid}: {err}");
-                return Self::auth_error(xid, auth_stat::AUTH_BADVERF).map(DecodedCall::Rejected);
+                return Self::reject(xid, rejected_reply::auth_error(auth_stat::AUTH_BADVERF))
+                    .map(DecodedCall::Rejected);
             }
         };
         Ok(DecodedCall::Call(Self {
@@ -78,27 +88,14 @@ impl RpcCall {
         pack(&rpc, message).map(RpcCallOutcome::Reply)
     }
 
-    pub(crate) fn into_rpc_mismatch(self) -> anyhow::Result<RpcCallOutcome> {
-        use nfs3_types::rpc::RPC_VERSION_2;
-
-        let reply =
-            reply_body::MSG_DENIED(rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2));
-
-        let rpc = rpc_msg {
-            xid: self.xid,
-            body: msg_body::REPLY(reply),
-        };
-        pack(&rpc, &Void).map(RpcCallOutcome::Reply)
-    }
-
     pub(crate) fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
-        Self::auth_error(self.xid, stat)
+        Self::reject(self.xid, rejected_reply::auth_error(stat))
     }
 
-    fn auth_error(xid: u32, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
+    fn reject(xid: u32, reply: rejected_reply) -> anyhow::Result<RpcCallOutcome> {
         let rpc = rpc_msg {
             xid,
-            body: msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::auth_error(stat))),
+            body: msg_body::REPLY(reply_body::MSG_DENIED(reply)),
         };
         pack(&rpc, &Void).map(RpcCallOutcome::Reply)
     }

@@ -2,7 +2,7 @@ use nfs3_types::mount::{
     MOUNT_PROGRAM, VERSION, dirpath, export_node, fhandle3, mountres3, mountres3_ok, mountstat3,
 };
 use nfs3_types::rpc::{accept_stat_data, auth_flavor};
-use nfs3_types::xdr_codec::{Decoder, List, Opaque, Void};
+use nfs3_types::xdr_codec::{Decoder, List, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
@@ -150,13 +150,14 @@ async fn mountproc3_export<T>(
 where
     T: crate::vfs::NfsFileSystem,
 {
-    let Ok(path) = Opaque::owned(context.export_name.as_bytes().to_vec()).try_into() else {
+    let Ok(path) = dirpath::from_slice(context.export_name.as_bytes()).map(dirpath::into_owned)
+    else {
         warn!("Configured export path exceeds the MOUNT path limit");
         return message.into_error_reply(accept_stat_data::SYSTEM_ERR);
     };
     handle(context, message, args, async move |_, _, _: Void| {
         List(vec![export_node {
-            ex_dir: dirpath(path),
+            ex_dir: path,
             ex_groups: List::default(),
         }])
     })
