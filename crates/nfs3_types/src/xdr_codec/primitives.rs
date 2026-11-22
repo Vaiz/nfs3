@@ -33,7 +33,7 @@ impl Pack for u32 {
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_slice(&self.to_be_bytes());
+        out.put_u32(*self);
         Ok(())
     }
 }
@@ -50,7 +50,7 @@ impl Pack for u64 {
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_slice(&self.to_be_bytes());
+        out.put_u64(*self);
         Ok(())
     }
 }

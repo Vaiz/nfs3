@@ -94,11 +94,15 @@ impl Encoder {
         }
     }
 
-    pub(crate) fn put_slice(&mut self, data: &[u8]) {
-        self.out().extend_from_slice(data);
+    pub(crate) fn put_u32(&mut self, value: u32) {
+        self.out().put_u32(value);
     }
 
-    /// Copies `data` and its padding.
+    pub(crate) fn put_u64(&mut self, value: u64) {
+        self.out().put_u64(value);
+    }
+
+    /// Copies `data` and adds padding.
     pub(crate) fn put_padded(&mut self, data: &[u8]) {
         let out = self.out();
         // Reserve exactly so a large copy does not double the buffer afterwards.
