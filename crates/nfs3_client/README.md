@@ -9,6 +9,15 @@ This crate supports multiple async runtimes via feature flags:
 - `tokio` - Support for Tokio runtime
 - `smol` - Support for Smol runtime
 
+## RPC reply size limit
+
+The client accepts up to 2 MiB per RPC reply, counting the RPC headers and
+encoded result across all fragments, but not the fragment markers. Keep READ
+and directory page sizes below the limit to leave room for reply overhead.
+An oversized reply returns `RpcError::Io` with `ErrorKind::InvalidData`.
+Discard the connection after this error: the client stops reading at the
+first fragment marker that would exceed the limit.
+
 ## Examples
 
 ### Using with Tokio
@@ -32,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dir: root,
             cookie: 0,
             cookieverf: nfs3::cookieverf3::default(),
-            count: 128 * 1024 * 1024,
+            count: 1024 * 1024,
         })
         .await?;
 
@@ -65,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dir: root.clone(),
                 cookie: 0,
                 cookieverf: nfs3::cookieverf3::default(),
-                count: 128 * 1024 * 1024,
+                count: 1024 * 1024,
             })
             .await?;
 

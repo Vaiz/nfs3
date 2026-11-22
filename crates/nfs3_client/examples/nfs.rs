@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dir: root,
             cookie: 0,
             cookieverf: nfs3::cookieverf3::default(),
-            count: 128 * 1024 * 1024,
+            count: 1024 * 1024,
         })
         .await?;
 

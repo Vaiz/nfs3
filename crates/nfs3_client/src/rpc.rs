@@ -13,6 +13,9 @@ use nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack};
 use crate::RpcError;
 use crate::io::{AsyncRead, AsyncWrite};
 
+// Leave room for a 1 MiB READ or directory listing plus RPC and NFS headers.
+const MAX_RPC_REPLY_SIZE: usize = 2 * 1024 * 1024;
+
 /// RPC client
 pub struct RpcClient<IO> {
     io: IO,
@@ -144,7 +147,7 @@ where
 
     /// Reads one RPC record (all fragments) into a single buffer.
     async fn recv_record(io: &mut IO) -> io::Result<Decoder> {
-        let mut record = RecordBuf::new(usize::MAX);
+        let mut record = RecordBuf::new(MAX_RPC_REPLY_SIZE);
         while !record.is_complete() {
             let mut marker = [0u8; 4];
             io.async_read_exact(&mut marker).await?;
@@ -168,106 +171,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use bytes::{Buf, Bytes, BytesMut};
-    use future_assert::FutureTestExt;
-    use nfs3_types::rpc::{
-        accept_stat_data, accepted_reply, fragment_header, msg_body, opaque_auth, reply_body,
-        rpc_msg,
-    };
-    use nfs3_types::xdr_codec::{Encoder, Opaque, Pack, Void};
-
-    use super::RpcClient;
-    use crate::RpcError;
-    use crate::io::{AsyncRead, AsyncWrite};
-
-    /// In-memory transport that transfers at most 7 bytes per read or write.
-    struct Mock {
-        input: Bytes,
-        output: Vec<u8>,
-    }
-
-    impl AsyncRead for Mock {
-        async fn async_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let n = buf.len().min(self.input.len()).min(7);
-            buf[..n].copy_from_slice(&self.input.split_to(n));
-            Ok(n)
-        }
-    }
-
-    impl AsyncWrite for Mock {
-        async fn async_write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            let n = buf.len().min(7);
-            self.output.extend_from_slice(&buf[..n]);
-            Ok(n)
-        }
-    }
-
-    fn reply(xid: u32, result: &Opaque<'_>, fragments: &[usize]) -> Bytes {
-        let msg = rpc_msg {
-            xid,
-            body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
-                verf: opaque_auth::default(),
-                reply_data: accept_stat_data::SUCCESS,
-            })),
-        };
-        let mut out = Encoder::new(0);
-        msg.pack(&mut out).unwrap();
-        result.pack(&mut out).unwrap();
-        let mut record = out.finish_record().unwrap();
-        // Drop the single-fragment marker; each fragment gets its own below.
-        record.advance(4);
-        let record = record.copy_to_bytes(record.remaining());
-
-        let mut wire = BytesMut::new();
-        let mut rest = &*record;
-        for (i, &len) in fragments.iter().enumerate() {
-            let last = i + 1 == fragments.len();
-            let len = if last { rest.len() } else { len };
-            let header = fragment_header::new(len, last).unwrap();
-            wire.extend_from_slice(&header.into_xdr_buf());
-            wire.extend_from_slice(&rest[..len]);
-            rest = &rest[len..];
-        }
-        wire.freeze()
-    }
-
-    #[test]
-    fn fragmented_reply_is_reassembled() {
-        let payload = Opaque::owned((0..=255u8).cycle().take(5000).collect());
-        let mut client = RpcClient::new(Mock {
-            input: Bytes::new(),
-            output: Vec::new(),
-        });
-        client.io.input = reply(client.xid, &payload, &[0, 13, 2000, 0]);
-
-        let result: Opaque<'static> = client.call(1, 1, 0, &payload).unwrap_ready().unwrap();
-        assert_eq!(result, payload);
-        assert!(client.io.input.is_empty());
-
-        // The call, with its payload in a separate chunk, was written completely.
-        let output = &client.io.output;
-        let marker = u32::from_be_bytes(output[..4].try_into().unwrap());
-        assert_eq!(marker as usize, 0x8000_0000 | (output.len() - 4));
-        assert!(output.ends_with(&payload[payload.len() - 100..]));
-    }
-
-    #[test]
-    fn truncated_reply_is_an_io_error() {
-        let mut client = RpcClient::new(Mock {
-            input: Bytes::new(),
-            output: Vec::new(),
-        });
-        let wire = reply(client.xid, &Opaque::borrowed(b"abc"), &[0]);
-        client.io.input = wire.slice(..wire.len() - 1);
-
-        let err = client
-            .call::<_, Opaque<'static>>(1, 1, 0, &Void)
-            .unwrap_ready()
-            .unwrap_err();
-        assert!(
-            matches!(err, RpcError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof)
-        );
-        assert!(!err.is_connection_reusable());
-    }
-}
+#[path = "tests/rpc.rs"]
+mod tests;
