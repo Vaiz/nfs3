@@ -161,8 +161,8 @@ where
                     ));
                 }
             }
-            if let Some(record) = record.take_record() {
-                return Ok(record);
+            if record.is_complete() {
+                return Ok(record.into_decoder());
             }
         }
     }

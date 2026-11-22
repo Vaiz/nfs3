@@ -18,8 +18,8 @@ const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
 /// The caller does the I/O: it passes each fragment marker to
 /// [`start_fragment`](Self::start_fragment), appends the fragment data to
 /// [`buf_mut`](Self::buf_mut) until [`remaining`](Self::remaining) is zero,
-/// and collects the record, without markers, with
-/// [`take_record`](Self::take_record).
+/// and, once [`is_complete`](Self::is_complete), turns the record, without
+/// markers, into a decoder with [`into_decoder`](Self::into_decoder).
 ///
 /// Memory follows the data actually received: about 1 MiB at most is reserved
 /// from an advertised length and beyond that the buffer at most doubles, so a
@@ -85,27 +85,28 @@ impl RecordBuf {
         (&mut self.buf, remaining)
     }
 
-    /// Returns a decoder over the record once its last fragment is complete,
-    /// leaving the buffer empty for the next record.
+    /// Returns `true` once the last fragment of the record is complete.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.last && self.remaining() == 0
+    }
+
+    /// Returns a decoder over the complete record.
     ///
     /// The decoder's minimum shared length is half of the record's allocation
     /// (see [`Decoder`]), so READ and WRITE payloads are shared with the record
     /// instead of copied.
-    pub fn take_record(&mut self) -> Option<Decoder> {
-        if !self.last || self.remaining() != 0 {
-            return None;
-        }
+    #[must_use]
+    pub fn into_decoder(self) -> Decoder {
+        debug_assert!(self.is_complete(), "record is incomplete");
         debug_assert_eq!(self.buf.len(), self.fragment_end, "fragment overrun");
-        self.fragment_end = 0;
-        self.last = false;
-        Some(Decoder::sharing(std::mem::take(&mut self.buf)))
+        Decoder::sharing(self.buf)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{EAGER_RESERVE, RecordBuf, io};
-    use crate::xdr_codec::Decoder;
 
     #[test]
     fn eager_reservation_is_capped_and_then_grows_with_data() {
@@ -128,16 +129,18 @@ mod tests {
         let mut record = RecordBuf::new(3);
         record.start_fragment([0, 0, 0, 2]).unwrap();
         record.buf_mut().0.extend_from_slice(b"ab");
-        assert!(record.take_record().is_none());
+        assert!(!record.is_complete());
         let err = record.start_fragment([0x80, 0, 0, 2]).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         record.start_fragment([0x80, 0, 0, 1]).unwrap();
-        assert!(record.take_record().is_none());
+        assert!(!record.is_complete());
         record.buf_mut().0.extend_from_slice(b"c");
-        let take = |record: &mut RecordBuf| record.take_record().map(Decoder::into_remaining);
-        assert_eq!(take(&mut record).unwrap(), b"abc"[..]);
+        assert!(record.is_complete());
+        assert_eq!(record.into_decoder().into_remaining(), b"abc"[..]);
 
+        let mut record = RecordBuf::new(0);
         record.start_fragment([0x80, 0, 0, 0]).unwrap();
-        assert_eq!(take(&mut record).unwrap(), b""[..]);
+        assert!(record.is_complete());
+        assert_eq!(record.into_decoder().into_remaining(), b""[..]);
     }
 }

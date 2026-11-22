@@ -14,8 +14,8 @@ use super::{Error, Result};
 /// into its own allocation.
 ///
 /// - [`Decoder::copying`] disables sharing: all opaque data is copied.
-/// - [`RecordBuf::take_record`](crate::rpc::RecordBuf::take_record) sets the minimum to half of the
-///   record's allocation, so READ and WRITE payloads are shared, and a shared value never keeps
+/// - [`RecordBuf::into_decoder`](crate::rpc::RecordBuf::into_decoder) sets the minimum to half of
+///   the record's allocation, so READ and WRITE payloads are shared, and a shared value never keeps
 ///   more than twice its size in memory.
 ///
 /// ```

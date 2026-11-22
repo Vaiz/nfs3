@@ -59,8 +59,8 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
                     ));
                 }
             }
-            if let Some(record) = record.take_record() {
-                return Ok(Some(record));
+            if record.is_complete() {
+                return Ok(Some(record.into_decoder()));
             }
         }
     }
