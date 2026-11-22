@@ -1,7 +1,7 @@
 #![allow(
     unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
-    reason = "Benchmark fixtures do their work when polled without introducing I/O waits"
+    reason = "Benchmark RPC overhead with backend futures that complete on the first poll without real I/O"
 )]
 
 mod list_fs;

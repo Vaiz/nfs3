@@ -700,7 +700,7 @@ impl MemFs {
 #[allow(
     unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
-    reason = "Defer filesystem access until the future is polled"
+    reason = "Read filesystem state at poll time so changes before the first poll remain visible"
 )]
 impl NfsReadFileSystem for MemFs {
     type Handle = FileHandleU64;
@@ -767,7 +767,7 @@ impl NfsReadFileSystem for MemFs {
 #[allow(
     unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
-    reason = "Do not mutate the filesystem until the future is polled"
+    reason = "Dropping an unpolled future must not apply the requested filesystem change"
 )]
 impl NfsFileSystem for MemFs {
     async fn setattr(&self, id: &FileHandleU64, setattr: sattr3) -> Result<fattr3, nfsstat3> {
@@ -904,7 +904,7 @@ impl MemFsIterator {
 #[allow(
     unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
-    reason = "Do not advance the iterator until the future is polled"
+    reason = "Dropping an unpolled next future must not skip an entry"
 )]
 impl ReadDirIterator for MemFsIterator {
     async fn next(&mut self) -> NextResult<DirEntry> {
@@ -919,7 +919,7 @@ impl ReadDirIterator for MemFsIterator {
 #[allow(
     unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
     clippy::unused_async_trait_impl,
-    reason = "Do not advance the iterator until the future is polled"
+    reason = "Dropping an unpolled next future must not skip an entry"
 )]
 impl ReadDirPlusIterator<FileHandleU64> for MemFsIterator {
     async fn next(&mut self) -> NextResult<DirEntryPlus<FileHandleU64>> {

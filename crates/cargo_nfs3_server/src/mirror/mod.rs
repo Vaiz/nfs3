@@ -145,7 +145,7 @@ impl NfsReadFileSystem for Fs {
     #[allow(
         unknown_lints, // TODO: Remove once CI uses Rust 1.98 or newer.
         clippy::unused_async_trait_impl,
-        reason = "Defer the cache lookup until the future is polled"
+        reason = "Dropping an unpolled lookup must not touch the backing filesystem or populate the cache"
     )]
     async fn lookup(
         &self,
