@@ -71,6 +71,10 @@ impl Encoder {
 
     /// Returns the number of encoded bytes, excluding the record marker.
     #[must_use]
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "callers only compare the length with the expected size"
+    )]
     pub fn len(&self) -> usize {
         let payload_and_tail_len = self
             .payload
@@ -78,12 +82,6 @@ impl Encoder {
             .map_or(0, |(data, tail)| data.len() + tail.len());
 
         self.head.len() - MARKER_LEN + payload_and_tail_len
-    }
-
-    /// Returns `true` if nothing has been encoded yet.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     /// Returns the buffer that receives copied bytes.
