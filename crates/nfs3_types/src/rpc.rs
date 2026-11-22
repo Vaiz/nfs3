@@ -152,7 +152,7 @@ impl RecordBuf {
         debug_assert_eq!(self.buf.len(), self.fragment_end, "fragment overrun");
         self.fragment_end = 0;
         self.last = false;
-        Some(Decoder::from_owned(std::mem::take(&mut self.buf)))
+        Some(Decoder::sharing(std::mem::take(&mut self.buf)))
     }
 }
 

@@ -51,7 +51,7 @@ impl Decoder {
     ///
     /// `buf` must own its whole allocation (never split or advanced), so that
     /// its capacity is the memory a shared value keeps alive.
-    pub(crate) fn from_owned(buf: BytesMut) -> Self {
+    pub(crate) fn sharing(buf: BytesMut) -> Self {
         let min_shared_len = buf.capacity().div_ceil(2);
         let buf = buf.freeze();
         Self {
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn large_opaque_shares_the_record_and_small_one_is_copied() {
         let record = small_and_large(112);
-        let mut input = Decoder::from_owned(record);
+        let mut input = Decoder::sharing(record);
         let record_range = byte_range(&input.buf);
         let small = Opaque::unpack(&mut input).unwrap();
         let large = Opaque::unpack(&mut input).unwrap();
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn opaque_is_copied_when_the_allocation_is_large_or_unknown() {
         // Spare capacity counts: the large opaque is under half of the allocation.
-        let mut input = Decoder::from_owned(small_and_large(1024));
+        let mut input = Decoder::sharing(small_and_large(1024));
         let record_range = byte_range(&input.buf);
         Opaque::unpack(&mut input).unwrap();
         let large = Opaque::unpack(&mut input).unwrap();
