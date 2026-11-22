@@ -10,10 +10,6 @@ use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
 
-const MAX_AUTH_BYTES: usize = 400;
-const MAX_MACHINENAME_LEN: usize = 255;
-const MAX_GIDS: usize = 16;
-
 #[derive_where(Clone, Debug)]
 pub struct RPCContext<T: NfsFileSystem> {
     pub local_port: u16,
@@ -32,24 +28,12 @@ pub struct RPCContext<T: NfsFileSystem> {
 impl<T: NfsFileSystem> RPCContext<T> {
     /// Decodes the call's `AUTH_UNIX` credential into `auth`.
     ///
-    /// Returns whether the call uses `AUTH_UNIX`, or an error if the credential
-    /// is malformed or exceeds the RFC 5531 limits.
+    /// Returns whether the call uses `AUTH_UNIX`.
     pub(crate) fn set_auth(&mut self, call: &call_body) -> Result<bool, Error> {
         if call.cred.flavor != auth_flavor::AUTH_UNIX {
             return Ok(false);
         }
-        let body = &call.cred.body;
-        if body.len() > MAX_AUTH_BYTES {
-            return Err(Error::InvalidLength(body.len()));
-        }
-        let auth: auth_unix = unpack_exact(Decoder::copying(body.clone().into_bytes()))?;
-        if auth.machinename.len() > MAX_MACHINENAME_LEN {
-            return Err(Error::InvalidLength(auth.machinename.len()));
-        }
-        if auth.gids.len() > MAX_GIDS {
-            return Err(Error::InvalidLength(auth.gids.len()));
-        }
-        self.auth = auth;
+        self.auth = unpack_exact(Decoder::copying(call.cred.body.clone().into_bytes()))?;
         Ok(true)
     }
 }

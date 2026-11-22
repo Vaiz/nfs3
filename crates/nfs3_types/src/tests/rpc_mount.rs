@@ -2,8 +2,10 @@
 
 use super::encode;
 use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
-use crate::rpc::{RPC_VERSION_2, auth_flavor, call_body, msg_body, opaque_auth, rpc_msg};
-use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack};
+use crate::rpc::{
+    RPC_VERSION_2, auth_flavor, auth_unix, call_body, msg_body, opaque_auth, rpc_msg,
+};
+use crate::xdr_codec::{Decoder, Error, Opaque, Pack, Unpack};
 
 #[test]
 fn rpc_call_len() {
@@ -192,6 +194,31 @@ fn opaque_auth_default() {
     assert!(cursor.is_empty());
     assert_eq!(auth.flavor, deserialized.flavor);
     assert_eq!(auth.body.as_ref(), deserialized.body.as_ref());
+}
+
+#[test]
+fn auth_sys_decode_limits() {
+    for (name_len, gids_len, expected_error) in [
+        (255, 16, None),
+        (256, 16, Some(Error::InvalidLength(256))),
+        (255, 17, Some(Error::InvalidLength(17))),
+    ] {
+        let auth = auth_unix {
+            machinename: Opaque::owned(vec![b'm'; name_len]),
+            gids: vec![42; gids_len],
+            ..auth_unix::default()
+        };
+        let mut input = Decoder::copying(encode(&auth).unwrap());
+        let result = auth_unix::unpack(&mut input);
+        if let Some(expected_error) = expected_error {
+            assert_eq!(result.unwrap_err(), expected_error);
+        } else {
+            let decoded = result.unwrap();
+            assert_eq!(decoded.machinename, auth.machinename);
+            assert_eq!(decoded.gids, auth.gids);
+            assert!(input.is_empty());
+        }
+    }
 }
 
 #[test]

@@ -14,7 +14,7 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
-use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
+use crate::xdr_codec::{Decoder, Encoder, Error, Opaque, Pack, Result, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
 
@@ -130,13 +130,59 @@ impl opaque_auth<'static> {
     }
 }
 
-#[derive(Clone, Debug, XdrCodec)]
+const MAX_MACHINENAME_LEN: usize = 255;
+const MAX_GIDS: usize = 16;
+
+/// RFC 5531 `AUTH_SYS` parameters. Decoding enforces the machine-name and
+/// supplemental-group limits.
+#[derive(Clone, Debug)]
 pub struct auth_unix {
     pub stamp: u32,
     pub machinename: Opaque<'static>,
     pub uid: u32,
     pub gid: u32,
     pub gids: Vec<u32>,
+}
+
+impl Pack for auth_unix {
+    fn packed_size(&self) -> usize {
+        self.stamp.packed_size()
+            + self.machinename.packed_size()
+            + self.uid.packed_size()
+            + self.gid.packed_size()
+            + self.gids.packed_size()
+    }
+
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        self.stamp.pack(out)?;
+        self.machinename.pack(out)?;
+        self.uid.pack(out)?;
+        self.gid.pack(out)?;
+        self.gids.pack(out)
+    }
+}
+
+impl Unpack for auth_unix {
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let stamp = u32::unpack(input)?;
+        let machinename = Opaque::unpack(input)?;
+        if machinename.len() > MAX_MACHINENAME_LEN {
+            return Err(Error::InvalidLength(machinename.len()));
+        }
+        let uid = u32::unpack(input)?;
+        let gid = u32::unpack(input)?;
+        let gids = Vec::unpack(input)?;
+        if gids.len() > MAX_GIDS {
+            return Err(Error::InvalidLength(gids.len()));
+        }
+        Ok(Self {
+            stamp,
+            machinename,
+            uid,
+            gid,
+            gids,
+        })
+    }
 }
 
 impl Default for auth_unix {
