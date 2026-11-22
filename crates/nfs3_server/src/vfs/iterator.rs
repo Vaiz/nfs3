@@ -18,18 +18,23 @@ pub struct DirEntryPlus<H: FileHandle> {
 }
 
 impl<H: FileHandle> DirEntryPlus<H> {
-    pub(crate) fn into_entry(self, converter: &FileHandleConverter) -> entryplus3<'static> {
-        entryplus3 {
+    pub(crate) fn into_entry(
+        self,
+        converter: &FileHandleConverter,
+    ) -> Result<entryplus3<'static>, nfsstat3> {
+        Ok(entryplus3 {
             fileid: self.fileid,
             name: self.name,
             cookie: self.cookie,
             name_attributes: self
                 .name_attributes
                 .map_or(post_op_attr::None, post_op_attr::Some),
-            name_handle: self.name_handle.map_or(post_op_fh3::None, |h| {
-                post_op_fh3::Some(converter.fh_to_nfs(&h))
-            }),
-        }
+            name_handle: self
+                .name_handle
+                .map(|handle| converter.fh_to_nfs(&handle))
+                .transpose()?
+                .map_or(post_op_fh3::None, post_op_fh3::Some),
+        })
     }
 }
 

@@ -154,6 +154,14 @@ impl<const N: usize> AsRef<[u8]> for BoundedOpaque<'_, N> {
     }
 }
 
+impl<const N: usize> Deref for BoundedOpaque<'_, N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
 impl<const N: usize> Pack for BoundedOpaque<'_, N> {
     fn packed_size(&self) -> usize {
         self.0.packed_size()

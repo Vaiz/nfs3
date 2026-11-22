@@ -1,6 +1,5 @@
 use nfs3_types::mount::{
-    MOUNT_PROGRAM, VERSION, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok,
-    mountstat3,
+    MOUNT_PROGRAM, VERSION, dirpath, export_node, fhandle3, mountres3, mountres3_ok, mountstat3,
 };
 use nfs3_types::rpc::{accept_stat_data, auth_flavor};
 use nfs3_types::xdr_codec::{Decoder, List, Opaque, Void};
@@ -51,7 +50,7 @@ where
         MOUNTPROC3_MNT => handle(context, message, args, mountproc3_mnt).await,
         MOUNTPROC3_UMNT => handle(context, message, args, mountproc3_umnt).await,
         MOUNTPROC3_UMNTALL => handle(context, message, args, mountproc3_umnt_all).await,
-        MOUNTPROC3_EXPORT => handle(context, message, args, mountproc3_export).await,
+        MOUNTPROC3_EXPORT => mountproc3_export(context, message, args).await,
         MOUNTPROC3_DUMP => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
@@ -94,7 +93,9 @@ where
 
     match context.vfs.lookup_by_path(path).await {
         Ok(fileid) => {
-            let root = context.file_handle_converter.fh_to_nfs(&fileid);
+            let Ok(root) = context.file_handle_converter.fh_to_nfs(&fileid) else {
+                return mountres3::Err(mountstat3::MNT3ERR_SERVERFAULT);
+            };
             let response = mountres3_ok {
                 fhandle: fhandle3(root.data),
                 auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
@@ -143,15 +144,25 @@ where
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> exports<'static, 'static>
+async fn mountproc3_export<T>(
+    context: RPCContext<T>,
+    message: RpcCall,
+    args: Decoder,
+) -> anyhow::Result<RpcCallOutcome>
 where
     T: crate::vfs::NfsFileSystem,
 {
-    let export_name = context.export_name.as_bytes().to_vec();
-    List(vec![export_node {
-        ex_dir: dirpath(Opaque::owned(export_name)),
-        ex_groups: List::default(),
-    }])
+    let Ok(path) = Opaque::owned(context.export_name.as_bytes().to_vec()).try_into() else {
+        warn!("Configured export path exceeds the MOUNT path limit");
+        return message.into_error_reply(accept_stat_data::SYSTEM_ERR);
+    };
+    handle(context, message, args, async move |_, _, _: Void| {
+        List(vec![export_node {
+            ex_dir: dirpath(path),
+            ex_groups: List::default(),
+        }])
+    })
+    .await
 }
 
 async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void

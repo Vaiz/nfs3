@@ -7,7 +7,7 @@ use derive_where::derive_where;
 use nfs3_types::mount::{dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
-use nfs3_types::xdr_codec::Opaque;
+use nfs3_types::xdr_codec::{self, Opaque};
 
 use crate::io::{AsyncRead, AsyncWrite};
 use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
@@ -73,7 +73,7 @@ pub struct Nfs3ConnectionBuilder<C> {
     portmapper_port: u16,
     mount_port: Option<u16>,
     nfs3_port: Option<u16>,
-    mount_path: dirpath<'static>,
+    mount_path: xdr_codec::Result<dirpath<'static>>,
     credential: opaque_auth<'static>,
     verifier: opaque_auth<'static>,
 }
@@ -93,7 +93,9 @@ where
             portmapper_port: nfs3_types::portmap::PMAP_PORT,
             mount_port: None,
             nfs3_port: None,
-            mount_path: dirpath(Opaque::owned(mount_path.as_ref().as_bytes().to_vec())),
+            mount_path: Opaque::owned(mount_path.as_ref().as_bytes().to_vec())
+                .try_into()
+                .map(dirpath),
             credential: opaque_auth::default(),
             verifier: opaque_auth::default(),
         }
@@ -141,14 +143,19 @@ where
     }
 
     /// Mounts the filesystem and returns the connection.
+    ///
+    /// Rejects mount paths over 1,024 bytes before connecting.
     pub async fn mount(self) -> Result<Nfs3Connection<S>, ConnectError> {
+        let mount_path = self
+            .mount_path
+            .as_ref()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err.clone()))?;
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
         let io = self.connect(mount_port).await?;
         let mut mount_client =
             mount::MountClient::new_with_auth(io, self.credential.clone(), self.verifier.clone());
-        let borrowed_mount_path = dirpath(Opaque::borrowed(self.mount_path.0.as_ref()));
-        let mount_resok = mount_client.mnt(borrowed_mount_path).await?;
+        let mount_resok = mount_client.mnt(dirpath(mount_path.0.clone())).await?;
 
         let io = self.connect(nfs3_port).await?;
         let nfs3_client = Nfs3Client::new_with_auth(io, self.credential, self.verifier);
@@ -156,7 +163,7 @@ where
         Ok(Nfs3Connection {
             host: self.host,
             mount_port,
-            mount_path: self.mount_path,
+            mount_path: dirpath(mount_path.0.clone()),
             mount_client,
             mount_resok,
             nfs3_port,

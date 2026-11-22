@@ -1,4 +1,4 @@
-use nfs3_types::nfs3::{nfs_fh3, nfsstat3, writeverf3};
+use nfs3_types::nfs3::{NFS3_FHSIZE, nfs_fh3, nfsstat3, writeverf3};
 use nfs3_types::xdr_codec::Opaque;
 
 /// Represents a file handle
@@ -130,13 +130,23 @@ impl FileHandleConverter {
         }
     }
 
-    pub(crate) fn fh_to_nfs(&self, id: &impl FileHandle) -> nfs_fh3 {
-        let mut ret: Vec<u8> = Vec::with_capacity(8 + id.len());
-        ret.extend_from_slice(&self.generation_number_le);
-        ret.extend_from_slice(id.as_bytes());
-        nfs_fh3 {
-            data: Opaque::owned(ret),
+    pub(crate) fn fh_to_nfs(&self, id: &impl FileHandle) -> Result<nfs_fh3, nfsstat3> {
+        let bytes = id.as_bytes();
+        if bytes.len() > NFS3_FHSIZE - self.generation_number_le.len() {
+            tracing::error!(
+                "VFS returned an oversized file handle: {} bytes",
+                bytes.len()
+            );
+            return Err(nfsstat3::NFS3ERR_SERVERFAULT);
         }
+        let mut ret = Vec::with_capacity(self.generation_number_le.len() + bytes.len());
+        ret.extend_from_slice(&self.generation_number_le);
+        ret.extend_from_slice(bytes);
+        let data = Opaque::owned(ret).try_into().map_err(|err| {
+            tracing::error!("Cannot encode file handle: {err}");
+            nfsstat3::NFS3ERR_SERVERFAULT
+        })?;
+        Ok(nfs_fh3 { data })
     }
 
     pub(crate) fn fh_from_nfs<FH>(&self, id: &nfs_fh3) -> Result<FH, nfsstat3>
@@ -212,10 +222,24 @@ mod tests {
     }
 
     #[test]
+    fn test_file_handle_converter_wire_limit() {
+        let converter = FileHandleConverter::new();
+        let max = TestHandle { id: [1; 56] };
+        let oversized = TestHandle { id: [1; 57] };
+
+        let encoded = converter.fh_to_nfs(&max).expect("valid file handle");
+        assert_eq!(encoded.data.len(), 64);
+        assert_eq!(
+            converter.fh_to_nfs(&oversized),
+            Err(nfsstat3::NFS3ERR_SERVERFAULT)
+        );
+    }
+
+    #[test]
     fn test_file_handle_converter_3bytes() {
         let converter = FileHandleConverter::new();
         let handle = TestHandle { id: [1, 2, 3] };
-        let nfs_handle = converter.fh_to_nfs(&handle);
+        let nfs_handle = converter.fh_to_nfs(&handle).expect("valid file handle");
         assert_eq!(nfs_handle.data.len(), 11);
         assert_eq!(nfs_handle.data[0..8], converter.generation_number_le);
         assert_eq!(&nfs_handle.data[8..], handle.as_bytes());
@@ -228,7 +252,7 @@ mod tests {
     fn test_with_generation_number_round_trip() {
         let converter = FileHandleConverter::with_generation_number(12345);
         let handle = TestHandle { id: [1, 2, 3] };
-        let nfs_handle = converter.fh_to_nfs(&handle);
+        let nfs_handle = converter.fh_to_nfs(&handle).expect("valid file handle");
 
         assert_eq!(nfs_handle.data[0..8], 12345u64.to_le_bytes());
 
@@ -244,7 +268,7 @@ mod tests {
         let node_b = FileHandleConverter::with_generation_number(42);
 
         let handle = TestHandle { id: [7, 8, 9] };
-        let nfs_handle = node_a.fh_to_nfs(&handle);
+        let nfs_handle = node_a.fh_to_nfs(&handle).expect("valid file handle");
 
         let decoded = node_b.fh_from_nfs::<TestHandle<3>>(&nfs_handle).unwrap();
         assert_eq!(decoded, handle);
@@ -254,7 +278,7 @@ mod tests {
     fn test_with_generation_number_stale_vs_badhandle() {
         let converter = FileHandleConverter::with_generation_number(1000);
         let handle = TestHandle { id: [1, 2, 3] };
-        let nfs_handle = converter.fh_to_nfs(&handle);
+        let nfs_handle = converter.fh_to_nfs(&handle).expect("valid file handle");
 
         // Newer generation → STALE (handle is from an older server)
         let newer = FileHandleConverter::with_generation_number(2000);
@@ -285,7 +309,7 @@ mod tests {
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
             ],
         };
-        let nfs_handle = converter.fh_to_nfs(&handle);
+        let nfs_handle = converter.fh_to_nfs(&handle).expect("valid file handle");
         assert_eq!(nfs_handle.data.len(), 27);
         assert_eq!(nfs_handle.data[0..8], converter.generation_number_le);
         assert_eq!(&nfs_handle.data[8..], handle.as_bytes());

@@ -1,7 +1,8 @@
 // Tests for RPC and Mount protocol types
 
 use super::encode;
-use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
+use crate::mount::{dirpath, fhandle3, mountres3, mountres3_ok, mountstat3};
+use crate::nfs3::nfs_fh3;
 use crate::rpc::{
     RPC_VERSION_2, auth_flavor, auth_unix, call_body, msg_body, opaque_auth, rpc_msg,
 };
@@ -91,7 +92,11 @@ fn rpc_msg_serialization() {
 fn mount3res_success_packed_size() {
     // Test for a successful mountres3 with no additional data
     let res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])),
+        fhandle: fhandle3(
+            Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
+                .try_into()
+                .unwrap(),
+        ),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&res).unwrap().to_vec();
@@ -127,7 +132,11 @@ fn mount3res_error_packed_size() {
 fn mount3res_roundtrip() {
     // Test successful mount response
     let success_res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])),
+        fhandle: fhandle3(
+            Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])
+                .try_into()
+                .unwrap(),
+        ),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&success_res).unwrap().to_vec();
@@ -167,7 +176,7 @@ fn mount3res_roundtrip() {
 #[test]
 fn fhandle3_edge_cases() {
     // Test empty file handle
-    let empty_fh = fhandle3(Opaque::borrowed(&[]));
+    let empty_fh = fhandle3(Opaque::borrowed(&[]).try_into().unwrap());
     let buffer = encode(&empty_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 4); // Just the length field
@@ -175,10 +184,30 @@ fn fhandle3_edge_cases() {
 
     // Test maximum size file handle (64 bytes)
     let max_data = vec![0x42; 64];
-    let max_fh = fhandle3(Opaque::borrowed(&max_data));
+    let max_fh = fhandle3(Opaque::borrowed(&max_data).try_into().unwrap());
     let buffer = encode(&max_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 68); // 4 bytes length + 64 bytes data
+}
+
+#[test]
+fn file_handle_and_mount_field_limits() {
+    fn check<T: Pack + Unpack>(max: usize) {
+        let valid = encode(&Opaque::owned(vec![42; max])).unwrap();
+        let mut input = Decoder::copying(valid.clone());
+        let field = T::unpack(&mut input).unwrap();
+        assert!(input.is_empty());
+        assert_eq!(encode(&field).unwrap(), valid);
+
+        let oversized = encode(&Opaque::owned(vec![42; max + 1])).unwrap();
+        let mut input = Decoder::copying(oversized.clone());
+        assert!(matches!(T::unpack(&mut input), Err(Error::InvalidLength(n)) if n == max + 1));
+        assert_eq!(input.into_remaining(), oversized.slice(4..));
+    }
+    check::<nfs_fh3>(64);
+    check::<fhandle3<'static>>(64);
+    check::<dirpath<'static>>(1024);
+    check::<crate::mount::name<'static>>(255);
 }
 
 #[test]
