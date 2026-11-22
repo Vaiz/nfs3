@@ -1,6 +1,7 @@
-use std::io::IoSlice;
+mod encoded;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+pub use encoded::Encoded;
 
 use super::util::{add_padding, get_padding, zero_padding};
 use super::{Error, Pack, Result};
@@ -173,70 +174,6 @@ fn record_marker(len: usize) -> Result<[u8; MARKER_LEN]> {
     Ok(fragment_header::new(len, true).into_xdr_buf())
 }
 
-/// An encoded RPC record, returned by [`Encoder::finish_record`].
-///
-/// Read it through [`Buf`]. Write it with a vectored write, such as tokio's
-/// `write_all_buf`, to send a shared payload without copying it.
-#[derive(Debug)]
-pub struct Encoded {
-    /// The bytes before the shared payload.
-    head: BytesMut,
-    /// The shared payload, or empty.
-    payload: Bytes,
-    /// The bytes after the shared payload.
-    tail: Bytes,
-}
-
-impl Encoded {
-    fn chunks(&self) -> [&[u8]; 3] {
-        [&self.head, &self.payload, &self.tail]
-    }
-
-    /// Joins the chunks, copying only if there is a shared payload.
-    fn into_bytes(self) -> Bytes {
-        let mut out = self.head;
-        if !self.payload.is_empty() || !self.tail.is_empty() {
-            // Reuses spare head capacity, e.g. the full size reserved by `encode`.
-            out.reserve(self.payload.len() + self.tail.len());
-            out.extend_from_slice(&self.payload);
-            out.extend_from_slice(&self.tail);
-        }
-        out.freeze()
-    }
-}
-
-impl Buf for Encoded {
-    fn remaining(&self) -> usize {
-        self.head.len() + self.payload.len() + self.tail.len()
-    }
-
-    fn chunk(&self) -> &[u8] {
-        self.chunks()
-            .into_iter()
-            .find(|chunk| !chunk.is_empty())
-            .unwrap_or_default()
-    }
-
-    fn advance(&mut self, mut cnt: usize) {
-        let n = cnt.min(self.head.len());
-        self.head.advance(n);
-        cnt -= n;
-        let n = cnt.min(self.payload.len());
-        self.payload.advance(n);
-        self.tail.advance(cnt - n);
-    }
-
-    fn chunks_vectored<'a>(&'a self, dst: &mut [IoSlice<'a>]) -> usize {
-        let chunks = self.chunks().into_iter().filter(|chunk| !chunk.is_empty());
-        let mut n = 0;
-        for (slot, chunk) in dst.iter_mut().zip(chunks) {
-            *slot = IoSlice::new(chunk);
-            n += 1;
-        }
-        n
-    }
-}
-
 /// Encodes `value` into one contiguous buffer.
 pub(crate) fn encode<T: Pack + ?Sized>(value: &T) -> Result<Bytes> {
     let mut out = Encoder::with_head_capacity(value.packed_size());
@@ -301,32 +238,6 @@ mod tests {
         }
         assert_eq!(&*Opaque::unpack(&mut input).unwrap(), b"tail");
         assert!(input.is_empty());
-    }
-
-    #[test]
-    fn buf_reads_across_chunks() {
-        let mut out = Encoder::new();
-        7u32.pack(&mut out).unwrap();
-        Opaque::from_bytes(Bytes::from(vec![0xCD; MIN_SHARED_CHUNK + 1]))
-            .pack(&mut out)
-            .unwrap();
-        8u32.pack(&mut out).unwrap();
-        let mut encoded = out.finish_record().unwrap();
-        let expected = encoded.chunks().concat();
-
-        // Short writes of 7 bytes end mid-chunk and span chunk boundaries.
-        let mut written = Vec::<u8>::new();
-        while encoded.has_remaining() {
-            assert_eq!(encoded.remaining(), expected.len() - written.len());
-            let mut slices = [IoSlice::new(&[]); 3];
-            let n = encoded.chunks_vectored(&mut slices);
-            assert_eq!(&*slices[0], encoded.chunk());
-            let start = written.len();
-            written.extend(slices[..n].iter().flat_map(|s| s.iter()).take(7));
-            encoded.advance(written.len() - start);
-        }
-        assert_eq!(written, expected);
-        assert!(encoded.chunk().is_empty());
     }
 
     #[test]
