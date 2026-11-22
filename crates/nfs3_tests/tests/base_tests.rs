@@ -1,5 +1,6 @@
 use nfs3_client::nfs3_types::nfs3::*;
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
+use nfs3_server::memfs::MemFsConfig;
 use nfs3_tests::{JustClientExt, TestContext};
 
 #[tokio::test]
@@ -134,6 +135,52 @@ async fn test_read_dir_as_file() -> Result<(), anyhow::Error> {
         matches!(read, Nfs3Result::Err((nfsstat3::NFS3ERR_ISDIR, _))),
         "Expected NFS3ERR_ISDIR error"
     );
+
+    client.shutdown().await
+}
+
+#[tokio::test]
+async fn read_count_is_capped_at_advertised_rtmax() -> anyhow::Result<()> {
+    const MAX_READ: u32 = 1024 * 1024;
+    let mut contents = vec![b'a'; MAX_READ as usize];
+    contents.push(b'z');
+    let mut config = MemFsConfig::default();
+    config.add_file("/large.txt", contents);
+    let mut client = TestContext::setup_with_config(config, false, tracing::Level::DEBUG);
+    let root = client.root_dir().clone();
+    let rtmax = client
+        .fsinfo(&FSINFO3args {
+            fsroot: root.clone(),
+        })
+        .await?
+        .unwrap()
+        .rtmax;
+    assert_eq!(rtmax, MAX_READ);
+
+    let file = client.just_lookup(&root, "large.txt").await.unwrap();
+    let first = client
+        .read(&READ3args {
+            file: file.clone(),
+            offset: 0,
+            count: rtmax + 1,
+        })
+        .await?
+        .unwrap();
+    assert_eq!(first.count, rtmax);
+    assert_eq!(first.data.len(), rtmax as usize);
+    assert!(!first.eof);
+
+    let last = client
+        .read(&READ3args {
+            file,
+            offset: u64::from(first.count),
+            count: rtmax,
+        })
+        .await?
+        .unwrap();
+    assert_eq!(last.count, 1);
+    assert_eq!(last.data.as_ref(), b"z");
+    assert!(last.eof);
 
     client.shutdown().await
 }

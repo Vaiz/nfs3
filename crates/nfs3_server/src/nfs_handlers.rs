@@ -21,7 +21,7 @@ use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
 use crate::rpcwire::handle;
 use crate::units::{GIBIBYTE, TEBIBYTE};
-use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
+use crate::vfs::{MAX_READ_SIZE, NextResult, NfsFileSystem, VFSCapabilities};
 
 #[cfg_attr(
     not(test),
@@ -166,11 +166,8 @@ where
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
     let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
-    match context
-        .vfs
-        .read(&id, read3args.offset, read3args.count)
-        .await
-    {
+    let count = read3args.count.min(MAX_READ_SIZE);
+    match context.vfs.read(&id, read3args.offset, count).await {
         Ok((bytes, eof)) => {
             debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());
             READ3res::Ok(READ3resok {
@@ -194,7 +191,10 @@ where
     let handle = args.fsroot;
     let id = fh_to_id!(context, &handle);
     match context.vfs.fsinfo(&id).await {
-        Ok(fsinfo) => {
+        Ok(mut fsinfo) => {
+            fsinfo.rtmax = fsinfo.rtmax.min(MAX_READ_SIZE);
+            fsinfo.rtpref = fsinfo.rtpref.min(fsinfo.rtmax);
+            fsinfo.rtmult = fsinfo.rtmult.min(fsinfo.rtmax);
             debug!("fsinfo success {xid} --> {fsinfo:?}");
             FSINFO3res::Ok(fsinfo)
         }

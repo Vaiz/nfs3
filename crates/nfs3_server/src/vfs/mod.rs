@@ -37,6 +37,8 @@ use crate::nfs3_types::rpc::auth_unix;
 use crate::units::{GIBIBYTE, MEBIBYTE};
 use crate::vfs::adapters::ReadDirPlusToReadDir;
 
+pub(crate) const MAX_READ_SIZE: u32 = MEBIBYTE;
+
 /// What capabilities are supported
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VFSCapabilities {
@@ -106,6 +108,8 @@ pub trait NfsReadFileSystem: Send + Sync {
     /// in that case, all bytes till the end of file are returned.
     /// EOF must be flagged if the end of the file is reached by the read.
     ///
+    /// The server limits the count it forwards to 1 MiB per request.
+    ///
     /// Returned buffers of 1 KiB or more are sent to the client without copying;
     /// a `Vec<u8>` converts into [`Bytes`] for free.
     fn read(
@@ -149,7 +153,9 @@ pub trait NfsReadFileSystem: Send + Sync {
         id: &Self::Handle,
     ) -> impl Future<Output = Result<nfspath3<'_>, nfsstat3>> + Send;
 
-    /// Get static file system Information
+    /// Get static file system information.
+    ///
+    /// The server caps the reported read sizes at its 1 MiB READ limit.
     fn fsinfo(
         &self,
         root_fileid: &Self::Handle,
@@ -161,9 +167,9 @@ pub trait NfsReadFileSystem: Send + Sync {
 pub(crate) fn default_fsinfo(attr: Option<fattr3>) -> fsinfo3 {
     fsinfo3 {
         obj_attributes: attr.map_or(post_op_attr::None, post_op_attr::Some),
-        rtmax: MEBIBYTE,
-        rtpref: MEBIBYTE,
-        rtmult: MEBIBYTE,
+        rtmax: MAX_READ_SIZE,
+        rtpref: MAX_READ_SIZE,
+        rtmult: MAX_READ_SIZE,
         wtmax: MEBIBYTE,
         wtpref: MEBIBYTE,
         wtmult: MEBIBYTE,
