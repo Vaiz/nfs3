@@ -8,9 +8,9 @@ use crate::xdr_codec::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 /// Variable-length XDR opaque data.
 ///
-/// Either borrows its bytes or holds a cheaply clonable [`Bytes`]. Decoded
-/// values always own their bytes; large decoded payloads share the decoder's
-/// buffer instead of being copied.
+/// Either borrows a slice or holds a reference-counted [`Bytes`]. Decoded values
+/// hold `Bytes` that either shares the decoder's input buffer or is a copy (see
+/// [`Decoder`]).
 #[derive(Clone)]
 pub struct Opaque<'a>(Repr<'a>);
 
@@ -27,7 +27,7 @@ impl Opaque<'static> {
         Self::from_bytes(Bytes::from(data))
     }
 
-    /// Creates an `Opaque` from shared bytes without copying them.
+    /// Creates an `Opaque` from reference-counted bytes without copying them.
     #[must_use]
     pub const fn from_bytes(data: Bytes) -> Self {
         Self(Repr::Shared(data))
@@ -43,13 +43,14 @@ impl<'a> Opaque<'a> {
 
     /// Converts into an `Opaque` that owns its bytes.
     ///
-    /// Copies borrowed data; owned data is moved as is.
+    /// Copies borrowed data; `Bytes` data is moved as is.
     #[must_use]
     pub fn into_owned(self) -> Opaque<'static> {
         Opaque::from_bytes(self.into_bytes())
     }
 
-    /// Converts into a `Vec<u8>`, copying only if the bytes are borrowed or shared.
+    /// Converts into a `Vec<u8>`, without copying only if the data is `Bytes`
+    /// holding the sole reference to its allocation.
     #[must_use]
     pub fn into_vec(self) -> Vec<u8> {
         match self.0 {

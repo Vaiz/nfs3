@@ -13,7 +13,8 @@ const READ_AHEAD_SIZE: usize = 64 * KIBIBYTE as usize;
 
 /// Reads RPC records (RFC 5531 record marking) from a byte stream.
 ///
-/// Every record is returned in its own buffer, without fragment markers. Small
+/// Every record is returned as a [`Decoder`] over its own buffer, without
+/// fragment markers. Small
 /// records are copied out of a read-ahead buffer; the bulk of large records is
 /// read directly from the input into the record buffer.
 #[derive(Debug)]

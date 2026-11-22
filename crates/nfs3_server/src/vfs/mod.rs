@@ -226,8 +226,9 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     /// object type was not a regular file. The correct return
     /// value for the NFS version 3 protocol is `NFS3ERR_INVAL`.
     ///
-    /// `data` usually shares the buffer the request was received in, so it can be
-    /// kept or moved to another task without copying.
+    /// `data` is a reference-counted [`Bytes`]. If it makes up at least half of
+    /// the buffer the request was received in, it shares that buffer instead of
+    /// being copied, so keeping `data` keeps at most twice its size in memory.
     fn write(
         &self,
         id: &Self::Handle,

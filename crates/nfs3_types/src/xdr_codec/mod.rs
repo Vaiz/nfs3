@@ -1,8 +1,8 @@
 //! XDR encoding and decoding.
 //!
-//! Values are decoded from a complete in-memory buffer ([`Decoder`]) and encoded
-//! into a head plus at most one shared payload ([`Encoder`]), so bulk data can
-//! be shared with the network buffers instead of being copied.
+//! Values are decoded with [`Decoder`] and encoded with [`Encoder`]. Large
+//! opaque data, such as READ and WRITE payloads, is passed as reference-counted
+//! [`Bytes`](bytes::Bytes) sharing the network buffers instead of being copied.
 
 pub(crate) mod decoder;
 pub(crate) mod encoder;

@@ -25,9 +25,9 @@ const MARKER_LEN: usize = 4;
 /// [`finish_record`](Self::finish_record) for an RPC record. Use [`encode`] to
 /// get a single value as one buffer.
 ///
-/// Everything is copied except one large [`Opaque`](super::Opaque) backed by
-/// [`Bytes`], such as READ or WRITE data, which is kept as a separate chunk of
-/// [`Encoded`].
+/// Everything is copied, except the first [`Opaque`](super::Opaque) of at least
+/// 1 KiB that holds [`Bytes`], such as READ or WRITE data: [`Encoded`] keeps a
+/// reference-counted clone of it as a separate chunk.
 ///
 /// ```
 /// use nfs3_types::xdr_codec::{Encoder, Pack};
@@ -170,7 +170,9 @@ fn record_marker(len: usize) -> Result<[u8; MARKER_LEN]> {
     Ok(fragment_header::new(len, true).into_xdr_buf())
 }
 
-/// Encoded bytes in up to three chunks, so a shared payload is never copied.
+/// Encoded bytes as three chunks: the bytes before the shared payload, the
+/// payload itself (a reference-counted clone, see [`Encoder`]), and the bytes
+/// after it.
 ///
 /// Send them with [`chunks`](Self::chunks) in a vectored write, or join them
 /// with [`into_bytes`](Self::into_bytes).
