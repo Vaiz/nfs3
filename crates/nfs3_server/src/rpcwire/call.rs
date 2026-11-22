@@ -115,7 +115,7 @@ fn pack<T>(rpc: &rpc_msg, message: &T) -> anyhow::Result<Encoded>
 where
     T: Pack + 'static,
 {
-    let mut out = Encoder::with_size_hint(rpc.packed_size().saturating_add(message.packed_size()));
+    let mut out = Encoder::new(rpc.packed_size().saturating_add(message.packed_size()));
     rpc.pack(&mut out)?;
     message.pack(&mut out)?;
     Ok(out.finish_record()?)

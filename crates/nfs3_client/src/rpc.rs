@@ -99,7 +99,7 @@ where
             return Err(RpcError::WrongLength);
         }
 
-        let mut out = Encoder::with_size_hint(total_len);
+        let mut out = Encoder::new(total_len);
         msg.pack(&mut out)?;
         args.pack(&mut out)?;
         if out.len() != total_len {
@@ -211,7 +211,7 @@ mod tests {
                 reply_data: accept_stat_data::SUCCESS,
             })),
         };
-        let mut out = Encoder::with_size_hint(0);
+        let mut out = Encoder::new(0);
         msg.pack(&mut out).unwrap();
         result.pack(&mut out).unwrap();
         let mut record = out.finish_record().unwrap();

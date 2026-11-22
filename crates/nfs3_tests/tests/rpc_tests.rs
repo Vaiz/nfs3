@@ -33,7 +33,7 @@ fn nfs3_call(xid: u32, proc: NFS_PROGRAM) -> rpc_msg<'static, 'static> {
 /// Encodes a NULL call as a single-fragment RPC record.
 fn null_call_record(xid: u32) -> anyhow::Result<Bytes> {
     let call = nfs3_call(xid, NFS_PROGRAM::NFSPROC3_NULL);
-    let mut out = Encoder::with_size_hint(call.packed_size());
+    let mut out = Encoder::new(call.packed_size());
     call.pack(&mut out)?;
     let mut record = out.finish_record()?;
     Ok(record.copy_to_bytes(record.remaining()))

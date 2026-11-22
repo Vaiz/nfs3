@@ -14,7 +14,7 @@ use crate::rpc::fragment_header;
 /// and WRITE payloads.
 const MIN_SHARED_CHUNK: usize = 1024;
 
-/// Upper bound for the head capacity reserved up front by [`Encoder::with_size_hint`].
+/// Upper bound for the head capacity reserved up front by [`Encoder::new`].
 ///
 /// Larger heads grow on demand, so a size hint that includes a shared payload
 /// never reserves memory for it.
@@ -35,7 +35,7 @@ const MARKER_LEN: usize = 4;
 /// use bytes::Buf;
 /// use nfs3_types::xdr_codec::{Encoder, Pack};
 ///
-/// let mut out = Encoder::with_size_hint(4);
+/// let mut out = Encoder::new(4);
 /// 7u32.pack(&mut out)?;
 /// let mut record = out.finish_record()?;
 /// let bytes = record.copy_to_bytes(record.remaining());
@@ -56,7 +56,7 @@ impl Encoder {
     ///
     /// At most 1 KiB is reserved up front.
     #[must_use]
-    pub fn with_size_hint(size_hint: usize) -> Self {
+    pub fn new(size_hint: usize) -> Self {
         Self::with_head_capacity(size_hint.min(MAX_INITIAL_HEAD))
     }
 
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn encoder_keeps_one_shared_payload_and_patches_marker() {
         let payload = Bytes::from(vec![0xCD; MIN_SHARED_CHUNK + 1]);
-        let mut out = Encoder::with_size_hint(usize::MAX);
+        let mut out = Encoder::new(usize::MAX);
         assert!(out.head.capacity() <= MARKER_LEN + MAX_INITIAL_HEAD);
         7u32.pack(&mut out).unwrap();
         Opaque::from_bytes(payload.clone()).pack(&mut out).unwrap();
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn trailing_payload_is_padded() {
         let payload = Bytes::from(vec![0xCD; MIN_SHARED_CHUNK + 1]);
-        let mut out = Encoder::with_size_hint(0);
+        let mut out = Encoder::new(0);
         Opaque::from_bytes(payload).pack(&mut out).unwrap();
         let encoded = plain(out);
         let [head, _, tail] = encoded.chunks();
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn small_shared_payloads_are_copied() {
-        let mut out = Encoder::with_size_hint(0);
+        let mut out = Encoder::new(0);
         Opaque::from_bytes(Bytes::from_static(b"abc"))
             .pack(&mut out)
             .unwrap();

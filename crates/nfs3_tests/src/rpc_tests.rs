@@ -75,7 +75,7 @@ impl RpcTestContext {
             anyhow::bail!("Total length is not a multiple of 4: {total_len}");
         }
 
-        let mut out = Encoder::with_size_hint(total_len);
+        let mut out = Encoder::new(total_len);
         msg.pack(&mut out)?;
         args.pack(&mut out)?;
         anyhow::ensure!(
