@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use nfs3_types::mount::MNTPATHLEN;
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -60,6 +61,7 @@ impl<FS> Builder<FS> {
     ///
     /// Leading and trailing slashes are stripped before adding one leading slash.
     /// For example, `data` and `/data/` both export at `/data`.
+    /// The normalized path must fit in 1,024 bytes.
     pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
         self.export_name = normalized_export_name(name.as_ref());
         self
@@ -93,6 +95,13 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
     /// Initialization also queries the export root's FSINFO to set the READ
     /// limit. If that query fails, binding returns an error.
     pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
+        let len = self.export_name.len();
+        if len > MNTPATHLEN {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("export path is {len} bytes after normalization; maximum is {MNTPATHLEN}"),
+            ));
+        }
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on {addr}");
         NFSTcpListener::new(

@@ -93,9 +93,7 @@ where
 
     match context.vfs.lookup_by_path(path).await {
         Ok(fileid) => {
-            let Ok(root) = context.file_handle_converter.fh_to_nfs(&fileid) else {
-                return mountres3::Err(mountstat3::MNT3ERR_SERVERFAULT);
-            };
+            let root = context.file_handle_converter.fh_to_nfs(&fileid);
             let response = mountres3_ok {
                 fhandle: fhandle3(root.data),
                 auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],

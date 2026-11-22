@@ -140,14 +140,10 @@ where
     let dir_attributes = nfs_option_from_result(context.vfs.getattr(&dirid).await);
     match context.vfs.lookup(&dirid, &dirops.name).await {
         Ok(fid) => {
-            let object = match context.file_handle_converter.fh_to_nfs(&fid) {
-                Ok(object) => object,
-                Err(stat) => return LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes })),
-            };
             let obj_attributes = nfs_option_from_result(context.vfs.getattr(&fid).await);
             debug!("lookup success {} --> {:?}", xid, obj_attributes);
             LOOKUP3res::Ok(LOOKUP3resok {
-                object,
+                object: context.file_handle_converter.fh_to_nfs(&fid),
                 obj_attributes,
                 dir_attributes,
             })
@@ -382,15 +378,7 @@ where
     loop {
         match iter.next().await {
             NextResult::Ok(dir_entry_plus) => {
-                let entry = match dir_entry_plus.into_entry(&context.file_handle_converter) {
-                    Ok(entry) => entry,
-                    Err(stat) => {
-                        return READDIRPLUS3res::Err((
-                            stat,
-                            READDIRPLUS3resfail { dir_attributes },
-                        ));
-                    }
-                };
+                let entry = dir_entry_plus.into_entry(&context.file_handle_converter);
                 let result = entries_result.try_push(entry);
                 if result.is_err() {
                     trace!(" -- insufficient space. truncating");
@@ -705,11 +693,11 @@ where
     let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
     let dir_wcc = wcc_data { before, after };
 
-    match fid.and_then(|fid| context.file_handle_converter.fh_to_nfs(&fid)) {
-        Ok(handle) => {
-            debug!("create success {xid} --> {handle:?}, {postopattr:?}");
+    match fid {
+        Ok(fid) => {
+            debug!("create success {xid} --> {fid:?}, {postopattr:?}");
             CREATE3res::Ok(CREATE3resok {
-                obj: post_op_fh3::Some(handle),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: postopattr,
                 dir_wcc,
             })
@@ -912,16 +900,11 @@ where
     let after = nfs_option_from_result(context.vfs.getattr(&dirid).await);
     let dir_wcc = wcc_data { before, after };
 
-    match result.and_then(|(fid, fattr)| {
-        context
-            .file_handle_converter
-            .fh_to_nfs(&fid)
-            .map(|handle| (handle, fattr))
-    }) {
-        Ok((handle, fattr)) => {
-            debug!("mkdir success {xid} --> {handle:?}, {fattr:?}");
+    match result {
+        Ok((fid, fattr)) => {
+            debug!("mkdir success {xid} --> {fid:?}, {fattr:?}");
             MKDIR3res::Ok(MKDIR3resok {
-                obj: post_op_fh3::Some(handle),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc,
             })
@@ -965,16 +948,11 @@ where
             &args.symlink.symlink_attributes,
         )
         .await
-        .and_then(|(fid, fattr)| {
-            context
-                .file_handle_converter
-                .fh_to_nfs(&fid)
-                .map(|handle| (handle, fattr))
-        }) {
-        Ok((handle, fattr)) => {
-            debug!("symlink success {xid} --> {handle:?}, {fattr:?}");
+    {
+        Ok((fid, fattr)) => {
+            debug!("symlink success {xid} --> {fid:?}, {fattr:?}");
             SYMLINK3res::Ok(SYMLINK3resok {
-                obj: post_op_fh3::Some(handle),
+                obj: post_op_fh3::Some(context.file_handle_converter.fh_to_nfs(&fid)),
                 obj_attributes: post_op_attr::Some(fattr),
                 dir_wcc: wcc_data {
                     before: pre_dir_attr,

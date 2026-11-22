@@ -9,6 +9,7 @@ use nfs3_client::nfs3_types;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
 use nfs3_server::tcp::{Builder, NFSTcp};
 use nfs3_tests::{RpcTestContext, Server};
+use nfs3_types::mount::MNTPATHLEN;
 use nfs3_types::nfs3::{LOOKUP3res, NFS_PROGRAM};
 use nfs3_types::rpc::{call_body, fragment_header, msg_body, opaque_auth, reply_body, rpc_msg};
 use nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack, Void};
@@ -85,6 +86,30 @@ fn check_garbage_args_reply(xid: u32, msg: &rpc_msg<'_, '_>) -> anyhow::Result<(
         },
         msg_body::CALL(_) => bail!("Expected REPLY message, got: {:?}", msg.body),
     }
+}
+
+#[tokio::test]
+async fn tcp_listener_checks_normalized_export_length_before_binding() -> anyhow::Result<()> {
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let listener = Builder::new()
+        .export_name(format!("//{}//", "a".repeat(MNTPATHLEN - 1)))
+        .filesystem(fs)
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await?;
+    let addr = SocketAddr::new(listener.get_listen_ip(), listener.get_listen_port());
+
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let result = Builder::new()
+        .export_name("a".repeat(MNTPATHLEN))
+        .filesystem(fs)
+        .bind(addr)
+        .await;
+    let Err(err) = result else {
+        bail!("an oversized normalized export path was accepted");
+    };
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("export path is 1025 bytes"));
+    Ok(())
 }
 
 #[tokio::test]

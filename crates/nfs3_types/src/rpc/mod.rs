@@ -154,6 +154,9 @@ pub struct auth_unix {
 impl auth_unix {
     /// Creates `AUTH_SYS` parameters from the machine name and Unix IDs.
     ///
+    /// Select at most 16 supplemental group IDs before calling if the
+    /// operating system reports more; this constructor never truncates them.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidLength`] if `machinename` is longer than 255

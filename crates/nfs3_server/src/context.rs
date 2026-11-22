@@ -72,8 +72,6 @@ where
     }
     #[must_use]
     pub fn root_dir(&self) -> nfs3_types::nfs3::nfs_fh3 {
-        self.file_handle_converter
-            .fh_to_nfs(&self.vfs.root_dir())
-            .expect("valid test filesystem root handle")
+        self.file_handle_converter.fh_to_nfs(&self.vfs.root_dir())
     }
 }

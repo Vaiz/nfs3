@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::AtomicU16;
 
 use derive_where::derive_where;
-use nfs3_types::mount::{dirpath, mountres3_ok};
+use nfs3_types::mount::{MNTPATHLEN, dirpath, mountres3_ok};
 use nfs3_types::nfs3::nfs_fh3;
 use nfs3_types::rpc::opaque_auth;
 use nfs3_types::xdr_codec::{self, Opaque};
@@ -146,10 +146,15 @@ where
     ///
     /// Rejects mount paths over 1,024 bytes before connecting.
     pub async fn mount(self) -> Result<Nfs3Connection<S>, ConnectError> {
-        let mount_path = self
-            .mount_path
-            .as_ref()
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err.clone()))?;
+        let mount_path = self.mount_path.as_ref().map_err(|err| {
+            let message = match err {
+                xdr_codec::Error::InvalidLength(len) => {
+                    format!("mount path is {len} bytes; maximum is {MNTPATHLEN}")
+                }
+                _ => format!("invalid mount path: {err}"),
+            };
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
+        })?;
         let (mount_port, nfs3_port) = self.resolve_ports().await?;
 
         let io = self.connect(mount_port).await?;

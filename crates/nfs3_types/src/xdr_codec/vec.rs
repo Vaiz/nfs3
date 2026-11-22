@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use super::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 /// An XDR counted array with at most `N` elements.
@@ -26,6 +28,14 @@ impl<T, const N: usize> TryFrom<Vec<T>> for BoundedVec<T, N> {
 impl<T, const N: usize> AsRef<[T]> for BoundedVec<T, N> {
     fn as_ref(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl<T, const N: usize> Deref for BoundedVec<T, N> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        self.as_ref()
     }
 }
 
