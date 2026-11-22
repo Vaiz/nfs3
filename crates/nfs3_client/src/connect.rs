@@ -13,8 +13,6 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::{ConnectError, MountClient, Nfs3Client, RpcError, mount, portmapper};
 
 /// Contains the connection to the NFS server.
-///
-/// The `Debug` implementation does not require the transport to implement `Debug`.
 #[derive_where(Debug)]
 pub struct Nfs3Connection<IO> {
     pub host: String,
