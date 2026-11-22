@@ -1,4 +1,3 @@
-use crate::xdr_codec::util::add_padding;
 use crate::xdr_codec::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 impl Pack for Vec<u32> {
@@ -78,24 +77,5 @@ impl Unpack for bool {
             1 => Ok(true),
             val => Err(Error::InvalidEnumValue(val)),
         }
-    }
-}
-
-impl<const N: usize> Pack for [u8; N] {
-    fn packed_size(&self) -> usize {
-        add_padding(N)
-    }
-
-    fn pack(&self, out: &mut Encoder) -> Result<()> {
-        out.put_array(self);
-        Ok(())
-    }
-}
-
-impl<const N: usize> Unpack for [u8; N] {
-    fn unpack(input: &mut Decoder) -> Result<Self> {
-        let buf = input.read_array()?;
-        input.skip_padding(N)?;
-        Ok(buf)
     }
 }

@@ -577,7 +577,7 @@ pub struct WRITE3resok {
     pub verf: writeverf3,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct cookieverf3(pub [u8; NFS3_COOKIEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]
@@ -598,7 +598,7 @@ pub enum createmode3 {
     EXCLUSIVE = 2,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct createverf3(pub [u8; NFS3_CREATEVERFSIZE]);
 
 #[derive(Debug, XdrCodec)]
@@ -980,7 +980,7 @@ pub struct wcc_data {
     pub after: post_op_attr,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, XdrCodec)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct writeverf3(pub [u8; NFS3_WRITEVERFSIZE]);
 
 pub type cookie3 = u64;
@@ -998,6 +998,30 @@ pub type offset3 = u64;
 pub type size3 = u64;
 
 pub type uid3 = u32;
+
+/// Implements the codec of an 8-byte verifier, which needs no padding.
+macro_rules! verifier_codec {
+    ($($name:ident),+) => {$(
+        impl Pack for $name {
+            fn packed_size(&self) -> usize {
+                self.0.len()
+            }
+
+            fn pack(&self, out: &mut Encoder) -> crate::xdr_codec::Result<()> {
+                out.put_array(&self.0);
+                Ok(())
+            }
+        }
+
+        impl Unpack for $name {
+            fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+                input.read_array().map(Self)
+            }
+        }
+    )+};
+}
+
+verifier_codec!(cookieverf3, createverf3, writeverf3);
 
 impl Pack for mknoddata3 {
     fn packed_size(&self) -> usize {

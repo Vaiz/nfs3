@@ -94,11 +94,10 @@ impl Encoder {
         }
     }
 
-    /// Copies a fixed-size `data` and its padding.
+    /// Copies `data`, whose size is a multiple of 4 and so needs no padding.
     pub(crate) fn put_array<const N: usize>(&mut self, data: &[u8; N]) {
-        let out = self.out();
-        out.extend_from_slice(data);
-        out.extend_from_slice(zero_padding(N));
+        const { assert!(N.is_multiple_of(4)) };
+        self.out().extend_from_slice(data);
     }
 
     /// Copies `data` and adds padding.
@@ -166,13 +165,6 @@ mod tests {
     fn plain(mut out: Encoder) -> Encoded {
         out.head.advance(MARKER_LEN);
         out.into_encoded()
-    }
-
-    #[test]
-    fn array_is_padded() {
-        let mut out = Encoder::new(0);
-        [1u8, 2, 3].pack(&mut out).unwrap();
-        assert_eq!(out.finish(), &[1, 2, 3, 0][..]);
     }
 
     #[test]

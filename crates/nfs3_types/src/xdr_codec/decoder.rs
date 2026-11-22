@@ -75,7 +75,9 @@ impl Decoder {
         self.buf
     }
 
+    /// Reads `N` bytes; `N` is a multiple of 4, so there is no padding.
     pub(crate) fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        const { assert!(N.is_multiple_of(4)) };
         if self.buf.len() < N {
             return Err(Error::UnexpectedEof);
         }
@@ -171,10 +173,6 @@ mod tests {
     fn non_zero_padding_is_rejected() {
         assert_eq!(
             decode::<Opaque<'_>>(&[0, 0, 0, 1, 7, 0, 1, 0][..]).unwrap_err(),
-            Error::NonZeroPadding
-        );
-        assert_eq!(
-            decode::<[u8; 2]>(&[1, 2, 0, 1][..]).unwrap_err(),
             Error::NonZeroPadding
         );
         assert_eq!(
