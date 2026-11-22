@@ -160,7 +160,7 @@ where
         let io = self.connect(mount_port).await?;
         let mut mount_client =
             mount::MountClient::new_with_auth(io, self.credential.clone(), self.verifier.clone());
-        let mount_resok = mount_client.mnt(dirpath(mount_path.0.clone())).await?;
+        let mount_resok = mount_client.mnt(mount_path.clone()).await?;
 
         let io = self.connect(nfs3_port).await?;
         let nfs3_client = Nfs3Client::new_with_auth(io, self.credential, self.verifier);
@@ -168,7 +168,7 @@ where
         Ok(Nfs3Connection {
             host: self.host,
             mount_port,
-            mount_path: dirpath(mount_path.0.clone()),
+            mount_path: mount_path.clone(),
             mount_client,
             mount_resok,
             nfs3_port,

@@ -16,11 +16,11 @@ pub const MNTNAMLEN: usize = 255;
 pub const FHSIZE3: usize = 64;
 
 /// MOUNT v3 file handle, limited to 64 bytes.
-#[derive(Debug, XdrCodec)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct fhandle3<'a>(pub BoundedOpaque<'a, FHSIZE3>);
 
 /// MOUNT path, limited to 1,024 bytes.
-#[derive(Debug, XdrCodec)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct dirpath<'a>(pub BoundedOpaque<'a, MNTPATHLEN>);
 
 impl dirpath<'_> {
@@ -36,7 +36,7 @@ impl dirpath<'_> {
 }
 
 /// MOUNT host or group name, limited to 255 bytes.
-#[derive(Debug, XdrCodec)]
+#[derive(Clone, Debug, XdrCodec)]
 pub struct name<'a>(pub BoundedOpaque<'a, MNTNAMLEN>);
 
 #[derive(Copy, Clone, Debug, XdrCodec)]
