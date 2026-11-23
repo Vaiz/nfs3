@@ -1,7 +1,89 @@
 // Tests for XDR collection types (BoundedVec, List, BoundedList)
 
+use std::cell::Cell;
+use std::ptr;
+use std::rc::Rc;
+
 use super::encode;
 use crate::xdr_codec::{BoundedList, BoundedVec, Decoder, Error, List, Pack, Unpack};
+
+fn stored_inline<T, const N: usize>(items: &BoundedVec<T, N>) -> bool {
+    let start = ptr::from_ref(items).addr();
+    (start..start + size_of_val(items)).contains(&items.as_ptr().addr())
+}
+
+#[test]
+fn bounded_vec_storage_depends_on_type_and_bound() {
+    #[repr(align(16))]
+    struct Aligned(u32);
+
+    let full = BoundedVec::<u32, 16>::from_array([42; 16]);
+    assert!(stored_inline(&full));
+    let encoded = encode(&full).unwrap();
+    let mut input = Decoder::copying(encoded);
+    let decoded = BoundedVec::<u32, 16>::unpack(&mut input).unwrap();
+    assert_eq!(decoded, full);
+    assert!(input.is_empty());
+    assert!(stored_inline(&decoded));
+
+    let converted = BoundedVec::<u32, 12>::try_from(vec![42]).unwrap();
+    assert!(stored_inline(&converted));
+    assert!(stored_inline(&BoundedVec::<u32, 12>::default()));
+
+    let above_bound = BoundedVec::<u32, 17>::from_array([42]);
+    assert!(!stored_inline(&above_bound));
+    let larger_element = BoundedVec::<u64, 16>::from_array([42]);
+    assert!(!stored_inline(&larger_element));
+
+    let aligned = BoundedVec::<Aligned, 1>::from_array([Aligned(42)]);
+    assert!(!stored_inline(&aligned));
+    assert_eq!(aligned[0].0, 42);
+}
+
+#[test]
+fn bounded_vec_inline_owns_items_and_supports_interior_mutability() {
+    let value = Rc::new(Cell::new(42));
+    let items = BoundedVec::<Rc<Cell<u32>>, 1>::from_array([Rc::clone(&value)]);
+    assert!(stored_inline(&items));
+    let cloned = items.clone();
+    assert!(stored_inline(&cloned));
+    items[0].set(7);
+    assert_eq!(cloned[0].get(), 7);
+    assert_eq!(Rc::strong_count(&value), 3);
+    drop(items);
+    drop(cloned);
+    assert_eq!(Rc::strong_count(&value), 1);
+
+    let cells = BoundedVec::<Cell<u32>, 1>::from_array([Cell::new(42)]);
+    cells[0].set(7);
+    assert_eq!(cells[0].get(), 7);
+}
+
+#[test]
+fn bounded_vec_drops_initialized_items_after_decode_error() {
+    thread_local! {
+        static DROPS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    struct Tracked(u32);
+
+    impl Unpack for Tracked {
+        fn unpack(input: &mut Decoder) -> crate::xdr_codec::Result<Self> {
+            u32::unpack(input).map(Self)
+        }
+    }
+
+    impl Drop for Tracked {
+        fn drop(&mut self) {
+            DROPS.with(|drops| drops.set(drops.get() + self.0 as usize));
+        }
+    }
+
+    let truncated: &'static [u8] = &[0, 0, 0, 2, 0, 0, 0, 1];
+    let mut input = Decoder::copying(truncated);
+    assert!(BoundedVec::<Tracked, 16>::unpack(&mut input).is_err());
+    assert_eq!(DROPS.with(Cell::get), 1);
+}
 
 #[test]
 fn bounded_vec_serialization() {
@@ -43,6 +125,13 @@ fn bounded_vec_checks_count_before_reading_items() {
         Err(Error::InvalidLength(1))
     ));
     assert_eq!(input.remaining(), 8);
+
+    let too_many: &'static [u8] = &[0, 0, 0, 17];
+    let mut input = Decoder::copying(too_many);
+    assert!(matches!(
+        BoundedVec::<u32, 16>::unpack(&mut input),
+        Err(Error::InvalidLength(17))
+    ));
 }
 
 #[test]
