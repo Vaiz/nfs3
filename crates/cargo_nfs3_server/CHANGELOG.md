@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- MirrorFS honors the requested NFSv3 WRITE stability and synchronizes the backing file on COMMIT.
+
 ## [0.2.3](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.2...cargo-nfs3-server-v0.2.3) - 2026-10-21
 
 ### Other

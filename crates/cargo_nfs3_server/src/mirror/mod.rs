@@ -2,7 +2,6 @@ mod iterator;
 mod iterator_cache;
 mod symbols_cache;
 
-use std::future::ready;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,6 +53,22 @@ impl Fs {
     fn path(&self, id: FileHandleU64) -> Result<PathBuf, nfsstat3> {
         let relative_path = self.cache.handle_to_path(id)?;
         Ok(self.root.join(relative_path))
+    }
+
+    async fn open_for_write(&self, id: FileHandleU64) -> Result<File, nfsstat3> {
+        let path = self.path(id)?;
+        let metadata = tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(map_io_error)?;
+        if !metadata.is_file() {
+            return Err(nfsstat3::NFS3ERR_INVAL);
+        }
+
+        File::options()
+            .write(true)
+            .open(&path)
+            .await
+            .map_err(map_io_error)
     }
 
     async fn read(
@@ -244,33 +259,25 @@ impl NfsFileSystem for Fs {
         id: &Self::Handle,
         offset: u64,
         data: Bytes,
-        _stable: stable_how,
+        stable: stable_how,
     ) -> Result<(fattr3, stable_how), nfsstat3> {
-        let path = self.path(*id)?;
-
-        // Check if it's a regular file
-        let metadata = tokio::fs::symlink_metadata(&path)
-            .await
-            .map_err(map_io_error)?;
-
-        if !metadata.is_file() {
-            return Err(nfsstat3::NFS3ERR_INVAL);
-        }
-
+        let mut file = self.open_for_write(*id).await?;
         async {
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .await?;
             file.seek(SeekFrom::Start(offset)).await?;
             file.write_all(&data).await?;
-            file.flush().await
+            // Wait for Tokio's pending write and surface its error even for UNSTABLE.
+            file.flush().await?;
+            match stable {
+                stable_how::UNSTABLE => Ok(()),
+                stable_how::DATA_SYNC => file.sync_data().await,
+                stable_how::FILE_SYNC => file.sync_all().await,
+            }
         }
         .await
         .map_err(map_io_error)?;
 
         let attr = self.getattr(id).await?;
-        Ok((attr, stable_how::FILE_SYNC))
+        Ok((attr, stable))
     }
 
     async fn create(
@@ -470,14 +477,10 @@ impl NfsFileSystem for Fs {
         Ok((link_id, fattr))
     }
 
-    fn commit(
-        &self,
-        _id: &Self::Handle,
-        _offset: u64,
-        _count: u32,
-    ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
-        // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
-        ready(Ok(()))
+    async fn commit(&self, id: &Self::Handle, _offset: u64, _count: u32) -> Result<(), nfsstat3> {
+        // Syncing the whole file covers any requested range.
+        let file = self.open_for_write(*id).await?;
+        file.sync_all().await.map_err(map_io_error)
     }
 }
 
@@ -519,6 +522,74 @@ mod tests {
             assert_eq!(data.as_ref(), b"");
             assert_eq!(eof, expected_eof, "offset={offset}, count={count}");
         }
+    }
+
+    #[tokio::test]
+    async fn write_reports_requested_stability() {
+        let (temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let file = fs
+            .lookup(&root, &b"file.txt".as_slice().into())
+            .await
+            .expect("look up test file");
+
+        for (stable, data) in [
+            (stable_how::UNSTABLE, b"first!!"),
+            (stable_how::DATA_SYNC, b"second!"),
+            (stable_how::FILE_SYNC, b"third!!"),
+        ] {
+            let (_, committed) = fs
+                .write(&file, 1, Bytes::from_static(data), stable)
+                .await
+                .expect("write test file");
+            assert_eq!(committed, stable);
+            let content = fs::read(temp_dir.path().join("file.txt"))
+                .await
+                .expect("read test file");
+            assert_eq!(&content[..1], b"c");
+            assert_eq!(&content[1..], data);
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_after_unstable_write() {
+        let (_temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let file = fs
+            .lookup(&root, &b"file.txt".as_slice().into())
+            .await
+            .expect("look up test file");
+
+        for (offset, count) in [(1, 2), (4, 0)] {
+            fs.write(
+                &file,
+                offset,
+                Bytes::from_static(b"xy"),
+                stable_how::UNSTABLE,
+            )
+            .await
+            .expect("write test file");
+            fs.commit(&file, offset, count)
+                .await
+                .expect("commit test file");
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rejects_unknown_missing_and_non_regular_files() {
+        let (temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let file = fs
+            .lookup(&root, &b"file.txt".as_slice().into())
+            .await
+            .expect("look up test file");
+        fs::remove_file(temp_dir.path().join("file.txt"))
+            .await
+            .expect("remove backing file without invalidating its cached handle");
+
+        assert_eq!(
+            fs.commit(&FileHandleU64::new(0), 0, 0).await,
+            Err(nfsstat3::NFS3ERR_BADHANDLE)
+        );
+        assert_eq!(fs.commit(&file, 0, 0).await, Err(nfsstat3::NFS3ERR_NOENT));
+        assert_eq!(fs.commit(&root, 0, 0).await, Err(nfsstat3::NFS3ERR_INVAL));
     }
 
     #[tokio::test]
