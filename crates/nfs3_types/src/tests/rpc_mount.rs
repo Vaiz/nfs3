@@ -234,6 +234,27 @@ fn small_bounded_opaque_is_stored_inline() {
     assert_inline(&owned);
     assert_eq!(decoded, owned);
     assert_eq!(owned.into_bytes(), &b"abc"[..]);
+
+    let limit = [0xfe; 22];
+    let owned = BoundedOpaque::<64>::from_array(&limit).into_owned();
+    assert_inline(&owned);
+    let wire = encode(&owned).unwrap();
+    let decoded = BoundedOpaque::<64>::unpack(&mut Decoder::copying(wire)).unwrap();
+    assert_inline(&decoded);
+    assert_eq!(decoded, owned);
+
+    let larger = [0xff; 23];
+    let wire = encode(&Opaque::borrowed(&larger)).unwrap();
+    let decoded = BoundedOpaque::<64>::unpack(&mut Decoder::copying(wire)).unwrap();
+    assert_eq!(decoded.as_ref(), larger);
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn bounded_opaque_does_not_enlarge_x64_values() {
+    assert_eq!(size_of::<BoundedOpaque<'static, 64>>(), 32);
+    assert_eq!(size_of::<BoundedOpaque<'static, 1024>>(), 32);
+    assert_eq!(size_of::<crate::rpc::rpc_msg<'static, 'static>>(), 104);
 }
 
 #[test]
