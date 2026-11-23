@@ -8,9 +8,9 @@ use crate::xdr_codec::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 /// Variable-length XDR opaque data.
 ///
-/// Either borrows a slice or holds a reference-counted [`Bytes`]. Decoded
-/// `Opaque` values hold `Bytes` that either shares the decoder's input buffer
-/// or is a copy (see [`Decoder`]).
+/// Borrows a slice, stores a short payload inline, or holds a reference-counted [`Bytes`].
+/// Decoded payloads of at most 22 bytes are stored inline. Larger payloads
+/// may share the decoder's input buffer (see [`Decoder`]).
 #[derive(Clone)]
 pub struct Opaque<'a>(Repr<'a>);
 
@@ -50,6 +50,16 @@ impl Opaque<'static> {
         let len = u8::try_from(len).expect("inline length fits in a u8");
         Self(Repr::Local(Local::Inline { data, len }))
     }
+
+    fn unpack_payload(input: &mut Decoder, len: usize) -> Result<Self> {
+        if len <= INLINE_CAPACITY {
+            let mut data = [0; INLINE_CAPACITY];
+            input.read_opaque_into(&mut data[..len])?;
+            Ok(Self::inline(data, len))
+        } else {
+            input.read_opaque(len).map(Self::from_bytes)
+        }
+    }
 }
 
 impl<'a> Opaque<'a> {
@@ -61,10 +71,16 @@ impl<'a> Opaque<'a> {
 
     /// Converts into an `Opaque` that owns its bytes.
     ///
-    /// Copies borrowed data; owned data is moved as is.
+    /// Copies borrowed data, storing up to 22 bytes inline. Owned data is
+    /// moved as is.
     #[must_use]
     pub(crate) fn into_owned(self) -> Opaque<'static> {
         match self.0 {
+            Repr::Local(Local::Borrowed(bytes)) if bytes.len() <= INLINE_CAPACITY => {
+                let mut data = [0; INLINE_CAPACITY];
+                data[..bytes.len()].copy_from_slice(bytes);
+                Opaque::inline(data, bytes.len())
+            }
             Repr::Local(Local::Borrowed(data)) => Opaque::from_bytes(Bytes::copy_from_slice(data)),
             Repr::Local(Local::Inline { data, len }) => {
                 Opaque(Repr::Local(Local::Inline { data, len }))
@@ -106,7 +122,7 @@ impl Pack for Opaque<'_> {
 impl Unpack for Opaque<'static> {
     fn unpack(input: &mut Decoder) -> Result<Self> {
         let len = u32::unpack(input)? as usize;
-        input.read_opaque(len).map(Self::from_bytes)
+        Self::unpack_payload(input, len)
     }
 }
 
@@ -145,17 +161,11 @@ impl Eq for Opaque<'_> {}
 /// Variable-length XDR opaque data limited to `N` bytes.
 ///
 /// Uses the same wire format as [`Opaque`]. Decoding checks the length before
-/// reading the payload. For `N <= 64`, decoded payloads and borrowed slices
-/// converted to owned values fit inline without allocating if they are at
-/// most 22 bytes long.
+/// reading the payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedOpaque<'a, const N: usize>(Opaque<'a>);
 
 impl<const N: usize> BoundedOpaque<'_, N> {
-    const fn fits_inline(len: usize) -> bool {
-        N <= 64 && len <= INLINE_CAPACITY
-    }
-
     pub(crate) const fn empty() -> Self {
         Self(Opaque::borrowed(&[]))
     }
@@ -188,18 +198,10 @@ impl<const N: usize> BoundedOpaque<'_, N> {
         self.0.into_bytes()
     }
 
-    /// Converts into an owned `BoundedOpaque`.
+    /// Converts into an owned `BoundedOpaque`, storing short borrowed data inline.
     #[must_use]
     pub fn into_owned(self) -> BoundedOpaque<'static, N> {
-        let Opaque(repr) = self.0;
-        BoundedOpaque(match repr {
-            Repr::Local(Local::Borrowed(bytes)) if Self::fits_inline(bytes.len()) => {
-                let mut data = [0; INLINE_CAPACITY];
-                data[..bytes.len()].copy_from_slice(bytes);
-                Opaque::inline(data, bytes.len())
-            }
-            _ => Opaque(repr).into_owned(),
-        })
+        BoundedOpaque(self.0.into_owned())
     }
 }
 
@@ -255,12 +257,6 @@ impl<const N: usize> Unpack for BoundedOpaque<'static, N> {
         if len > N {
             return Err(Error::InvalidLength(len));
         }
-        if Self::fits_inline(len) {
-            let mut data = [0; INLINE_CAPACITY];
-            input.read_opaque_into(&mut data[..len])?;
-            Ok(Self(Opaque::inline(data, len)))
-        } else {
-            input.read_opaque(len).map(Opaque::from_bytes).map(Self)
-        }
+        Opaque::unpack_payload(input, len).map(Self)
     }
 }

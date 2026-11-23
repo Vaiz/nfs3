@@ -8,13 +8,12 @@ use super::{Error, Result};
 /// Read values with [`Unpack::unpack`](super::Unpack::unpack). Malformed or truncated input returns
 /// an [`Error`], and lengths are checked before anything is allocated.
 ///
-/// Each decoder has a minimum shared length. Opaque data at least that long is
-/// returned as a reference-counted [`Bytes`] sharing the input buffer, without
-/// copying, and keeps the whole buffer in memory. Shorter opaque data is copied
-/// into its own allocation. Small [`BoundedOpaque`](super::BoundedOpaque)
-/// values are copied inline instead.
+/// Opaque payloads up to 22 bytes are stored inline. For larger payloads, each
+/// decoder has a minimum shared length: data at least that long is returned as
+/// reference-counted [`Bytes`] sharing the input buffer and keeps the whole
+/// buffer in memory. Data below the threshold is copied into its own allocation.
 ///
-/// - [`Decoder::copying`] disables sharing: all opaque data is copied.
+/// - [`Decoder::copying`] disables sharing.
 /// - [`RecordBuf::into_decoder`](crate::rpc::RecordBuf::into_decoder) sets the minimum to half of
 ///   the record's allocation, so READ and WRITE payloads are shared, and a shared value never keeps
 ///   more than twice its size in memory.

@@ -215,12 +215,13 @@ fn fhandle3_edge_cases() {
 }
 
 #[test]
-fn small_bounded_opaque_is_stored_inline() {
-    fn assert_inline(value: &BoundedOpaque<'_, 64>) {
+fn small_opaque_is_stored_inline() {
+    fn assert_inline(value: &impl AsRef<[u8]>) {
         let start = std::ptr::from_ref(value).addr();
-        let payload = value.as_ptr().addr();
-        assert!((start..start + size_of_val(value)).contains(&payload));
-        assert!(payload + value.len() <= start + size_of_val(value));
+        let end = start + size_of_val(value);
+        let bytes = value.as_ref();
+        assert!((start..end).contains(&bytes.as_ptr().addr()));
+        assert!(bytes.as_ptr().addr() + bytes.len() <= end);
     }
 
     let wire = &[0, 0, 0, 3, b'a', b'b', b'c', 0][..];
@@ -242,6 +243,15 @@ fn small_bounded_opaque_is_stored_inline() {
     let decoded = BoundedOpaque::<64>::unpack(&mut Decoder::copying(wire)).unwrap();
     assert_inline(&decoded);
     assert_eq!(decoded, owned);
+
+    let wire = encode(&Opaque::borrowed(&limit)).unwrap();
+    let decoded = Opaque::unpack(&mut Decoder::copying(wire.clone())).unwrap();
+    assert_inline(&decoded);
+    assert_eq!(decoded.as_ref(), limit);
+    let decoded = BoundedOpaque::<1024>::unpack(&mut Decoder::copying(wire)).unwrap();
+    assert_inline(&decoded);
+    assert_eq!(decoded.as_ref(), limit);
+    assert_inline(&Opaque::borrowed(&limit).into_owned());
 
     let larger = [0xff; 23];
     let wire = encode(&Opaque::borrowed(&larger)).unwrap();

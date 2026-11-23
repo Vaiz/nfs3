@@ -29,6 +29,12 @@ name = "perf_bench"
 harness = false
 
 [[bench]]
+name = "opaque_xdr"
+harness = false
+bench = false
+test = false
+
+[[bench]]
 name = "rpc_allocations"
 harness = false
 # Run explicitly with --bench rpc_allocations -- --allocations; Metabench's
