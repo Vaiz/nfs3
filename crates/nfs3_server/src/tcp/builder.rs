@@ -6,7 +6,7 @@ use nfs3_types::mount::dirpath;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use super::NFSTcpListener;
+use super::{DEFAULT_EXPORT_PATH, NFSTcpListener};
 use crate::context::normalized_export_path;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
@@ -24,7 +24,7 @@ impl Default for Builder {
     fn default() -> Self {
         Self {
             fs: (),
-            export_path: normalized_export_path("/"),
+            export_path: Ok(DEFAULT_EXPORT_PATH.clone()),
             generation_number: None,
             max_rpc_record_size: None,
         }

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use anyhow;
 use nfs3_types::mount::dirpath;
+use nfs3_types::xdr_codec::BoundedOpaque;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -25,6 +26,7 @@ pub use builder::Builder;
 
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
+static DEFAULT_EXPORT_PATH: dirpath<'static> = dirpath(BoundedOpaque::from_array(b"/"));
 
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
@@ -207,7 +209,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                         return Self::new(
                             listener,
                             fs,
-                            normalized_export_path("/")?,
+                            DEFAULT_EXPORT_PATH.clone(),
                             generation_number,
                             None,
                         )
@@ -223,7 +225,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
         Self::new(
             listener,
             fs,
-            normalized_export_path("/")?,
+            DEFAULT_EXPORT_PATH.clone(),
             generation_number,
             None,
         )
@@ -256,13 +258,13 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     /// Example: Name `foo` results in the export path `/foo`.
     /// Default path is `/` if not set.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `InvalidInput` if the normalized path exceeds 1,024 bytes.
+    /// Panics if the normalized path exceeds 1,024 bytes.
     #[deprecated(note = "Use Builder::export_name before binding")]
-    pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) -> io::Result<()> {
-        self.export_path = normalized_export_path(export_name.as_ref())?;
-        Ok(())
+    pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
+        self.export_path =
+            normalized_export_path(export_name.as_ref()).unwrap_or_else(|err| panic!("{err}"));
     }
 }
 

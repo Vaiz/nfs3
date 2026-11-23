@@ -84,8 +84,13 @@ where
     };
 
     debug!("mountproc3_mnt({xid},{utf8path})");
-    let export_path = std::str::from_utf8(&context.export_path.0)
-        .expect("the configured export path was constructed from UTF-8");
+    let export_path = match std::str::from_utf8(&context.export_path.0) {
+        Ok(path) => path,
+        Err(err) => {
+            error!("{xid} --> invalid configured export path: {err}");
+            return mountres3::Err(mountstat3::MNT3ERR_SERVERFAULT);
+        }
+    };
     let path = if let Some(path) = utf8path.strip_prefix(export_path) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {

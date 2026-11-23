@@ -92,7 +92,7 @@ fn rpc_msg_serialization() {
 fn mount3res_success_packed_size() {
     // Test for a successful mountres3 with no additional data
     let res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap()),
+        fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&res).unwrap().to_vec();
@@ -128,7 +128,7 @@ fn mount3res_error_packed_size() {
 fn mount3res_roundtrip() {
     // Test successful mount response
     let success_res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap()),
+        fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&success_res).unwrap().to_vec();

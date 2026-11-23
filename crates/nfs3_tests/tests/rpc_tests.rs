@@ -117,18 +117,16 @@ async fn tcp_listener_checks_normalized_export_length_before_binding() -> anyhow
     deprecated,
     reason = "verify the legacy export setter enforces the limit"
 )]
-async fn legacy_export_setter_checks_normalized_length() -> anyhow::Result<()> {
+#[should_panic(expected = "export path is 1025 bytes after normalization; maximum is 1024")]
+async fn legacy_export_setter_checks_normalized_length() {
     let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
     let mut listener = Builder::new()
         .filesystem(fs)
         .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .await?;
-    listener.with_export_name("a".repeat(MNTPATHLEN - 1))?;
-    let err = listener
-        .with_export_name("a".repeat(MNTPATHLEN))
-        .unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    Ok(())
+        .await
+        .expect("bind the test listener");
+    listener.with_export_name("a".repeat(MNTPATHLEN - 1));
+    listener.with_export_name("a".repeat(MNTPATHLEN));
 }
 
 #[tokio::test]

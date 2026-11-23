@@ -12,7 +12,7 @@ const MAX_HANDLE_SIZE: usize = NFS3_FHSIZE - GENERATION_SIZE;
 /// the first 8 bytes of the handle for its own use, while the remaining
 /// 56 bytes can be freely used by the implementation.
 ///
-/// Use [`FileHandleU64`] for numeric IDs or `BoundedOpaque<'static, 56>`
+/// Use [`FileHandleU64`] for numeric IDs or [`FileHandleBytes`]
 /// for byte IDs. Custom implementations should validate or construct their
 /// bounded representation before returning a handle to the server.
 ///
@@ -26,26 +26,47 @@ pub trait FileHandle: std::fmt::Debug + Clone + Send + Sync {
     /// The length of the handle in bytes
     fn len(&self) -> usize;
     /// Returns the serialized handle, limited to 56 bytes.
-    fn as_bytes(&self) -> BoundedOpaque<'_, MAX_HANDLE_SIZE>;
+    ///
+    /// Construct it by converting a [`BoundedOpaque`] with [`Into::into`].
+    fn as_bytes(&self) -> FileHandleBytes<'_>;
     /// Creates a handle from a byte slice
     fn from_bytes(bytes: &[u8]) -> Option<Self>
     where
         Self: Sized;
 }
 
-impl FileHandle for BoundedOpaque<'static, MAX_HANDLE_SIZE> {
+/// A serialized VFS file handle of at most 56 bytes.
+///
+/// The owned form implements [`FileHandle`] for backends that use byte IDs.
+/// Use [`FileHandle::from_bytes`] to construct it from a slice.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileHandleBytes<'a>(BoundedOpaque<'a, MAX_HANDLE_SIZE>);
+
+impl<'a> From<BoundedOpaque<'a, MAX_HANDLE_SIZE>> for FileHandleBytes<'a> {
+    fn from(bytes: BoundedOpaque<'a, MAX_HANDLE_SIZE>) -> Self {
+        Self(bytes)
+    }
+}
+
+impl AsRef<[u8]> for FileHandleBytes<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl FileHandle for FileHandleBytes<'static> {
     fn len(&self) -> usize {
         self.as_ref().len()
     }
 
-    fn as_bytes(&self) -> BoundedOpaque<'_, MAX_HANDLE_SIZE> {
+    fn as_bytes(&self) -> FileHandleBytes<'_> {
         self.clone()
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         BoundedOpaque::from_slice(bytes)
             .ok()
-            .map(BoundedOpaque::into_owned)
+            .map(|bytes| Self(bytes.into_owned()))
     }
 }
 
@@ -80,8 +101,8 @@ impl FileHandle for FileHandleU64 {
     fn len(&self) -> usize {
         self.id.len()
     }
-    fn as_bytes(&self) -> BoundedOpaque<'_, MAX_HANDLE_SIZE> {
-        BoundedOpaque::from_slice(&self.id).expect("8-byte handle fits within the VFS limit")
+    fn as_bytes(&self) -> FileHandleBytes<'_> {
+        BoundedOpaque::from_array(&self.id).into()
     }
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         bytes.try_into().ok().map(|id| Self { id })
@@ -221,19 +242,15 @@ mod tests {
         );
     }
 
-    type ByteHandle = BoundedOpaque<'static, 56>;
+    type ByteHandle = FileHandleBytes<'static>;
 
     #[test]
     fn test_file_handle_converter_wire_limit() {
         let converter = FileHandleConverter::new();
-        let max = ByteHandle::from_slice(&[1; 56]).unwrap().into_owned();
+        let max = ByteHandle::from_bytes(&[1; 56]).unwrap();
         let encoded = converter.fh_to_nfs(&max);
         assert_eq!(encoded.data.len(), 64);
         assert_eq!(converter.fh_from_nfs::<ByteHandle>(&encoded), Ok(max));
-        assert_eq!(
-            ByteHandle::from_slice(&[1; 57]),
-            Err(nfs3_types::xdr_codec::Error::InvalidLength(57))
-        );
         assert!(ByteHandle::from_bytes(&[1; 57]).is_none());
     }
 

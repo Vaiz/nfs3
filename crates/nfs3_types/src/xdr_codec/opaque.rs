@@ -130,6 +130,19 @@ impl<const N: usize> BoundedOpaque<'_, N> {
         BoundedOpaque(Opaque::borrowed(self.as_ref()))
     }
 
+    /// Borrows an array whose length is checked against `N` at compile time.
+    ///
+    /// ```compile_fail
+    /// use nfs3_types::xdr_codec::BoundedOpaque;
+    ///
+    /// const _: BoundedOpaque<'static, 3> = BoundedOpaque::from_array(b"four");
+    /// ```
+    #[must_use]
+    pub const fn from_array<const LEN: usize>(data: &[u8; LEN]) -> BoundedOpaque<'_, N> {
+        const { assert!(LEN <= N, "array exceeds the XDR opaque length limit") };
+        BoundedOpaque(Opaque::borrowed(data))
+    }
+
     /// Borrow a slice as a `BoundedOpaque`.
     pub fn from_slice(data: &[u8]) -> Result<BoundedOpaque<'_, N>> {
         Opaque::borrowed(data).try_into()

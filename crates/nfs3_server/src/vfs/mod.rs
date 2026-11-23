@@ -26,7 +26,7 @@ pub(crate) mod handle;
 mod iterator;
 
 use bytes::Bytes;
-pub use handle::{FileHandle, FileHandleU64};
+pub use handle::{FileHandle, FileHandleBytes, FileHandleU64};
 pub use iterator::*;
 
 use crate::nfs3_types::nfs3::{
