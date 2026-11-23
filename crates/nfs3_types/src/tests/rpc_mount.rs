@@ -167,10 +167,10 @@ fn mount3res_roundtrip() {
 
 #[test]
 fn mount3res_accepts_twelve_auth_flavors() {
-    let flavors = (0_u32..12).collect::<Vec<_>>();
+    let flavors = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     let response = mountres3::Ok(mountres3_ok {
         fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
-        auth_flavors: flavors.clone().try_into().unwrap(),
+        auth_flavors: BoundedVec::from_array(flavors),
     });
     let mut input = Decoder::copying(encode(&response).unwrap());
     let mountres3::Ok(response) = mountres3::unpack(&mut input).unwrap() else {
