@@ -47,7 +47,8 @@ pub struct Encoder {
     /// Starts with a slot for the record marker filled in by
     /// [`finish_record`](Self::finish_record).
     head: BytesMut,
-    /// The shared payload, then its padding and everything encoded after it.
+    /// The shared payload, then its padding and any following fields.
+    /// An empty tail means the padding has not been written yet.
     payload: Option<(Bytes, BytesMut)>,
 }
 
@@ -76,19 +77,27 @@ impl Encoder {
         reason = "callers only compare the length with the expected size"
     )]
     pub fn len(&self) -> usize {
-        let payload_and_tail_len = self
-            .payload
-            .as_ref()
-            .map_or(0, |(data, tail)| data.len() + tail.len());
+        let payload_and_tail_len = self.payload.as_ref().map_or(0, |(data, tail)| {
+            if tail.is_empty() {
+                add_padding(data.len())
+            } else {
+                data.len() + tail.len()
+            }
+        });
 
         self.head.len() - MARKER_LEN + payload_and_tail_len
     }
 
     /// Returns the buffer that receives copied bytes.
-    const fn out(&mut self) -> &mut BytesMut {
+    fn out(&mut self) -> &mut BytesMut {
         match &mut self.payload {
             None => &mut self.head,
-            Some((_, tail)) => tail,
+            Some((data, tail)) => {
+                if tail.is_empty() {
+                    tail.extend_from_slice(zero_padding(data.len()));
+                }
+                tail
+            }
         }
     }
 
@@ -100,6 +109,9 @@ impl Encoder {
 
     /// Copies `data` and adds padding.
     pub(crate) fn put_padded(&mut self, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
         let out = self.out();
         // Reserve exactly so a large copy does not double the buffer afterwards.
         out.reserve(add_padding(data.len()));
@@ -113,8 +125,7 @@ impl Encoder {
         if self.payload.is_some() || data.len() < MIN_SHARED_CHUNK {
             self.put_padded(data);
         } else {
-            let padding = BytesMut::from(zero_padding(data.len()));
-            self.payload = Some((data.clone(), padding));
+            self.payload = Some((data.clone(), BytesMut::new()));
         }
     }
 
@@ -138,11 +149,20 @@ impl Encoder {
     }
 
     fn into_encoded(self) -> Encoded {
-        let (payload, tail) = self.payload.unwrap_or_default();
+        let (payload, tail) = match self.payload {
+            None => (Bytes::new(), Bytes::new()),
+            Some((data, tail)) if tail.is_empty() => {
+                // READ and WRITE end with the shared payload. Reuse static
+                // zeroes instead of allocating a buffer for its padding.
+                let padding = Bytes::from_static(zero_padding(data.len()));
+                (data, padding)
+            }
+            Some((data, tail)) => (data, tail.freeze()),
+        };
         Encoded {
             head: self.head,
             payload,
-            tail: tail.freeze(),
+            tail,
         }
     }
 }
@@ -211,13 +231,20 @@ mod tests {
         let payload = Bytes::from(vec![0xCD; MIN_SHARED_CHUNK + 1]);
         let mut out = Encoder::new(0);
         Opaque::from_bytes(payload).pack(&mut out).unwrap();
-        let encoded = plain(out);
+        let len = out.len();
+        let encoded = out.finish_record().unwrap();
         let [head, _, tail] = encoded.chunks();
+        assert_eq!(len, 4 + MIN_SHARED_CHUNK + 4);
         assert_eq!(
-            head,
-            u32::try_from(MIN_SHARED_CHUNK + 1).unwrap().to_be_bytes()
+            &head[..4],
+            &(0x8000_0000 | u32::try_from(len).unwrap()).to_be_bytes()
+        );
+        assert_eq!(
+            &head[4..],
+            &u32::try_from(MIN_SHARED_CHUNK + 1).unwrap().to_be_bytes()
         );
         assert_eq!(tail, [0; 3]);
+        assert_eq!(tail.as_ptr(), zero_padding(MIN_SHARED_CHUNK + 1).as_ptr());
     }
 
     #[test]
