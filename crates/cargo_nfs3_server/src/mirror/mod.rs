@@ -264,7 +264,9 @@ impl NfsFileSystem for Fs {
                 .await?;
             file.seek(SeekFrom::Start(offset)).await?;
             file.write_all(&data).await?;
-            file.flush().await
+            // Surface pending Tokio write errors before syncing to stable storage.
+            file.flush().await?;
+            file.sync_all().await
         }
         .await
         .map_err(map_io_error)?;
@@ -476,7 +478,7 @@ impl NfsFileSystem for Fs {
         _offset: u64,
         _count: u32,
     ) -> impl Future<Output = Result<(), nfsstat3>> + Send {
-        // at the moment, mirror fs supports only synchronous writes, there is nothing to commit
+        // Successful writes are already durable.
         ready(Ok(()))
     }
 }
@@ -518,6 +520,32 @@ mod tests {
                 .expect("read test file");
             assert_eq!(data.as_ref(), b"");
             assert_eq!(eof, expected_eof, "offset={offset}, count={count}");
+        }
+    }
+
+    #[tokio::test]
+    async fn write_reports_file_sync_for_every_requested_stability() {
+        let (temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let file = fs
+            .lookup(&root, &b"file.txt".as_slice().into())
+            .await
+            .expect("look up test file");
+
+        for (stable, data) in [
+            (stable_how::UNSTABLE, b"first!!"),
+            (stable_how::DATA_SYNC, b"second!"),
+            (stable_how::FILE_SYNC, b"third!!"),
+        ] {
+            let (_, committed) = fs
+                .write(&file, 1, Bytes::from_static(data), stable)
+                .await
+                .expect("write test file");
+            assert_eq!(committed, stable_how::FILE_SYNC, "requested {stable:?}");
+            let content = fs::read(temp_dir.path().join("file.txt"))
+                .await
+                .expect("read test file");
+            assert_eq!(&content[..1], b"c");
+            assert_eq!(&content[1..], data);
         }
     }
 
