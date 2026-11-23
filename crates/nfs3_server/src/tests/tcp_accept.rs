@@ -1,0 +1,82 @@
+use std::io::{Error, ErrorKind};
+use std::time::Duration;
+
+use tokio::time::Instant;
+
+use crate::tcp::accept_with_retry;
+
+#[tokio::test(start_paused = true)]
+async fn accept_retries_without_delay() {
+    let mut errors = vec![
+        ErrorKind::ConnectionAborted.into(),
+        ErrorKind::ConnectionReset.into(),
+        ErrorKind::Interrupted.into(),
+    ];
+    #[cfg(target_os = "linux")]
+    errors.extend(
+        [
+            libc::ENETDOWN,
+            libc::EPROTO,
+            libc::ENOPROTOOPT,
+            libc::EHOSTDOWN,
+            libc::ENONET,
+            libc::EHOSTUNREACH,
+            libc::EOPNOTSUPP,
+            libc::ENETUNREACH,
+        ]
+        .map(Error::from_raw_os_error),
+    );
+    let mut results = errors.into_iter().map(Err).chain([Ok(42)]);
+
+    let start = Instant::now();
+    let accepted = accept_with_retry(|| std::future::ready(results.next().unwrap())).await;
+
+    assert_eq!(accepted.unwrap(), 42);
+    assert_eq!(start.elapsed(), Duration::ZERO);
+    assert!(results.next().is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn accept_backs_off_under_resource_pressure() {
+    let errors = (0..10).map(|_| Error::from(ErrorKind::OutOfMemory));
+    #[cfg(unix)]
+    let errors =
+        errors.chain([libc::EMFILE, libc::ENFILE, libc::ENOBUFS].map(Error::from_raw_os_error));
+    #[cfg(windows)]
+    let errors = {
+        use windows_sys::Win32::Networking::WinSock::{WSAEMFILE, WSAENOBUFS};
+        errors.chain([WSAEMFILE, WSAENOBUFS].map(Error::from_raw_os_error))
+    };
+    let mut results = errors.map(Err).chain([Ok(())]);
+    let mut attempts = Vec::new();
+    accept_with_retry(|| {
+        attempts.push(Instant::now());
+        std::future::ready(results.next().unwrap())
+    })
+    .await
+    .unwrap();
+
+    for (index, pair) in attempts.windows(2).enumerate() {
+        assert_eq!(
+            pair[1] - pair[0],
+            Duration::from_millis((10 << index.min(7)).min(1000))
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn accept_propagates_permanent_and_unknown_errors() {
+    for error in [
+        Error::from(ErrorKind::InvalidInput),
+        Error::from_raw_os_error(i32::MAX),
+    ] {
+        let expected = (error.kind(), error.raw_os_error());
+        let mut results = std::iter::once(Err::<(), _>(error));
+        let start = Instant::now();
+        let err = accept_with_retry(|| std::future::ready(results.next().unwrap()))
+            .await
+            .unwrap_err();
+        assert_eq!((err.kind(), err.raw_os_error()), expected);
+        assert_eq!(start.elapsed(), Duration::ZERO);
+    }
+}

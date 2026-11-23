@@ -10,7 +10,7 @@ use nfs3_types::xdr_codec::BoundedOpaque;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::context::{RPCContext, normalized_export_path, root_read_limit};
 use crate::rpcwire::messages::RpcRecordReader;
@@ -27,6 +27,76 @@ pub use builder::Builder;
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 static DEFAULT_EXPORT_PATH: dirpath<'static> = dirpath(BoundedOpaque::from_array(b"/"));
+
+fn retry_accept_immediately(err: &io::Error) -> bool {
+    if matches!(
+        err.kind(),
+        io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::Interrupted
+    ) {
+        return true;
+    }
+
+    // Linux accept(2) can return pending network errors from the new socket.
+    #[cfg(target_os = "linux")]
+    if matches!(
+        err.raw_os_error(),
+        Some(
+            libc::ENETDOWN
+                | libc::EPROTO
+                | libc::ENOPROTOOPT
+                | libc::EHOSTDOWN
+                | libc::ENONET
+                | libc::EHOSTUNREACH
+                | libc::EOPNOTSUPP
+                | libc::ENETUNREACH
+        )
+    ) {
+        return true;
+    }
+    false
+}
+
+fn accept_resource_pressure(err: &io::Error) -> bool {
+    if err.kind() == io::ErrorKind::OutOfMemory {
+        return true;
+    }
+
+    #[cfg(unix)]
+    if matches!(
+        err.raw_os_error(),
+        Some(libc::EMFILE | libc::ENFILE | libc::ENOBUFS)
+    ) {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Networking::WinSock::{WSAEMFILE, WSAENOBUFS};
+        if matches!(err.raw_os_error(), Some(WSAEMFILE | WSAENOBUFS)) {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) async fn accept_with_retry<T, F: Future<Output = io::Result<T>>>(
+    mut accept: impl FnMut() -> F,
+) -> io::Result<T> {
+    let mut delay = Duration::from_millis(10);
+    loop {
+        match accept().await {
+            Err(err) if retry_accept_immediately(&err) => {}
+            Err(err) if accept_resource_pressure(&err) => {
+                warn!(%err, ?delay, "TCP accept failed; retrying");
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(Duration::from_secs(1));
+            }
+            result => return result,
+        }
+    }
+}
 
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
@@ -98,7 +168,7 @@ pub trait NFSTcp: Send + Sync {
     /// and a "false" will be sent on an unmount
     fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>);
 
-    /// Loops forever and never returns handling all incoming connections.
+    /// Handles incoming connections until cancelled or a fatal listener error occurs.
     fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
@@ -284,7 +354,6 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
         self.mount_signal = Some(signal);
     }
 
-    /// Loops forever and never returns handling all incoming connections.
     async fn handle_forever(&self) -> io::Result<()> {
         let cleaner_future = Cleaner::new(
             Arc::clone(&self.transaction_tracker),
@@ -295,13 +364,10 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
         tokio::spawn(cleaner_future);
 
         loop {
-            let (socket, _) = self.listener.accept().await?;
+            let (socket, peer_addr) = accept_with_retry(|| self.listener.accept()).await?;
             let context = RPCContext {
                 local_port: self.local_addr.port(),
-                client_addr: socket
-                    .peer_addr()
-                    .expect("failed to get peer address")
-                    .to_string(),
+                client_addr: peer_addr.to_string(),
                 auth: nfs3_types::rpc::auth_unix::default(),
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
