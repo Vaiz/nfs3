@@ -28,14 +28,20 @@ pub use builder::Builder;
 const REPLY_QUEUE_CAPACITY: usize = 16;
 static DEFAULT_EXPORT_PATH: dirpath<'static> = dirpath(BoundedOpaque::from_array(b"/"));
 
-fn retry_accept_immediately(err: &io::Error) -> bool {
+enum AcceptAction {
+    RetryImmediately,
+    RetryWithBackoff,
+    Propagate,
+}
+
+fn classify_accept_error(err: &io::Error) -> AcceptAction {
     if matches!(
         err.kind(),
         io::ErrorKind::ConnectionAborted
             | io::ErrorKind::ConnectionReset
             | io::ErrorKind::Interrupted
     ) {
-        return true;
+        return AcceptAction::RetryImmediately;
     }
 
     // Linux accept(2) can return pending network errors from the new socket.
@@ -53,14 +59,11 @@ fn retry_accept_immediately(err: &io::Error) -> bool {
                 | libc::ENETUNREACH
         )
     ) {
-        return true;
+        return AcceptAction::RetryImmediately;
     }
-    false
-}
 
-fn accept_resource_pressure(err: &io::Error) -> bool {
     if err.kind() == io::ErrorKind::OutOfMemory {
-        return true;
+        return AcceptAction::RetryWithBackoff;
     }
 
     #[cfg(unix)]
@@ -68,17 +71,17 @@ fn accept_resource_pressure(err: &io::Error) -> bool {
         err.raw_os_error(),
         Some(libc::EMFILE | libc::ENFILE | libc::ENOBUFS)
     ) {
-        return true;
+        return AcceptAction::RetryWithBackoff;
     }
 
     #[cfg(windows)]
     {
         use windows_sys::Win32::Networking::WinSock::{WSAEMFILE, WSAENOBUFS};
         if matches!(err.raw_os_error(), Some(WSAEMFILE | WSAENOBUFS)) {
-            return true;
+            return AcceptAction::RetryWithBackoff;
         }
     }
-    false
+    AcceptAction::Propagate
 }
 
 pub(crate) async fn accept_with_retry<T, F: Future<Output = io::Result<T>>>(
@@ -86,14 +89,18 @@ pub(crate) async fn accept_with_retry<T, F: Future<Output = io::Result<T>>>(
 ) -> io::Result<T> {
     let mut delay = Duration::from_millis(10);
     loop {
-        match accept().await {
-            Err(err) if retry_accept_immediately(&err) => {}
-            Err(err) if accept_resource_pressure(&err) => {
+        let err = match accept().await {
+            Ok(connection) => return Ok(connection),
+            Err(err) => err,
+        };
+        match classify_accept_error(&err) {
+            AcceptAction::RetryImmediately => continue,
+            AcceptAction::RetryWithBackoff => {
                 warn!(%err, ?delay, "TCP accept failed; retrying");
                 tokio::time::sleep(delay).await;
                 delay = (delay * 2).min(Duration::from_secs(1));
             }
-            result => return result,
+            AcceptAction::Propagate => return Err(err),
         }
     }
 }
