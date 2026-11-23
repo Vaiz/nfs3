@@ -215,6 +215,63 @@ fn fhandle3_edge_cases() {
 }
 
 #[test]
+fn small_bounded_opaque_is_stored_inline() {
+    fn assert_inline(value: &BoundedOpaque<'_, 64>) {
+        let start = std::ptr::from_ref(value).addr();
+        let payload = value.as_ptr().addr();
+        assert!((start..start + size_of_val(value)).contains(&payload));
+        assert!(payload + value.len() <= start + size_of_val(value));
+    }
+
+    let wire = &[0, 0, 0, 3, b'a', b'b', b'c', 0][..];
+    let mut input = Decoder::copying(wire);
+    let decoded = BoundedOpaque::<64>::unpack(&mut input).unwrap();
+    assert!(input.is_empty());
+    assert_inline(&decoded);
+    assert_eq!(encode(&decoded).unwrap(), wire);
+
+    let owned = BoundedOpaque::<64>::from_array(b"abc").into_owned();
+    assert_inline(&owned);
+    assert_eq!(decoded, owned);
+    assert_eq!(owned.into_bytes(), &b"abc"[..]);
+
+    let limit = [0xfe; 22];
+    let owned = BoundedOpaque::<64>::from_array(&limit).into_owned();
+    assert_inline(&owned);
+    let wire = encode(&owned).unwrap();
+    let decoded = BoundedOpaque::<64>::unpack(&mut Decoder::copying(wire)).unwrap();
+    assert_inline(&decoded);
+    assert_eq!(decoded, owned);
+
+    let larger = [0xff; 23];
+    let wire = encode(&Opaque::borrowed(&larger)).unwrap();
+    let decoded = BoundedOpaque::<64>::unpack(&mut Decoder::copying(wire)).unwrap();
+    assert_eq!(decoded.as_ref(), larger);
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn bounded_opaque_does_not_enlarge_x64_values() {
+    assert_eq!(size_of::<BoundedOpaque<'static, 64>>(), 32);
+    assert_eq!(size_of::<BoundedOpaque<'static, 1024>>(), 32);
+    assert_eq!(size_of::<crate::rpc::rpc_msg<'static, 'static>>(), 104);
+}
+
+#[test]
+fn small_bounded_opaque_checks_padding() {
+    let mut truncated = Decoder::copying(&[0, 0, 0, 3, b'a', b'b', b'c'][..]);
+    assert_eq!(
+        BoundedOpaque::<64>::unpack(&mut truncated),
+        Err(Error::InvalidLength(3))
+    );
+    let mut nonzero = Decoder::copying(&[0, 0, 0, 3, b'a', b'b', b'c', 1][..]);
+    assert_eq!(
+        BoundedOpaque::<64>::unpack(&mut nonzero),
+        Err(Error::NonZeroPadding)
+    );
+}
+
+#[test]
 fn file_handle_and_mount_field_limits() {
     fn check<T: Pack + Unpack>(max: usize) {
         let valid = encode(&Opaque::owned(vec![42; max])).unwrap();
