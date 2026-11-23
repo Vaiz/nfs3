@@ -156,10 +156,6 @@ mod tests {
             decode::<Opaque<'_>>(&[0, 0, 0, 1, 7][..]).unwrap_err(),
             Error::InvalidLength(1)
         );
-        assert_eq!(
-            decode::<Vec<u32>>(&[0, 0, 0, 2, 0, 0, 0, 1][..]).unwrap_err(),
-            Error::InvalidLength(2)
-        );
     }
 
     #[test]

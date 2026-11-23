@@ -104,7 +104,9 @@ where
             let root = context.file_handle_converter.fh_to_nfs(&fileid);
             let response = mountres3_ok {
                 fhandle: fhandle3(root.data),
-                auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32],
+                auth_flavors: vec![auth_flavor::AUTH_NULL as u32, auth_flavor::AUTH_UNIX as u32]
+                    .try_into()
+                    .expect("the two advertised auth flavors fit in a MOUNT response"),
             };
             debug!("{xid} --> {response:?}");
             if let Some(ref chan) = context.mount_signal {
