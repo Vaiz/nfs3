@@ -1,4 +1,5 @@
-//! Measure allocations with `cargo bench -p nfs3_tests --bench rpc_allocations -- --allocations`.
+//! Measure RPCs with `cargo bench -p nfs3_tests --bench rpc_allocations -- --gungraun
+//! --allocations`.
 
 #![expect(
     clippy::unwrap_used,
@@ -9,7 +10,9 @@ use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion};
 use nfs3_client::Nfs3Client;
-use nfs3_client::nfs3_types::nfs3::{LOOKUP3args, READ3args, WRITE3args, diropargs3, stable_how};
+use nfs3_client::nfs3_types::nfs3::{
+    LOOKUP3args, READ3args, READDIRPLUS3args, WRITE3args, cookieverf3, diropargs3, stable_how,
+};
 use nfs3_client::nfs3_types::xdr_codec::Opaque;
 use nfs3_client::tokio::TokioIo;
 use nfs3_server::memfs::{MemFs, MemFsConfig};
@@ -21,11 +24,13 @@ const GROUP: &str = "tcp_connection";
 const FILE_NAME: &[u8] = b"file";
 const SMALL: u32 = 4 * 1024;
 const LARGE: u32 = 1024 * 1024;
+const DIRECTORY_ENTRIES: usize = 64;
 
 #[derive(Clone, Copy)]
 enum Operation {
     Null,
     Lookup,
+    Readdirplus,
     Read,
     Write,
 }
@@ -58,7 +63,13 @@ fn prepare(workload: Workload) -> Fixture {
     });
     let payload = vec![0xAB; workload.2 as usize];
     let mut config = MemFsConfig::default();
-    config.add_file("/file", payload.clone());
+    if matches!(workload.0, Operation::Readdirplus) {
+        for index in 0..DIRECTORY_ENTRIES {
+            config.add_file(&format!("/entry_{index:05}"), Vec::new());
+        }
+    } else {
+        config.add_file("/file", payload.clone());
+    }
     let server = runtime
         .block_on(Server::new(server, MemFs::new(config).unwrap()))
         .unwrap();
@@ -76,6 +87,7 @@ fn prepare(workload: Workload) -> Fixture {
 #[bench::one_null((Operation::Null, 1, SMALL))]
 #[bench::hundred_nulls((Operation::Null, 100, SMALL))]
 #[bench::hundred_lookups((Operation::Lookup, 100, SMALL))]
+#[bench::hundred_readdirplus((Operation::Readdirplus, 100, 0))]
 #[bench::hundred_reads((Operation::Read, 100, SMALL))]
 #[bench::hundred_writes((Operation::Write, 100, SMALL))]
 #[bench::hundred_large_reads((Operation::Read, 100, LARGE))]
@@ -127,6 +139,20 @@ async fn run_client(
                 client.lookup(lookup).await.unwrap().unwrap();
             }
         }
+        Operation::Readdirplus => {
+            let args = READDIRPLUS3args {
+                dir: lookup.what.dir.clone(),
+                cookie: 0,
+                cookieverf: cookieverf3::default(),
+                dircount: LARGE,
+                maxcount: LARGE,
+            };
+            for _ in 0..requests {
+                let reply = client.readdirplus(&args).await.unwrap().unwrap().reply;
+                assert!(reply.eof);
+                assert_eq!(reply.entries.0.len(), DIRECTORY_ENTRIES);
+            }
+        }
         Operation::Read => {
             let file = client.lookup(lookup).await.unwrap().unwrap().object;
             let args = READ3args {
@@ -163,6 +189,7 @@ fn criterion_benchmarks(criterion: &mut Criterion) {
         ("one_null", (Operation::Null, 1, SMALL)),
         ("hundred_nulls", (Operation::Null, 100, SMALL)),
         ("hundred_lookups", (Operation::Lookup, 100, SMALL)),
+        ("hundred_readdirplus", (Operation::Readdirplus, 100, 0)),
         ("hundred_reads", (Operation::Read, 100, SMALL)),
         ("hundred_writes", (Operation::Write, 100, SMALL)),
         ("hundred_large_reads", (Operation::Read, 100, LARGE)),
