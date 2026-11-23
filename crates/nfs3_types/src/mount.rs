@@ -97,10 +97,17 @@ impl std::fmt::Display for mountstat3 {
 // AUTH_GSS_SPKMP = 390011,
 // }
 
+/// Successful MOUNT v3 response.
+///
+/// RFC 1813 leaves the authentication flavor array unbounded. This implementation
+/// follows Linux's [`NFS_MAX_SECFLAVORS`] limit of 12 and rejects longer arrays
+/// instead of truncating them.
+///
+/// [`NFS_MAX_SECFLAVORS`]: https://github.com/torvalds/linux/blob/v6.12/fs/nfs/internal.h#L60
 #[derive(Debug, XdrCodec)]
 pub struct mountres3_ok<'a> {
     pub fhandle: fhandle3<'a>,
-    /// Authentication flavors accepted by the server. Decoding rejects more than 12 entries.
+    /// Authentication flavors accepted by the server.
     pub auth_flavors: BoundedVec<u32, MAX_AUTH_FLAVORS>,
 }
 
