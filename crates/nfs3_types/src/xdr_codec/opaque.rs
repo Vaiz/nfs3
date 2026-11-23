@@ -114,20 +114,33 @@ impl PartialEq for Opaque<'_> {
 
 impl Eq for Opaque<'_> {}
 
+// Enough for both NFS and MOUNT file handles.
+const INLINE_CAPACITY: usize = 64;
+
+#[derive(Clone)]
+enum BoundedRepr<'a> {
+    Opaque(Opaque<'a>),
+    Inline {
+        data: [u8; INLINE_CAPACITY],
+        len: usize,
+    },
+}
+
 /// Variable-length XDR opaque data limited to `N` bytes.
 ///
-/// Uses the same wire format and storage as [`Opaque`]. Decoding checks the
-/// length before reading or copying the payload.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BoundedOpaque<'a, const N: usize>(Opaque<'a>);
+/// Uses the same wire format as [`Opaque`]. Decoding checks the length before
+/// reading the payload. For `N <= 64`, decoding and owning a borrowed slice
+/// copy the payload inline instead of allocating.
+#[derive(Clone)]
+pub struct BoundedOpaque<'a, const N: usize>(BoundedRepr<'a>);
 
 impl<const N: usize> BoundedOpaque<'_, N> {
     pub(crate) const fn empty() -> Self {
-        Self(Opaque::borrowed(&[]))
+        Self(BoundedRepr::Opaque(Opaque::borrowed(&[])))
     }
 
     pub(crate) fn borrow(&self) -> BoundedOpaque<'_, N> {
-        BoundedOpaque(Opaque::borrowed(self.as_ref()))
+        BoundedOpaque(BoundedRepr::Opaque(Opaque::borrowed(self.as_ref())))
     }
 
     /// Borrows an array whose length is checked against `N` at compile time.
@@ -140,7 +153,7 @@ impl<const N: usize> BoundedOpaque<'_, N> {
     #[must_use]
     pub const fn from_array<const LEN: usize>(data: &[u8; LEN]) -> BoundedOpaque<'_, N> {
         const { assert!(LEN <= N, "array exceeds the XDR opaque length limit") };
-        BoundedOpaque(Opaque::borrowed(data))
+        BoundedOpaque(BoundedRepr::Opaque(Opaque::borrowed(data)))
     }
 
     /// Borrow a slice as a `BoundedOpaque`.
@@ -148,16 +161,28 @@ impl<const N: usize> BoundedOpaque<'_, N> {
         Opaque::borrowed(data).try_into()
     }
 
-    /// Converts into [`Bytes`], copying only if the data is borrowed.
+    /// Converts into [`Bytes`], copying if the data is borrowed or inline.
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
-        self.0.into_bytes()
+        match self.0 {
+            BoundedRepr::Opaque(data) => data.into_bytes(),
+            BoundedRepr::Inline { data, len } => Bytes::copy_from_slice(&data[..len]),
+        }
     }
 
     /// Converts into an owned `BoundedOpaque`.
     #[must_use]
     pub fn into_owned(self) -> BoundedOpaque<'static, N> {
-        BoundedOpaque(self.0.into_owned())
+        BoundedOpaque(match self.0 {
+            BoundedRepr::Opaque(Opaque(Repr::Borrowed(bytes))) if N <= INLINE_CAPACITY => {
+                let mut data = [0; INLINE_CAPACITY];
+                let len = bytes.len();
+                data[..len].copy_from_slice(bytes);
+                BoundedRepr::Inline { data, len }
+            }
+            BoundedRepr::Opaque(data) => BoundedRepr::Opaque(data.into_owned()),
+            BoundedRepr::Inline { data, len } => BoundedRepr::Inline { data, len },
+        })
     }
 }
 
@@ -179,13 +204,16 @@ impl<'a, const N: usize> TryFrom<Opaque<'a>> for BoundedOpaque<'a, N> {
         if data.len() > N {
             return Err(Error::InvalidLength(data.len()));
         }
-        Ok(Self(data))
+        Ok(Self(BoundedRepr::Opaque(data)))
     }
 }
 
 impl<const N: usize> AsRef<[u8]> for BoundedOpaque<'_, N> {
     fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+        match &self.0 {
+            BoundedRepr::Opaque(data) => data,
+            BoundedRepr::Inline { data, len } => &data[..*len],
+        }
     }
 }
 
@@ -197,13 +225,32 @@ impl<const N: usize> Deref for BoundedOpaque<'_, N> {
     }
 }
 
+impl<const N: usize> fmt::Debug for BoundedOpaque<'_, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("BoundedOpaque")
+            .field(&Opaque::borrowed(self))
+            .finish()
+    }
+}
+
+impl<const N: usize> PartialEq for BoundedOpaque<'_, N> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl<const N: usize> Eq for BoundedOpaque<'_, N> {}
+
 impl<const N: usize> Pack for BoundedOpaque<'_, N> {
     fn packed_size(&self) -> usize {
-        self.0.packed_size()
+        4 + add_padding(self.len())
     }
 
     fn pack(&self, out: &mut Encoder) -> Result<()> {
-        self.0.pack(out)
+        match &self.0 {
+            BoundedRepr::Opaque(data) => data.pack(out),
+            BoundedRepr::Inline { data, len } => Opaque::borrowed(&data[..*len]).pack(out),
+        }
     }
 }
 
@@ -213,6 +260,13 @@ impl<const N: usize> Unpack for BoundedOpaque<'static, N> {
         if len > N {
             return Err(Error::InvalidLength(len));
         }
-        Ok(Self(Opaque::from_bytes(input.read_opaque(len)?)))
+        let repr = if N <= INLINE_CAPACITY {
+            let mut data = [0; INLINE_CAPACITY];
+            input.read_opaque_into(&mut data[..len])?;
+            BoundedRepr::Inline { data, len }
+        } else {
+            BoundedRepr::Opaque(Opaque::from_bytes(input.read_opaque(len)?))
+        };
+        Ok(Self(repr))
     }
 }

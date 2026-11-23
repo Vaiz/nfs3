@@ -177,12 +177,15 @@ impl FileHandleConverter {
     pub(crate) fn fh_to_nfs(&self, id: &impl FileHandle) -> nfs_fh3 {
         let bytes = id.as_bytes();
         let bytes = bytes.as_ref();
-        let mut ret = Vec::with_capacity(GENERATION_SIZE + bytes.len());
-        ret.extend_from_slice(&self.generation_number_le);
-        ret.extend_from_slice(bytes);
+        let mut data = [0; NFS3_FHSIZE];
+        let data = &mut data[..GENERATION_SIZE + bytes.len()];
+        let (generation, handle) = data.split_at_mut(GENERATION_SIZE);
+        generation.copy_from_slice(&self.generation_number_le);
+        handle.copy_from_slice(bytes);
         nfs_fh3 {
-            data: BoundedOpaque::try_from_bytes(ret.into())
-                .expect("generation prefix and bounded VFS handle fit in the wire handle"),
+            data: BoundedOpaque::from_slice(data)
+                .expect("generation prefix and bounded VFS handle fit in the wire handle")
+                .into_owned(),
         }
     }
 

@@ -11,7 +11,8 @@ use super::{Error, Result};
 /// Each decoder has a minimum shared length. Opaque data at least that long is
 /// returned as a reference-counted [`Bytes`] sharing the input buffer, without
 /// copying, and keeps the whole buffer in memory. Shorter opaque data is copied
-/// into its own allocation.
+/// into its own allocation. Small [`BoundedOpaque`](super::BoundedOpaque)
+/// values are copied inline instead.
 ///
 /// - [`Decoder::copying`] disables sharing: all opaque data is copied.
 /// - [`RecordBuf::into_decoder`](crate::rpc::RecordBuf::into_decoder) sets the minimum to half of
@@ -33,8 +34,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    /// Creates a decoder over `buf` with sharing disabled: all opaque data is
-    /// copied into its own allocation.
+    /// Creates a decoder over `buf` that copies opaque data instead of sharing it.
     pub fn copying(buf: impl Into<Bytes>) -> Self {
         let buf = buf.into();
         Self {
@@ -92,17 +92,28 @@ impl Decoder {
     /// minimum shared length and is copied otherwise. The length is validated against the
     /// remaining input before anything is allocated.
     pub(crate) fn read_opaque(&mut self, len: usize) -> Result<Bytes> {
+        let share = len >= self.min_shared_len;
+        self.read_padded(len, |buf| {
+            if share {
+                buf.split_to(len)
+            } else {
+                let data = Bytes::copy_from_slice(&buf[..len]);
+                buf.advance(len);
+                data
+            }
+        })
+    }
+
+    pub(super) fn read_opaque_into(&mut self, data: &mut [u8]) -> Result<()> {
+        self.read_padded(data.len(), |buf| buf.copy_to_slice(data))
+    }
+
+    fn read_padded<T>(&mut self, len: usize, read: impl FnOnce(&mut Bytes) -> T) -> Result<T> {
         let padding = get_padding(len);
         if len > self.buf.len() || padding > self.buf.len() - len {
             return Err(Error::InvalidLength(len));
         }
-        let data = if len >= self.min_shared_len {
-            self.buf.split_to(len)
-        } else {
-            let data = Bytes::copy_from_slice(&self.buf[..len]);
-            self.buf.advance(len);
-            data
-        };
+        let data = read(&mut self.buf);
         if self.buf[..padding].iter().any(|&b| b != 0) {
             return Err(Error::NonZeroPadding);
         }
