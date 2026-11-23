@@ -14,9 +14,10 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
-use crate::xdr_codec::{Decoder, Encoder, Opaque, Pack, Unpack};
+use crate::xdr_codec::{BoundedOpaque, BoundedVec, Decoder, Encoder, Pack, Result, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
+const MAX_AUTH_BYTES: usize = 400;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, XdrCodec)]
 #[repr(u32)]
@@ -92,14 +93,15 @@ pub enum auth_flavor {
 #[derive(Clone, Debug, XdrCodec)]
 pub struct opaque_auth<'a> {
     pub flavor: auth_flavor,
-    pub body: Opaque<'a>,
+    /// Credential or verifier data, limited to 400 bytes.
+    pub body: BoundedOpaque<'a, MAX_AUTH_BYTES>,
 }
 
 impl Default for opaque_auth<'static> {
     fn default() -> Self {
         Self {
             flavor: auth_flavor::AUTH_NULL,
-            body: Opaque::borrowed(&[]),
+            body: BoundedOpaque::empty(),
         }
     }
 }
@@ -107,46 +109,76 @@ impl Default for opaque_auth<'static> {
 impl opaque_auth<'static> {
     /// Creates a new `opaque_auth` with the given flavor and body constructed from `auth_unix`.
     ///
-    /// # Panics
+    /// The field limits cap the encoded parameters at 340 bytes, below the
+    /// 400-byte RPC authentication body limit.
     ///
-    /// Panics if the `auth_unix` cannot be packed.
-    #[must_use]
-    pub fn auth_unix(auth: &auth_unix) -> Self {
+    /// # Errors
+    ///
+    /// Returns an error if XDR encoding or validation of the body fails.
+    pub fn auth_unix(auth: &auth_unix) -> Result<Self> {
         let mut out = Encoder::new(auth.packed_size());
-        auth.pack(&mut out).expect("failed to pack auth_unix");
-        let body = out.into_bytes();
-        Self {
+        auth.pack(&mut out)?;
+        Ok(Self {
             flavor: auth_flavor::AUTH_UNIX,
-            body: Opaque::from_bytes(body),
-        }
+            body: BoundedOpaque::try_from_bytes(out.into_bytes())?,
+        })
     }
 
     #[must_use]
     pub fn borrow(&self) -> opaque_auth<'_> {
         opaque_auth {
             flavor: self.flavor,
-            body: Opaque::borrowed(self.body.as_ref()),
+            body: self.body.borrow(),
         }
     }
 }
 
+const MAX_MACHINENAME_LEN: usize = 255;
+const MAX_GIDS: usize = 16;
+
+/// RFC 5531 `AUTH_SYS` parameters.
 #[derive(Clone, Debug, XdrCodec)]
 pub struct auth_unix {
     pub stamp: u32,
-    pub machinename: Opaque<'static>,
+    /// Machine name, limited to 255 bytes.
+    pub machinename: BoundedOpaque<'static, MAX_MACHINENAME_LEN>,
     pub uid: u32,
     pub gid: u32,
-    pub gids: Vec<u32>,
+    /// Supplemental group IDs, limited to 16 entries.
+    pub gids: BoundedVec<u32, MAX_GIDS>,
+}
+
+impl auth_unix {
+    /// Creates `AUTH_SYS` parameters from the machine name and Unix IDs.
+    ///
+    /// Select at most 16 supplemental group IDs before calling if the
+    /// operating system reports more; this constructor never truncates them.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidLength`](crate::xdr_codec::Error::InvalidLength) if
+    /// `machinename` exceeds 255 bytes or `gids` contains more than 16 entries.
+    pub fn new(stamp: u32, machinename: &[u8], uid: u32, gid: u32, gids: Vec<u32>) -> Result<Self> {
+        let machinename = BoundedOpaque::from_slice(machinename)?;
+        let gids = gids.try_into()?;
+        Ok(Self {
+            stamp,
+            machinename: machinename.into_owned(),
+            uid,
+            gid,
+            gids,
+        })
+    }
 }
 
 impl Default for auth_unix {
     fn default() -> Self {
         Self {
             stamp: 0,
-            machinename: Opaque::borrowed(b""),
+            machinename: BoundedOpaque::empty(),
             uid: 0,
             gid: 0,
-            gids: vec![],
+            gids: BoundedVec::default(),
         }
     }
 }

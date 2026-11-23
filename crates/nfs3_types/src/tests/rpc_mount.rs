@@ -1,9 +1,12 @@
 // Tests for RPC and Mount protocol types
 
 use super::encode;
-use crate::mount::{fhandle3, mountres3, mountres3_ok, mountstat3};
-use crate::rpc::{RPC_VERSION_2, auth_flavor, call_body, msg_body, opaque_auth, rpc_msg};
-use crate::xdr_codec::{Decoder, Opaque, Pack, Unpack};
+use crate::mount::{dirpath, fhandle3, mountres3, mountres3_ok, mountstat3};
+use crate::nfs3::nfs_fh3;
+use crate::rpc::{
+    RPC_VERSION_2, auth_flavor, auth_unix, call_body, msg_body, opaque_auth, rpc_msg,
+};
+use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, Error, Opaque, Pack, Unpack};
 
 #[test]
 fn rpc_call_len() {
@@ -89,7 +92,7 @@ fn rpc_msg_serialization() {
 fn mount3res_success_packed_size() {
     // Test for a successful mountres3 with no additional data
     let res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])),
+        fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&res).unwrap().to_vec();
@@ -125,7 +128,7 @@ fn mount3res_error_packed_size() {
 fn mount3res_roundtrip() {
     // Test successful mount response
     let success_res = mountres3::Ok(mountres3_ok {
-        fhandle: fhandle3(Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78])),
+        fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
         auth_flavors: vec![1, 2, 3],
     });
     let buffer = encode(&success_res).unwrap().to_vec();
@@ -165,7 +168,7 @@ fn mount3res_roundtrip() {
 #[test]
 fn fhandle3_edge_cases() {
     // Test empty file handle
-    let empty_fh = fhandle3(Opaque::borrowed(&[]));
+    let empty_fh = fhandle3(BoundedOpaque::empty());
     let buffer = encode(&empty_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 4); // Just the length field
@@ -173,10 +176,30 @@ fn fhandle3_edge_cases() {
 
     // Test maximum size file handle (64 bytes)
     let max_data = vec![0x42; 64];
-    let max_fh = fhandle3(Opaque::borrowed(&max_data));
+    let max_fh = fhandle3(BoundedOpaque::from_slice(&max_data).unwrap());
     let buffer = encode(&max_fh).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 68); // 4 bytes length + 64 bytes data
+}
+
+#[test]
+fn file_handle_and_mount_field_limits() {
+    fn check<T: Pack + Unpack>(max: usize) {
+        let valid = encode(&Opaque::owned(vec![42; max])).unwrap();
+        let mut input = Decoder::copying(valid.clone());
+        let field = T::unpack(&mut input).unwrap();
+        assert!(input.is_empty());
+        assert_eq!(encode(&field).unwrap(), valid);
+
+        let oversized = encode(&Opaque::owned(vec![42; max + 1])).unwrap();
+        let mut input = Decoder::copying(oversized.clone());
+        assert!(matches!(T::unpack(&mut input), Err(Error::InvalidLength(n)) if n == max + 1));
+        assert_eq!(input.into_remaining(), oversized.slice(4..));
+    }
+    check::<nfs_fh3>(64);
+    check::<fhandle3<'static>>(64);
+    check::<dirpath<'static>>(1024);
+    check::<crate::mount::name<'static>>(255);
 }
 
 #[test]
@@ -195,10 +218,93 @@ fn opaque_auth_default() {
 }
 
 #[test]
+fn auth_sys_constructor_limits() {
+    let name = [b'm'; 256];
+    let valid = auth_unix::new(1, &name[..255], 2, 3, vec![42; 16]).unwrap();
+    let credential = opaque_auth::auth_unix(&valid).unwrap();
+    assert_eq!(credential.body.len(), 340);
+    assert_eq!(credential.body.as_ref(), encode(&valid).unwrap().as_ref());
+    let decoded = auth_unix::unpack(&mut Decoder::copying(encode(&valid).unwrap())).unwrap();
+    assert_eq!((decoded.stamp, decoded.uid, decoded.gid), (1, 2, 3));
+    assert_eq!(decoded.machinename.as_ref(), &name[..255]);
+    assert_eq!(decoded.gids.as_ref(), &[42; 16]);
+    assert!(matches!(
+        auth_unix::new(1, &name, 2, 3, vec![]),
+        Err(Error::InvalidLength(256))
+    ));
+    assert!(matches!(
+        auth_unix::new(1, b"host", 2, 3, vec![42; 17]),
+        Err(Error::InvalidLength(17))
+    ));
+}
+
+#[test]
+fn auth_sys_decode_limits() {
+    for (name_len, gids_len, expected_error) in [
+        (255, 16, None),
+        (256, 16, Some((Error::InvalidLength(256), 8))),
+        (255, 17, Some((Error::InvalidLength(17), 276))),
+    ] {
+        let machinename = Opaque::owned(vec![b'm'; name_len]);
+        let gids = vec![42u32; gids_len];
+        let mut out = Encoder::new(0);
+        0u32.pack(&mut out).unwrap(); // stamp
+        machinename.pack(&mut out).unwrap();
+        0u32.pack(&mut out).unwrap(); // uid
+        0u32.pack(&mut out).unwrap(); // gid
+        gids.pack(&mut out).unwrap();
+        let bytes = out.into_bytes();
+        let mut input = Decoder::copying(bytes.clone());
+        let result = auth_unix::unpack(&mut input);
+        if let Some((expected_error, prefix_len)) = expected_error {
+            assert_eq!(result.unwrap_err(), expected_error);
+            assert_eq!(input.into_remaining(), bytes.slice(prefix_len..));
+        } else {
+            let decoded = result.unwrap();
+            assert_eq!(decoded.machinename.as_ref(), machinename.as_ref());
+            assert_eq!(decoded.gids.as_ref(), gids);
+            assert_eq!(encode(&decoded).unwrap(), bytes);
+            assert!(input.is_empty());
+        }
+    }
+}
+
+#[test]
+fn opaque_auth_body_limit() {
+    let data = [42; 401];
+    let body = BoundedOpaque::<400>::try_from(Opaque::borrowed(&data[..400])).unwrap();
+    let auth = opaque_auth {
+        flavor: auth_flavor::AUTH_UNIX,
+        body,
+    };
+    let mut input = Decoder::copying(encode(&auth).unwrap());
+    assert_eq!(
+        opaque_auth::unpack(&mut input).unwrap().body.as_ref(),
+        &data[..400]
+    );
+    assert!(input.is_empty());
+
+    let body = Opaque::borrowed(&data);
+    assert!(matches!(
+        BoundedOpaque::<400>::try_from(body.clone()),
+        Err(Error::InvalidLength(401))
+    ));
+    let mut out = Encoder::new(0);
+    auth.flavor.pack(&mut out).unwrap();
+    body.pack(&mut out).unwrap();
+    let mut input = Decoder::copying(out.into_bytes());
+    assert!(matches!(
+        opaque_auth::unpack(&mut input),
+        Err(Error::InvalidLength(401))
+    ));
+    assert_eq!(input.remaining(), 404);
+}
+
+#[test]
 fn opaque_auth_with_data() {
     let auth = opaque_auth {
         flavor: auth_flavor::AUTH_UNIX,
-        body: Opaque::borrowed(&[0x12, 0x34, 0x56, 0x78]),
+        body: BoundedOpaque::from_slice(&[0x12, 0x34, 0x56, 0x78]).unwrap(),
     };
     let buffer = encode(&auth).unwrap().to_vec();
     let len = buffer.len();
@@ -280,7 +386,7 @@ fn auth_flavors() {
     for flavor in auth_flavors {
         let auth = opaque_auth {
             flavor,
-            body: Opaque::borrowed(&[]),
+            body: BoundedOpaque::empty(),
         };
         let buffer = encode(&auth).unwrap().to_vec();
         let len = buffer.len();

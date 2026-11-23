@@ -1,12 +1,13 @@
 use std::io;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
+use nfs3_types::mount::dirpath;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use super::{NFSTcpListener, normalized_export_name};
+use super::{DEFAULT_EXPORT_PATH, NFSTcpListener};
+use crate::context::normalized_export_path;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
@@ -14,7 +15,7 @@ use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 #[must_use]
 pub struct Builder<FS = ()> {
     fs: FS,
-    export_name: Arc<str>,
+    export_path: io::Result<dirpath<'static>>,
     generation_number: Option<u64>,
     max_rpc_record_size: Option<NonZeroUsize>,
 }
@@ -23,7 +24,7 @@ impl Default for Builder {
     fn default() -> Self {
         Self {
             fs: (),
-            export_name: Arc::from("/"),
+            export_path: Ok(DEFAULT_EXPORT_PATH.clone()),
             generation_number: None,
             max_rpc_record_size: None,
         }
@@ -40,7 +41,7 @@ impl Builder {
     pub fn filesystem<T: NfsFileSystem + 'static>(self, fs: T) -> Builder<T> {
         Builder {
             fs,
-            export_name: self.export_name,
+            export_path: self.export_path,
             generation_number: self.generation_number,
             max_rpc_record_size: self.max_rpc_record_size,
         }
@@ -60,8 +61,9 @@ impl<FS> Builder<FS> {
     ///
     /// Leading and trailing slashes are stripped before adding one leading slash.
     /// For example, `data` and `/data/` both export at `/data`.
+    /// [`Builder::bind`] rejects normalized paths longer than 1,024 bytes.
     pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
-        self.export_name = normalized_export_name(name.as_ref());
+        self.export_path = normalized_export_path(name.as_ref());
         self
     }
 
@@ -90,15 +92,17 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
     /// Use port `0` to let the OS choose an available port. The deprecated `auto:port`
     /// syntax is only supported by the legacy string constructors.
     ///
-    /// Initialization also queries the export root's FSINFO to set the READ
-    /// limit. If that query fails, binding returns an error.
+    /// Returns `InvalidInput` before binding if the normalized export path
+    /// exceeds 1,024 bytes. Initialization also queries the export root's
+    /// FSINFO to set the READ limit and returns an error if that query fails.
     pub async fn bind(self, addr: SocketAddr) -> io::Result<NFSTcpListener<T>> {
+        let export_path = self.export_path?;
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on {addr}");
         NFSTcpListener::new(
             listener,
             self.fs,
-            self.export_name,
+            export_path,
             self.generation_number,
             self.max_rpc_record_size,
         )

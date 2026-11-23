@@ -8,6 +8,9 @@ mod nfs_handlers;
 mod portmap_handlers;
 mod rpcwire;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(feature = "fs_util")]
 #[cfg_attr(docsrs, doc(cfg(feature = "fs_util")))]
 pub mod fs_util;

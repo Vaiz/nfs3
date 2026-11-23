@@ -31,14 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|port| port.parse::<u16>().ok())
         .unwrap_or(PMAP_PORT);
 
-    let auth_unix = auth_unix {
-        stamp: 0xaaaa_aaaa,
-        machinename: Opaque::borrowed(b"unknown"),
-        uid: 0xffff_fffe,
-        gid: 0xffff_fffe,
-        gids: vec![],
-    };
-    let credential = opaque_auth::auth_unix(&auth_unix);
+    let auth_unix = auth_unix::new(0xaaaa_aaaa, b"unknown", 0xffff_fffe, 0xffff_fffe, vec![])?;
+    let credential = opaque_auth::auth_unix(&auth_unix)?;
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmapper_port)

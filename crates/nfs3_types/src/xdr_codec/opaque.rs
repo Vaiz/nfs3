@@ -113,3 +113,106 @@ impl PartialEq for Opaque<'_> {
 }
 
 impl Eq for Opaque<'_> {}
+
+/// Variable-length XDR opaque data limited to `N` bytes.
+///
+/// Uses the same wire format and storage as [`Opaque`]. Decoding checks the
+/// length before reading or copying the payload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedOpaque<'a, const N: usize>(Opaque<'a>);
+
+impl<const N: usize> BoundedOpaque<'_, N> {
+    pub(crate) const fn empty() -> Self {
+        Self(Opaque::borrowed(&[]))
+    }
+
+    pub(crate) fn borrow(&self) -> BoundedOpaque<'_, N> {
+        BoundedOpaque(Opaque::borrowed(self.as_ref()))
+    }
+
+    /// Borrows an array whose length is checked against `N` at compile time.
+    ///
+    /// ```compile_fail
+    /// use nfs3_types::xdr_codec::BoundedOpaque;
+    ///
+    /// const _: BoundedOpaque<'static, 3> = BoundedOpaque::from_array(b"four");
+    /// ```
+    #[must_use]
+    pub const fn from_array<const LEN: usize>(data: &[u8; LEN]) -> BoundedOpaque<'_, N> {
+        const { assert!(LEN <= N, "array exceeds the XDR opaque length limit") };
+        BoundedOpaque(Opaque::borrowed(data))
+    }
+
+    /// Borrow a slice as a `BoundedOpaque`.
+    pub fn from_slice(data: &[u8]) -> Result<BoundedOpaque<'_, N>> {
+        Opaque::borrowed(data).try_into()
+    }
+
+    /// Converts into [`Bytes`], copying only if the data is borrowed.
+    #[must_use]
+    pub fn into_bytes(self) -> Bytes {
+        self.0.into_bytes()
+    }
+
+    /// Converts into an owned `BoundedOpaque`.
+    #[must_use]
+    pub fn into_owned(self) -> BoundedOpaque<'static, N> {
+        BoundedOpaque(self.0.into_owned())
+    }
+}
+
+impl<const N: usize> BoundedOpaque<'static, N> {
+    /// Wraps owned bytes without copying.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidLength`] if the input is longer than `N`.
+    pub fn try_from_bytes(data: Bytes) -> Result<Self> {
+        Opaque::from_bytes(data).try_into()
+    }
+}
+
+impl<'a, const N: usize> TryFrom<Opaque<'a>> for BoundedOpaque<'a, N> {
+    type Error = Error;
+
+    fn try_from(data: Opaque<'a>) -> Result<Self> {
+        if data.len() > N {
+            return Err(Error::InvalidLength(data.len()));
+        }
+        Ok(Self(data))
+    }
+}
+
+impl<const N: usize> AsRef<[u8]> for BoundedOpaque<'_, N> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<const N: usize> Deref for BoundedOpaque<'_, N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
+impl<const N: usize> Pack for BoundedOpaque<'_, N> {
+    fn packed_size(&self) -> usize {
+        self.0.packed_size()
+    }
+
+    fn pack(&self, out: &mut Encoder) -> Result<()> {
+        self.0.pack(out)
+    }
+}
+
+impl<const N: usize> Unpack for BoundedOpaque<'static, N> {
+    fn unpack(input: &mut Decoder) -> Result<Self> {
+        let len = u32::unpack(input)? as usize;
+        if len > N {
+            return Err(Error::InvalidLength(len));
+        }
+        Ok(Self(Opaque::from_bytes(input.read_opaque(len)?)))
+    }
+}

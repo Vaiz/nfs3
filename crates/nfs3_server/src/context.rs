@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use derive_where::derive_where;
+use nfs3_types::mount::{MNTPATHLEN, dirpath};
 use nfs3_types::rpc::{auth_flavor, auth_unix, call_body};
-use nfs3_types::xdr_codec::{Decoder, Error};
+use nfs3_types::xdr_codec::{BoundedOpaque, Decoder, Error};
 use tokio::sync::mpsc;
 
 use crate::rpcwire::unpack_exact;
@@ -19,11 +20,26 @@ pub struct RPCContext<T: NfsFileSystem> {
     #[derive_where(skip(Debug))]
     pub vfs: Arc<T>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
-    pub export_name: Arc<str>,
+    pub(crate) export_path: dirpath<'static>,
     pub transaction_tracker: Arc<TransactionTracker>,
     pub(crate) read_limit: u32,
     #[derive_where(skip(Debug))]
     pub(crate) file_handle_converter: FileHandleConverter,
+}
+
+pub(crate) fn normalized_export_path(name: &str) -> std::io::Result<dirpath<'static>> {
+    let name = name.trim_matches('/');
+    let len = name.len() + 1;
+    if len > MNTPATHLEN {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("export path is {len} bytes after normalization; maximum is {MNTPATHLEN}"),
+        ));
+    }
+    let path = format!("/{name}");
+    BoundedOpaque::try_from_bytes(path.into_bytes().into())
+        .map(dirpath)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
 }
 
 pub(crate) async fn root_read_limit(vfs: &impl NfsFileSystem) -> std::io::Result<u32> {
@@ -60,7 +76,7 @@ where
             auth: auth_unix::default(),
             vfs,
             mount_signal: None,
-            export_name: Arc::from(export_name),
+            export_path: normalized_export_path(export_name)?,
             transaction_tracker: Arc::new(TransactionTracker::new(
                 std::time::Duration::from_mins(1),
                 256,

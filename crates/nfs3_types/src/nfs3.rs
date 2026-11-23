@@ -9,7 +9,7 @@
 
 use nfs3_macros::XdrCodec;
 
-use crate::xdr_codec::{Decoder, Encoder, List, Opaque, Pack, Unpack, Void};
+use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, List, Opaque, Pack, Unpack, Void};
 
 pub const PROGRAM: u32 = 100_003;
 pub const VERSION: u32 = 3;
@@ -743,13 +743,14 @@ pub enum mknoddata3 {
 
 #[derive(Clone, Debug, Eq, PartialEq, XdrCodec)]
 pub struct nfs_fh3 {
-    pub data: Opaque<'static>,
+    /// File handle data, limited to 64 bytes.
+    pub data: BoundedOpaque<'static, NFS3_FHSIZE>,
 }
 
 impl Default for nfs_fh3 {
     fn default() -> Self {
         Self {
-            data: Opaque::borrowed(&[]),
+            data: BoundedOpaque::empty(),
         }
     }
 }

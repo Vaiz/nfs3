@@ -3,7 +3,7 @@ use nfs3_types::mount::{
     mountstat3,
 };
 use nfs3_types::rpc::{accept_stat_data, auth_flavor};
-use nfs3_types::xdr_codec::{Decoder, List, Opaque, Void};
+use nfs3_types::xdr_codec::{Decoder, List, Void};
 use tracing::{debug, error, warn};
 
 use crate::context::RPCContext;
@@ -84,7 +84,14 @@ where
     };
 
     debug!("mountproc3_mnt({xid},{utf8path})");
-    let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_ref()) {
+    let export_path = match std::str::from_utf8(&context.export_path.0) {
+        Ok(path) => path,
+        Err(err) => {
+            error!("{xid} --> invalid configured export path: {err}");
+            return mountres3::Err(mountstat3::MNT3ERR_SERVERFAULT);
+        }
+    };
+    let path = if let Some(path) = utf8path.strip_prefix(export_path) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export
@@ -147,9 +154,8 @@ async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> export
 where
     T: crate::vfs::NfsFileSystem,
 {
-    let export_name = context.export_name.as_bytes().to_vec();
     List(vec![export_node {
-        ex_dir: dirpath(Opaque::owned(export_name)),
+        ex_dir: context.export_path,
         ex_groups: List::default(),
     }])
 }

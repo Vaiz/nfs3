@@ -7,7 +7,7 @@
 
 //! This module contains the definitions of the MOUNT3 protocol as defined in RFC 1813.
 
-use crate::xdr_codec::{Decoder, Encoder, List, Opaque, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, Error, List, Pack, Unpack, XdrCodec};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
@@ -15,12 +15,29 @@ pub const MNTPATHLEN: usize = 1024;
 pub const MNTNAMLEN: usize = 255;
 pub const FHSIZE3: usize = 64;
 
-#[derive(Debug, XdrCodec)]
-pub struct fhandle3<'a>(pub Opaque<'a>);
-#[derive(Debug, XdrCodec)]
-pub struct dirpath<'a>(pub Opaque<'a>);
-#[derive(Debug, XdrCodec)]
-pub struct name<'a>(pub Opaque<'a>);
+/// MOUNT v3 file handle, limited to 64 bytes.
+#[derive(Clone, Debug, XdrCodec)]
+pub struct fhandle3<'a>(pub BoundedOpaque<'a, FHSIZE3>);
+
+/// MOUNT path, limited to 1,024 bytes.
+#[derive(Clone, Debug, XdrCodec)]
+pub struct dirpath<'a>(pub BoundedOpaque<'a, MNTPATHLEN>);
+
+impl dirpath<'_> {
+    /// Borrow a slice as a `dirpath`.
+    pub fn from_slice(data: &[u8]) -> Result<dirpath<'_>, Error> {
+        BoundedOpaque::from_slice(data).map(dirpath)
+    }
+
+    /// Converts into an owned `dirpath`.
+    pub fn into_owned(self) -> dirpath<'static> {
+        dirpath(self.0.into_owned())
+    }
+}
+
+/// MOUNT host or group name, limited to 255 bytes.
+#[derive(Clone, Debug, XdrCodec)]
+pub struct name<'a>(pub BoundedOpaque<'a, MNTNAMLEN>);
 
 #[derive(Copy, Clone, Debug, XdrCodec)]
 #[repr(u32)]

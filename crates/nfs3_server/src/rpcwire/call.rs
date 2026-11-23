@@ -1,9 +1,15 @@
 use anyhow::bail;
 use nfs3_types::rpc::{
-    accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, opaque_auth, rejected_reply,
-    reply_body, rpc_msg,
+    RPC_VERSION_2, accept_stat_data, accepted_reply, auth_stat, call_body, msg_body, msg_type,
+    opaque_auth, rejected_reply, reply_body, rpc_msg,
 };
 use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack, Void};
+use tracing::warn;
+
+pub(super) enum DecodedCall {
+    Call(RpcCall),
+    Rejected(RpcCallOutcome),
+}
 
 /// A decoded RPC call header.
 pub(crate) struct RpcCall {
@@ -13,23 +19,51 @@ pub(crate) struct RpcCall {
 
 impl RpcCall {
     /// Decodes the call header, leaving `input` at the procedure arguments.
-    pub(crate) fn unpack(input: &mut Decoder) -> anyhow::Result<Self> {
-        let rpc = match rpc_msg::unpack(input) {
-            Ok(ok) => ok,
+    pub(super) fn unpack(input: &mut Decoder) -> anyhow::Result<DecodedCall> {
+        let xid = u32::unpack(input)?;
+        if msg_type::unpack(input)? != msg_type::CALL {
+            bail!("Expected a CALL message, got REPLY. XID: {xid}");
+        }
+
+        let rpcvers = u32::unpack(input)?;
+        if rpcvers != RPC_VERSION_2 {
+            warn!("Invalid RPC version {rpcvers} != {RPC_VERSION_2}, XID: {xid}");
+            return Self::reject(
+                xid,
+                rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2),
+            )
+            .map(DecodedCall::Rejected);
+        }
+        let program = u32::unpack(input)?;
+        let version = u32::unpack(input)?;
+        let procedure = u32::unpack(input)?;
+        let credential = match opaque_auth::unpack(input) {
+            Ok(credential) => credential,
             Err(err) => {
-                bail!("Failed to unpack RPC message: {err}");
+                warn!("Invalid RPC credential for XID {xid}: {err}");
+                return Self::reject(xid, rejected_reply::auth_error(auth_stat::AUTH_BADCRED))
+                    .map(DecodedCall::Rejected);
             }
         };
-
-        let xid = rpc.xid;
-        let body = match rpc.body {
-            msg_body::CALL(call) => call,
-            msg_body::REPLY(_) => {
-                bail!("Expected a CALL message, got REPLY. XID: {xid}");
+        let verifier = match opaque_auth::unpack(input) {
+            Ok(verifier) => verifier,
+            Err(err) => {
+                warn!("Invalid RPC verifier for XID {xid}: {err}");
+                return Self::reject(xid, rejected_reply::auth_error(auth_stat::AUTH_BADVERF))
+                    .map(DecodedCall::Rejected);
             }
         };
-
-        Ok(Self { xid, body })
+        Ok(DecodedCall::Call(Self {
+            xid,
+            body: call_body {
+                rpcvers,
+                prog: program,
+                vers: version,
+                proc: procedure,
+                cred: credential,
+                verf: verifier,
+            },
+        }))
     }
 
     pub(crate) const fn xid(&self) -> u32 {
@@ -54,23 +88,14 @@ impl RpcCall {
         pack(&rpc, message).map(RpcCallOutcome::Reply)
     }
 
-    pub(crate) fn into_rpc_mismatch(self) -> anyhow::Result<RpcCallOutcome> {
-        use nfs3_types::rpc::RPC_VERSION_2;
-
-        let reply =
-            reply_body::MSG_DENIED(rejected_reply::rpc_mismatch(RPC_VERSION_2, RPC_VERSION_2));
-
-        let rpc = rpc_msg {
-            xid: self.xid,
-            body: msg_body::REPLY(reply),
-        };
-        pack(&rpc, &Void).map(RpcCallOutcome::Reply)
+    pub(crate) fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
+        Self::reject(self.xid, rejected_reply::auth_error(stat))
     }
 
-    pub(crate) fn into_auth_error(self, stat: auth_stat) -> anyhow::Result<RpcCallOutcome> {
+    fn reject(xid: u32, reply: rejected_reply) -> anyhow::Result<RpcCallOutcome> {
         let rpc = rpc_msg {
-            xid: self.xid,
-            body: msg_body::REPLY(reply_body::MSG_DENIED(rejected_reply::auth_error(stat))),
+            xid,
+            body: msg_body::REPLY(reply_body::MSG_DENIED(reply)),
         };
         pack(&rpc, &Void).map(RpcCallOutcome::Reply)
     }

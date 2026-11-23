@@ -1,8 +1,8 @@
 use std::time::Instant;
 
-use call::{RpcCall, RpcCallOutcome};
+use call::{DecodedCall, RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
-use nfs3_types::rpc::{RPC_VERSION_2, accept_stat_data, auth_stat, call_body};
+use nfs3_types::rpc::{accept_stat_data, auth_stat, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::AsyncRead;
@@ -24,24 +24,28 @@ const NFS_ACL_PROGRAM: u32 = 100_227;
 const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
-async fn handle_rpc_message<T>(
+pub(crate) async fn handle_rpc_message<T>(
     mut context: RPCContext<T>,
     mut args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
     T: NfsFileSystem,
 {
-    let message = RpcCall::unpack(&mut args)?;
+    let message = match RpcCall::unpack(&mut args)? {
+        DecodedCall::Call(message) => message,
+        DecodedCall::Rejected(reply) => return Ok(reply),
+    };
     let xid = message.xid();
     let call = message.body();
     let prog = call.prog;
 
-    if call.rpcvers != RPC_VERSION_2 {
-        warn!("Invalid RPC version {} != {RPC_VERSION_2}", call.rpcvers);
-        return message.into_rpc_mismatch();
-    }
-
-    let unix = context.set_auth(call)?;
+    let unix = match context.set_auth(call) {
+        Ok(unix) => unix,
+        Err(err) => {
+            warn!("Invalid AUTH_SYS credential for XID {xid}: {err}");
+            return message.into_auth_error(auth_stat::AUTH_BADCRED);
+        }
+    };
     if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
         warn!(
             "refusing a call from uid {} on {}",
@@ -184,6 +188,7 @@ mod tests {
     #[test]
     fn unpack_exact_rejects_trailing_bytes() {
         let mut bytes = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix::default())
+            .unwrap()
             .body
             .as_ref()
             .to_vec();
