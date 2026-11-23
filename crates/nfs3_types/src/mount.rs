@@ -7,13 +7,18 @@
 
 //! This module contains the definitions of the MOUNT3 protocol as defined in RFC 1813.
 
-use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, Error, List, Pack, Unpack, XdrCodec};
+use crate::xdr_codec::{
+    BoundedOpaque, BoundedVec, Decoder, Encoder, Error, List, Pack, Unpack, XdrCodec,
+};
 
 pub const PROGRAM: u32 = 100_005;
 pub const VERSION: u32 = 3;
 pub const MNTPATHLEN: usize = 1024;
 pub const MNTNAMLEN: usize = 255;
 pub const FHSIZE3: usize = 64;
+
+/// Matches Linux's `NFS_MAX_SECFLAVORS` in `fs/nfs/internal.h`.
+const MAX_AUTH_FLAVORS: usize = 12;
 
 /// MOUNT v3 file handle, limited to 64 bytes.
 #[derive(Clone, Debug, XdrCodec)]
@@ -92,10 +97,18 @@ impl std::fmt::Display for mountstat3 {
 // AUTH_GSS_SPKMP = 390011,
 // }
 
+/// Successful MOUNT v3 response.
+///
+/// RFC 1813 leaves the authentication flavor array unbounded. This implementation
+/// follows Linux's [`NFS_MAX_SECFLAVORS`] limit of 12 and rejects longer arrays
+/// instead of truncating them.
+///
+/// [`NFS_MAX_SECFLAVORS`]: https://github.com/torvalds/linux/blob/v6.12/fs/nfs/internal.h#L60
 #[derive(Debug, XdrCodec)]
 pub struct mountres3_ok<'a> {
     pub fhandle: fhandle3<'a>,
-    pub auth_flavors: Vec<u32>,
+    /// Authentication flavors accepted by the server.
+    pub auth_flavors: BoundedVec<u32, MAX_AUTH_FLAVORS>,
 }
 
 #[derive(Debug)]

@@ -6,7 +6,7 @@ use crate::nfs3::nfs_fh3;
 use crate::rpc::{
     RPC_VERSION_2, auth_flavor, auth_unix, call_body, msg_body, opaque_auth, rpc_msg,
 };
-use crate::xdr_codec::{BoundedOpaque, Decoder, Encoder, Error, Opaque, Pack, Unpack};
+use crate::xdr_codec::{BoundedOpaque, BoundedVec, Decoder, Encoder, Error, Opaque, Pack, Unpack};
 
 #[test]
 fn rpc_call_len() {
@@ -93,12 +93,12 @@ fn mount3res_success_packed_size() {
     // Test for a successful mountres3 with no additional data
     let res = mountres3::Ok(mountres3_ok {
         fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
-        auth_flavors: vec![1, 2, 3],
+        auth_flavors: vec![1, 2, 3].try_into().unwrap(),
     });
     let buffer = encode(&res).unwrap().to_vec();
     let len = buffer.len();
     assert_eq!(len, 28); // 4 bytes for the status + 8 bytes for fhandle + 16 bytes for auth_flavors
-    assert_eq!(res.packed_size(), len); // 4 bytes for the status + 4 bytes for fhandle + 4 bytes for auth_flavors
+    assert_eq!(res.packed_size(), len);
     assert_eq!(
         buffer,
         [
@@ -129,7 +129,7 @@ fn mount3res_roundtrip() {
     // Test successful mount response
     let success_res = mountres3::Ok(mountres3_ok {
         fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
-        auth_flavors: vec![1, 2, 3],
+        auth_flavors: vec![1, 2, 3].try_into().unwrap(),
     });
     let buffer = encode(&success_res).unwrap().to_vec();
     let pack_len = buffer.len();
@@ -163,6 +163,38 @@ fn mount3res_roundtrip() {
         }
         _ => panic!("Expected error response"),
     }
+}
+
+#[test]
+fn mount3res_accepts_twelve_auth_flavors() {
+    let flavors = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    let response = mountres3::Ok(mountres3_ok {
+        fhandle: fhandle3(BoundedOpaque::from_array(&[0x12, 0x34, 0x56, 0x78])),
+        auth_flavors: BoundedVec::from_array(flavors),
+    });
+    let mut input = Decoder::copying(encode(&response).unwrap());
+    let mountres3::Ok(response) = mountres3::unpack(&mut input).unwrap() else {
+        panic!("Expected success response");
+    };
+    assert_eq!(response.auth_flavors.as_ref(), flavors);
+    assert!(input.is_empty());
+}
+
+#[test]
+fn mount3res_rejects_thirteen_auth_flavors_before_reading_items() {
+    let mut wire = vec![
+        0, 0, 0, 0, // MNT3_OK
+        0, 0, 0, 4, // fhandle length
+        0x12, 0x34, 0x56, 0x78, // fhandle data
+        0, 0, 0, 13, // auth flavor count
+    ];
+    wire.extend((0_u32..13).flat_map(u32::to_be_bytes));
+    let mut input = Decoder::copying(wire);
+    assert_eq!(
+        mountres3::unpack(&mut input).unwrap_err(),
+        Error::InvalidLength(13)
+    );
+    assert_eq!(input.remaining(), 13 * 4);
 }
 
 #[test]
@@ -246,7 +278,7 @@ fn auth_sys_decode_limits() {
         (255, 17, Some((Error::InvalidLength(17), 276))),
     ] {
         let machinename = Opaque::owned(vec![b'm'; name_len]);
-        let gids = vec![42u32; gids_len];
+        let gids = BoundedVec::<u32, 17>::try_from(vec![42; gids_len]).unwrap();
         let mut out = Encoder::new(0);
         0u32.pack(&mut out).unwrap(); // stamp
         machinename.pack(&mut out).unwrap();
@@ -262,7 +294,7 @@ fn auth_sys_decode_limits() {
         } else {
             let decoded = result.unwrap();
             assert_eq!(decoded.machinename.as_ref(), machinename.as_ref());
-            assert_eq!(decoded.gids.as_ref(), gids);
+            assert_eq!(decoded.gids.as_ref(), gids.as_ref());
             assert_eq!(encode(&decoded).unwrap(), bytes);
             assert!(input.is_empty());
         }

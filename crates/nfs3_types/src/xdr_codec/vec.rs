@@ -4,9 +4,24 @@ use super::{Decoder, Encoder, Error, Pack, Result, Unpack};
 
 /// An XDR counted array with at most `N` elements.
 ///
-/// Construct it from a vector with [`TryFrom`], or use [`Default`] for an empty array.
+/// Construct it with [`Self::from_array`] for a fixed-size array or [`TryFrom`]
+/// for a vector. Use [`Default`] for an empty array.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedVec<T, const N: usize>(Vec<T>);
+
+impl<T, const N: usize> BoundedVec<T, N> {
+    /// Construct from an array whose length is checked at compile time.
+    ///
+    /// ```compile_fail
+    /// use nfs3_types::xdr_codec::BoundedVec;
+    ///
+    /// let _ = BoundedVec::<u32, 1>::from_array([1, 2]);
+    /// ```
+    pub fn from_array<const LEN: usize>(items: [T; LEN]) -> Self {
+        const { assert!(LEN <= N, "array exceeds the XDR element count limit") };
+        Self(Vec::from(items))
+    }
+}
 
 impl<T, const N: usize> Default for BoundedVec<T, N> {
     fn default() -> Self {
