@@ -5,12 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow;
+use nfs3_types::mount::dirpath;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use crate::context::{RPCContext, root_read_limit};
+use crate::context::{RPCContext, normalized_export_path, root_read_limit};
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::read_and_dispatch_loop;
 use crate::transaction_tracker::{Cleaner, TransactionTracker};
@@ -25,17 +26,13 @@ pub use builder::Builder;
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 
-fn normalized_export_name(name: &str) -> Arc<str> {
-    Arc::from(format!("/{}", name.trim_matches('/')))
-}
-
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
     listener: TcpListener,
     local_addr: SocketAddr,
     arcfs: Arc<T>,
     mount_signal: Option<mpsc::Sender<bool>>,
-    export_name: Arc<str>,
+    export_path: dirpath<'static>,
     max_rpc_record_size: Option<NonZeroUsize>,
     transaction_tracker: Arc<TransactionTracker>,
     read_limit: u32,
@@ -126,7 +123,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     async fn new(
         listener: TcpListener,
         fs: T,
-        export_name: Arc<str>,
+        export_path: dirpath<'static>,
         generation_number: Option<u64>,
         max_rpc_record_size: Option<NonZeroUsize>,
     ) -> io::Result<Self> {
@@ -142,7 +139,7 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             local_addr,
             arcfs: Arc::new(fs),
             mount_signal: None,
-            export_name,
+            export_path,
             max_rpc_record_size,
             transaction_tracker: Self::new_transaction_tracker(),
             read_limit,
@@ -207,8 +204,14 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
                         num_tries_left -= 1;
                     }
                     Ok(listener) => {
-                        return Self::new(listener, fs, Arc::from("/"), generation_number, None)
-                            .await;
+                        return Self::new(
+                            listener,
+                            fs,
+                            normalized_export_path("/")?,
+                            generation_number,
+                            None,
+                        )
+                        .await;
                     }
                 }
             }
@@ -217,7 +220,14 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
             // Otherwise, try this.
             Self::bind_legacy_addr(ip, port).await?
         };
-        Self::new(listener, fs, Arc::from("/"), generation_number, None).await
+        Self::new(
+            listener,
+            fs,
+            normalized_export_path("/")?,
+            generation_number,
+            None,
+        )
+        .await
     }
 
     async fn bind_legacy_addr(ip: &str, port: u16) -> io::Result<TcpListener> {
@@ -245,9 +255,14 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     ///
     /// Example: Name `foo` results in the export path `/foo`.
     /// Default path is `/` if not set.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidInput` if the normalized path exceeds 1,024 bytes.
     #[deprecated(note = "Use Builder::export_name before binding")]
-    pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
-        self.export_name = normalized_export_name(export_name.as_ref());
+    pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) -> io::Result<()> {
+        self.export_path = normalized_export_path(export_name.as_ref())?;
+        Ok(())
     }
 }
 
@@ -288,7 +303,7 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 auth: nfs3_types::rpc::auth_unix::default(),
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
-                export_name: Arc::clone(&self.export_name),
+                export_path: self.export_path.clone(),
                 transaction_tracker: Arc::clone(&self.transaction_tracker),
                 read_limit: self.read_limit,
                 file_handle_converter: self.file_handle_converter,

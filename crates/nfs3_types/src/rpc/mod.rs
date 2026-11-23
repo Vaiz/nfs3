@@ -14,7 +14,7 @@ use nfs3_macros::XdrCodec;
 
 pub use self::record_buf::RecordBuf;
 pub use self::record_marker::fragment_header;
-use crate::xdr_codec::{BoundedOpaque, BoundedVec, Decoder, Encoder, Opaque, Pack, Result, Unpack};
+use crate::xdr_codec::{BoundedOpaque, BoundedVec, Decoder, Encoder, Pack, Result, Unpack};
 
 pub const RPC_VERSION_2: u32 = 2;
 const MAX_AUTH_BYTES: usize = 400;
@@ -109,20 +109,19 @@ impl Default for opaque_auth<'static> {
 impl opaque_auth<'static> {
     /// Creates a new `opaque_auth` with the given flavor and body constructed from `auth_unix`.
     ///
-    /// # Panics
+    /// The field limits cap the encoded parameters at 340 bytes, below the
+    /// 400-byte RPC authentication body limit.
     ///
-    /// Panics if the `auth_unix` cannot be packed.
-    #[must_use]
-    pub fn auth_unix(auth: &auth_unix) -> Self {
+    /// # Errors
+    ///
+    /// Returns an error if XDR encoding or validation of the body fails.
+    pub fn auth_unix(auth: &auth_unix) -> Result<Self> {
         let mut out = Encoder::new(auth.packed_size());
-        auth.pack(&mut out).expect("failed to pack auth_unix");
-        let body = out.into_bytes();
-        Self {
+        auth.pack(&mut out)?;
+        Ok(Self {
             flavor: auth_flavor::AUTH_UNIX,
-            body: Opaque::from_bytes(body)
-                .try_into()
-                .expect("AUTH_SYS parameters fit in an RPC auth body"),
-        }
+            body: BoundedOpaque::try_from_bytes(out.into_bytes())?,
+        })
     }
 
     #[must_use]

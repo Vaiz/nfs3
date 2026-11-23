@@ -113,6 +113,25 @@ async fn tcp_listener_checks_normalized_export_length_before_binding() -> anyhow
 }
 
 #[tokio::test]
+#[expect(
+    deprecated,
+    reason = "verify the legacy export setter enforces the limit"
+)]
+async fn legacy_export_setter_checks_normalized_length() -> anyhow::Result<()> {
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let mut listener = Builder::new()
+        .filesystem(fs)
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await?;
+    listener.with_export_name("a".repeat(MNTPATHLEN - 1))?;
+    let err = listener
+        .with_export_name("a".repeat(MNTPATHLEN))
+        .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    Ok(())
+}
+
+#[tokio::test]
 async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> {
     let payload = null_call_record(1)?.slice(4..);
     let limit = NonZeroUsize::new(payload.len()).context("NULL call has an RPC header")?;

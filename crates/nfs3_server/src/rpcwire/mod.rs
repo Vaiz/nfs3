@@ -188,6 +188,7 @@ mod tests {
     #[test]
     fn unpack_exact_rejects_trailing_bytes() {
         let mut bytes = nfs3_types::rpc::opaque_auth::auth_unix(&auth_unix::default())
+            .unwrap()
             .body
             .as_ref()
             .to_vec();

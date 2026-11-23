@@ -148,6 +148,17 @@ impl<const N: usize> BoundedOpaque<'_, N> {
     }
 }
 
+impl<const N: usize> BoundedOpaque<'static, N> {
+    /// Wraps owned bytes without copying.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidLength`] if the input is longer than `N`.
+    pub fn try_from_bytes(data: Bytes) -> Result<Self> {
+        Opaque::from_bytes(data).try_into()
+    }
+}
+
 impl<'a, const N: usize> TryFrom<Opaque<'a>> for BoundedOpaque<'a, N> {
     type Error = Error;
 

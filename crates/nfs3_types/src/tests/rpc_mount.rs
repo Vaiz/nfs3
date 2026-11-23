@@ -221,6 +221,9 @@ fn opaque_auth_default() {
 fn auth_sys_constructor_limits() {
     let name = [b'm'; 256];
     let valid = auth_unix::new(1, &name[..255], 2, 3, vec![42; 16]).unwrap();
+    let credential = opaque_auth::auth_unix(&valid).unwrap();
+    assert_eq!(credential.body.len(), 340);
+    assert_eq!(credential.body.as_ref(), encode(&valid).unwrap().as_ref());
     let decoded = auth_unix::unpack(&mut Decoder::copying(encode(&valid).unwrap())).unwrap();
     assert_eq!((decoded.stamp, decoded.uid, decoded.gid), (1, 2, 3));
     assert_eq!(decoded.machinename.as_ref(), &name[..255]);

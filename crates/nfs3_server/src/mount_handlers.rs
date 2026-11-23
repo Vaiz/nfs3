@@ -1,5 +1,6 @@
 use nfs3_types::mount::{
-    MOUNT_PROGRAM, VERSION, dirpath, export_node, fhandle3, mountres3, mountres3_ok, mountstat3,
+    MOUNT_PROGRAM, VERSION, dirpath, export_node, exports, fhandle3, mountres3, mountres3_ok,
+    mountstat3,
 };
 use nfs3_types::rpc::{accept_stat_data, auth_flavor};
 use nfs3_types::xdr_codec::{Decoder, List, Void};
@@ -50,7 +51,7 @@ where
         MOUNTPROC3_MNT => handle(context, message, args, mountproc3_mnt).await,
         MOUNTPROC3_UMNT => handle(context, message, args, mountproc3_umnt).await,
         MOUNTPROC3_UMNTALL => handle(context, message, args, mountproc3_umnt_all).await,
-        MOUNTPROC3_EXPORT => mountproc3_export(context, message, args).await,
+        MOUNTPROC3_EXPORT => handle(context, message, args, mountproc3_export).await,
         MOUNTPROC3_DUMP => {
             warn!("Unimplemented message {proc}");
             message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
@@ -83,7 +84,9 @@ where
     };
 
     debug!("mountproc3_mnt({xid},{utf8path})");
-    let path = if let Some(path) = utf8path.strip_prefix(context.export_name.as_ref()) {
+    let export_path = std::str::from_utf8(&context.export_path.0)
+        .expect("the configured export path was constructed from UTF-8");
+    let path = if let Some(path) = utf8path.strip_prefix(export_path) {
         path.trim_start_matches('/').trim_end_matches('/').trim()
     } else {
         // invalid export
@@ -142,26 +145,14 @@ where
 /// shared or exported file systems. These are the file
 /// systems which are made available to NFS version 3 protocol
 /// clients.
-async fn mountproc3_export<T>(
-    context: RPCContext<T>,
-    message: RpcCall,
-    args: Decoder,
-) -> anyhow::Result<RpcCallOutcome>
+async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> exports<'static, 'static>
 where
     T: crate::vfs::NfsFileSystem,
 {
-    let Ok(path) = dirpath::from_slice(context.export_name.as_bytes()).map(dirpath::into_owned)
-    else {
-        warn!("Configured export path exceeds the MOUNT path limit");
-        return message.into_error_reply(accept_stat_data::SYSTEM_ERR);
-    };
-    handle(context, message, args, async move |_, _, _: Void| {
-        List(vec![export_node {
-            ex_dir: path,
-            ex_groups: List::default(),
-        }])
-    })
-    .await
+    List(vec![export_node {
+        ex_dir: context.export_path,
+        ex_groups: List::default(),
+    }])
 }
 
 async fn mountproc3_umnt<T>(context: RPCContext<T>, xid: u32, path: dirpath<'_>) -> Void

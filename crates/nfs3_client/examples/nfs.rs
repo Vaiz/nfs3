@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let auth_unix = auth_unix::new(0xaaaa_aaaa, b"unknown", 0xffff_fffe, 0xffff_fffe, vec![])?;
-    let credential = opaque_auth::auth_unix(&auth_unix);
+    let credential = opaque_auth::auth_unix(&auth_unix)?;
 
     let mut connection = Nfs3ConnectionBuilder::new(TokioConnector, ip, mount_path)
         .portmapper_port(portmaper_port)
