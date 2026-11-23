@@ -37,7 +37,7 @@ The following Rust-specific tools are available through the MCP server and shoul
 - **`Rust-cargo-add`**: Add dependencies to Cargo.toml
 - **`Rust-cargo-remove`**: Remove dependencies from Cargo.toml
 - **`Rust-cargo-update`**: Update dependencies in Cargo.lock
-- **`Rust-cargo-machete`**: Find unused dependencies
+- **`cargo-unused-deps`**: Find unused and misplaced dependencies using nightly (no MCP wrapper available)
 - **`Rust-cargo-deny-check`**: Security and compliance checking
 
 ### Development Workflow
@@ -80,7 +80,7 @@ When working on code changes:
 4. **Format**: Use `Rust-cargo-fmt` with `all: true`
 5. **Test**: Use `Rust-cargo-test` with `all_features: true`
 6. **Build**: Use `Rust-cargo-build` with `all_targets: true, all_features: true` for final verification
-7. **Check unused dependencies**: Use `Rust-cargo-machete` to find unused dependencies
+7. **Check unused dependencies**: Load `.github/rust-toolchain.env` and run `cargo +"$RUSTFMT_TOOLCHAIN" unused-deps --workspace` to find unused and misplaced dependencies using the pinned nightly toolchain
 8. **Check security compliance**: Use `Rust-cargo-deny-check` to verify security and compliance
 
 ### 3. Dependency Management

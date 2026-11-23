@@ -40,8 +40,8 @@ jobs:
     - name: Install Rust MCP Server
       run: cargo quickinstall rust-mcp-server
 
-    - name: Install cargo-machete
-      run: cargo quickinstall --version "$CARGO_MACHETE_VERSION" cargo-machete
+    - name: Install cargo-unused-deps
+      run: cargo +"$RUSTFMT_TOOLCHAIN" install --locked --version "$CARGO_UNUSED_DEPS_VERSION" cargo-unused-deps
 
     - name: Install cargo-deny
       run: cargo quickinstall cargo-deny
