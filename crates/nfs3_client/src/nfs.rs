@@ -16,6 +16,11 @@ use crate::io::{AsyncRead, AsyncWrite};
 use crate::rpc::RpcClient;
 
 /// Client for the `NFSv3` service
+///
+/// If an operation is cancelled after I/O starts, subsequent calls fail with
+/// [`RpcError::ConnectionUnusable`] without accessing the transport. Create a
+/// new client on a new connection. An interrupted mutation may already have
+/// taken effect on the server.
 #[derive_where(Debug)]
 pub struct Nfs3Client<IO> {
     rpc: RpcClient<IO>,
