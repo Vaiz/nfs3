@@ -15,12 +15,13 @@ use tracing::{debug, info};
 use crate::context::{RPCContext, normalized_export_path, root_read_limit};
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::read_and_dispatch_loop;
-use crate::transaction_tracker::{Cleaner, TransactionTracker};
+use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::handle::FileHandleConverter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
 mod builder;
+pub(crate) mod listener;
 
 pub use builder::Builder;
 
@@ -98,7 +99,7 @@ pub trait NFSTcp: Send + Sync {
     /// and a "false" will be sent on an unmount
     fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>);
 
-    /// Loops forever and never returns handling all incoming connections.
+    /// Handles connections until cancelled, a fatal error occurs, or 16 consecutive accepts fail.
     fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
@@ -265,58 +266,5 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
         self.export_path =
             normalized_export_path(export_name.as_ref()).unwrap_or_else(|err| panic!("{err}"));
-    }
-}
-
-impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
-    /// Gets the true listening port. Useful if the bound port number is 0
-    fn get_listen_port(&self) -> u16 {
-        self.local_addr.port()
-    }
-
-    fn get_listen_ip(&self) -> IpAddr {
-        self.local_addr.ip()
-    }
-
-    /// Sets a mount listener. A "true" signal will be sent on a mount
-    /// and a "false" will be sent on an unmount
-    fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>) {
-        self.mount_signal = Some(signal);
-    }
-
-    /// Loops forever and never returns handling all incoming connections.
-    async fn handle_forever(&self) -> io::Result<()> {
-        let cleaner_future = Cleaner::new(
-            Arc::clone(&self.transaction_tracker),
-            Duration::from_secs(10),
-            Arc::clone(&self.stop_notify),
-        )
-        .run();
-        tokio::spawn(cleaner_future);
-
-        loop {
-            let (socket, _) = self.listener.accept().await?;
-            let context = RPCContext {
-                local_port: self.local_addr.port(),
-                client_addr: socket
-                    .peer_addr()
-                    .expect("failed to get peer address")
-                    .to_string(),
-                auth: nfs3_types::rpc::auth_unix::default(),
-                vfs: Arc::clone(&self.arcfs),
-                mount_signal: self.mount_signal.clone(),
-                export_path: self.export_path.clone(),
-                transaction_tracker: Arc::clone(&self.transaction_tracker),
-                read_limit: self.read_limit,
-                file_handle_converter: self.file_handle_converter,
-            };
-            info!("Accepting connection from {}", context.client_addr);
-            debug!("Accepting socket {:?} {:?}", socket, context);
-            let max_rpc_record_size = self.max_rpc_record_size;
-            tokio::spawn(async move {
-                let _ = socket.set_nodelay(true);
-                let _ = process_socket(socket, context, max_rpc_record_size).await;
-            });
-        }
     }
 }

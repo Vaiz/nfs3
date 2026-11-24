@@ -29,6 +29,7 @@ filetime = "0.2.25"
 future_assert = "0.1.0"
 intaglio = "1.13.3"
 jiff = { version = "1.0.1", default-features = false, features = ["std"] }
+libc = "0.2"
 metabench = "0.3.0"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
@@ -40,6 +41,7 @@ tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.20"
 tempfile = "3"
+windows-sys = "0.61"
 
 # https://microsoft.github.io/rust-guidelines/guidelines/universal/#clippy-lints
 [workspace.lints.clippy]
