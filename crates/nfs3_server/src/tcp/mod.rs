@@ -10,100 +10,24 @@ use nfs3_types::xdr_codec::BoundedOpaque;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::context::{RPCContext, normalized_export_path, root_read_limit};
 use crate::rpcwire::messages::RpcRecordReader;
 use crate::rpcwire::read_and_dispatch_loop;
-use crate::transaction_tracker::{Cleaner, TransactionTracker};
+use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::adapters::ReadOnlyAdapter;
 use crate::vfs::handle::FileHandleConverter;
 use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 
 mod builder;
+pub(crate) mod listener;
 
 pub use builder::Builder;
 
 // Shared budget for running RPC calls and completed replies waiting to be written.
 const REPLY_QUEUE_CAPACITY: usize = 16;
 static DEFAULT_EXPORT_PATH: dirpath<'static> = dirpath(BoundedOpaque::from_array(b"/"));
-
-enum AcceptAction {
-    RetryImmediately,
-    RetryWithBackoff,
-    Propagate,
-}
-
-fn classify_accept_error(err: &io::Error) -> AcceptAction {
-    if matches!(
-        err.kind(),
-        io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::ConnectionReset
-            | io::ErrorKind::Interrupted
-    ) {
-        return AcceptAction::RetryImmediately;
-    }
-
-    // Linux accept(2) can return pending network errors from the new socket.
-    #[cfg(target_os = "linux")]
-    if matches!(
-        err.raw_os_error(),
-        Some(
-            libc::ENETDOWN
-                | libc::EPROTO
-                | libc::ENOPROTOOPT
-                | libc::EHOSTDOWN
-                | libc::ENONET
-                | libc::EHOSTUNREACH
-                | libc::EOPNOTSUPP
-                | libc::ENETUNREACH
-        )
-    ) {
-        return AcceptAction::RetryImmediately;
-    }
-
-    if err.kind() == io::ErrorKind::OutOfMemory {
-        return AcceptAction::RetryWithBackoff;
-    }
-
-    #[cfg(unix)]
-    if matches!(
-        err.raw_os_error(),
-        Some(libc::EMFILE | libc::ENFILE | libc::ENOBUFS)
-    ) {
-        return AcceptAction::RetryWithBackoff;
-    }
-
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Networking::WinSock::{WSAEMFILE, WSAENOBUFS};
-        if matches!(err.raw_os_error(), Some(WSAEMFILE | WSAENOBUFS)) {
-            return AcceptAction::RetryWithBackoff;
-        }
-    }
-    AcceptAction::Propagate
-}
-
-pub(crate) async fn accept_with_retry<T, F: Future<Output = io::Result<T>>>(
-    mut accept: impl FnMut() -> F,
-) -> io::Result<T> {
-    let mut delay = Duration::from_millis(10);
-    loop {
-        let err = match accept().await {
-            Ok(connection) => return Ok(connection),
-            Err(err) => err,
-        };
-        match classify_accept_error(&err) {
-            AcceptAction::RetryImmediately => continue,
-            AcceptAction::RetryWithBackoff => {
-                warn!(%err, ?delay, "TCP accept failed; retrying");
-                tokio::time::sleep(delay).await;
-                delay = (delay * 2).min(Duration::from_secs(1));
-            }
-            AcceptAction::Propagate => return Err(err),
-        }
-    }
-}
 
 /// A NFS Tcp Connection Handler
 pub struct NFSTcpListener<T: NfsFileSystem + 'static> {
@@ -175,7 +99,7 @@ pub trait NFSTcp: Send + Sync {
     /// and a "false" will be sent on an unmount
     fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>);
 
-    /// Handles incoming connections until cancelled or a fatal listener error occurs.
+    /// Handles connections until cancelled, a fatal error occurs, or 16 consecutive accepts fail.
     fn handle_forever(&self) -> impl Future<Output = io::Result<()>> + Send;
 }
 
@@ -342,54 +266,5 @@ impl<T: NfsFileSystem + 'static> NFSTcpListener<T> {
     pub fn with_export_name<S: AsRef<str>>(&mut self, export_name: S) {
         self.export_path =
             normalized_export_path(export_name.as_ref()).unwrap_or_else(|err| panic!("{err}"));
-    }
-}
-
-impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
-    /// Gets the true listening port. Useful if the bound port number is 0
-    fn get_listen_port(&self) -> u16 {
-        self.local_addr.port()
-    }
-
-    fn get_listen_ip(&self) -> IpAddr {
-        self.local_addr.ip()
-    }
-
-    /// Sets a mount listener. A "true" signal will be sent on a mount
-    /// and a "false" will be sent on an unmount
-    fn set_mount_listener(&mut self, signal: mpsc::Sender<bool>) {
-        self.mount_signal = Some(signal);
-    }
-
-    async fn handle_forever(&self) -> io::Result<()> {
-        let cleaner_future = Cleaner::new(
-            Arc::clone(&self.transaction_tracker),
-            Duration::from_secs(10),
-            Arc::clone(&self.stop_notify),
-        )
-        .run();
-        tokio::spawn(cleaner_future);
-
-        loop {
-            let (socket, peer_addr) = accept_with_retry(|| self.listener.accept()).await?;
-            let context = RPCContext {
-                local_port: self.local_addr.port(),
-                client_addr: peer_addr.to_string(),
-                auth: nfs3_types::rpc::auth_unix::default(),
-                vfs: Arc::clone(&self.arcfs),
-                mount_signal: self.mount_signal.clone(),
-                export_path: self.export_path.clone(),
-                transaction_tracker: Arc::clone(&self.transaction_tracker),
-                read_limit: self.read_limit,
-                file_handle_converter: self.file_handle_converter,
-            };
-            info!("Accepting connection from {}", context.client_addr);
-            debug!("Accepting socket {:?} {:?}", socket, context);
-            let max_rpc_record_size = self.max_rpc_record_size;
-            tokio::spawn(async move {
-                let _ = socket.set_nodelay(true);
-                let _ = process_socket(socket, context, max_rpc_record_size).await;
-            });
-        }
     }
 }
