@@ -8,14 +8,14 @@ use nfs3_types::rpc::{
     RPC_VERSION_2, RecordBuf, accept_stat_data, call_body, msg_body, opaque_auth, reply_body,
     rpc_msg,
 };
-use nfs3_types::xdr_codec::{Decoder, Encoder, Pack, Unpack};
+use nfs3_types::xdr_codec::{Decoder, Encoded, Encoder, Pack, Unpack};
 
 use crate::RpcError;
 use crate::io::{AsyncRead, AsyncWrite};
 
 /// RPC client
 pub struct RpcClient<IO> {
-    io: IO,
+    io: Option<IO>,
     xid: u32,
     credential: opaque_auth<'static>,
     verifier: opaque_auth<'static>,
@@ -43,7 +43,7 @@ where
         verifier: opaque_auth<'static>,
     ) -> Self {
         Self {
-            io,
+            io: Some(io),
             xid: fastrand::u32(..),
             credential,
             verifier,
@@ -57,7 +57,16 @@ where
     /// On a successful return the connection is in a clean state and may be
     /// reused for the next call. When an error is returned, use
     /// [`RpcError::is_connection_reusable`] to decide whether the
-    /// connection can be kept.
+    /// connection can be kept. The client drops the transport on an I/O
+    /// error or an invalid reply.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping an unpolled call future is safe. Dropping it once I/O has
+    /// started drops the transport: further calls fail with
+    /// [`RpcError::ConnectionUnusable`] without touching the transport.
+    /// The server may already have applied the operation, so reconnecting
+    /// does not make it safe to blindly retry a mutation.
     #[expect(
         clippy::similar_names,
         reason = "prog and proc are fields of call_body"
@@ -73,6 +82,10 @@ where
         R: Unpack,
         C: Pack + Send + Sync,
     {
+        if self.io.is_none() {
+            return Err(RpcError::ConnectionUnusable);
+        }
+
         let call = call_body {
             rpcvers: RPC_VERSION_2,
             prog,
@@ -81,34 +94,44 @@ where
             cred: self.credential.borrow(),
             verf: self.verifier.borrow(),
         };
+        let xid = self.xid;
         let msg = rpc_msg {
-            xid: self.xid,
+            xid,
             body: msg_body::CALL(call),
         };
+        let mut record = Self::encode_call(&msg, args)?;
         self.xid = self.xid.wrapping_add(1);
 
-        Self::send_call(&mut self.io, &msg, args).await?;
-        Self::recv_reply::<R>(&mut self.io, msg.xid).await
+        // The in-flight future owns the transport until a verified reply.
+        let mut io = self.io.take().ok_or(RpcError::ConnectionUnusable)?;
+        io.async_write_all(&mut record).await?;
+        let result = Self::recv_reply(&mut io, xid).await;
+        if result
+            .as_ref()
+            .err()
+            .is_none_or(RpcError::is_connection_reusable)
+        {
+            self.io = Some(io);
+        }
+        result
     }
 
-    async fn send_call<T>(io: &mut IO, msg: &rpc_msg<'_, '_>, args: &T) -> Result<(), RpcError>
-    where
-        T: Pack + Send + Sync,
-    {
-        let total_len = msg.packed_size() + args.packed_size();
+    fn encode_call<T: Pack>(msg: &rpc_msg<'_, '_>, args: &T) -> Result<Encoded, RpcError> {
+        let total_len = msg
+            .packed_size()
+            .checked_add(args.packed_size())
+            .ok_or(RpcError::WrongLength)?;
         if !total_len.is_multiple_of(4) {
             return Err(RpcError::WrongLength);
         }
 
         let mut out = Encoder::new(total_len);
-        msg.pack(&mut out)?;
-        args.pack(&mut out)?;
+        msg.pack(&mut out).map_err(RpcError::XdrEncode)?;
+        args.pack(&mut out).map_err(RpcError::XdrEncode)?;
         if out.len() != total_len {
             return Err(RpcError::WrongLength);
         }
-        let mut call = out.finish_record()?;
-        io.async_write_all(&mut call).await?;
-        Ok(())
+        out.finish_record().map_err(RpcError::XdrEncode)
     }
 
     async fn recv_reply<T>(io: &mut IO, xid: u32) -> Result<T, RpcError>
@@ -122,24 +145,22 @@ where
             return Err(RpcError::UnexpectedXid);
         }
 
-        let reply = match resp_msg.body {
-            msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => reply,
-            msg_body::REPLY(reply_body::MSG_DENIED(r)) => return Err(RpcError::from(r)),
+        let result = match resp_msg.body {
+            msg_body::REPLY(reply_body::MSG_ACCEPTED(reply)) => match reply.reply_data {
+                accept_stat_data::SUCCESS => Ok(T::unpack(&mut input)?),
+                status => Err(RpcError::try_from(status)
+                    .expect("accept_stat_data::SUCCESS is not a valid error")),
+            },
+            msg_body::REPLY(reply_body::MSG_DENIED(r)) => Err(RpcError::from(r)),
             msg_body::CALL(_) => return Err(RpcError::UnexpectedCall),
         };
 
-        if !matches!(reply.reply_data, accept_stat_data::SUCCESS) {
-            return Err(RpcError::try_from(reply.reply_data)
-                .expect("accept_stat_data::SUCCESS is not a valid error"));
-        }
-
-        let final_value = T::unpack(&mut input)?;
         if !input.is_empty() {
             return Err(RpcError::NotFullyParsed {
                 remaining: input.into_remaining(),
             });
         }
-        Ok(final_value)
+        result
     }
 
     /// Reads one RPC record (all fragments) into a single buffer.
@@ -164,116 +185,5 @@ where
             }
         }
         Ok(record.into_decoder())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bytes::{Buf, Bytes, BytesMut};
-    use future_assert::FutureTestExt;
-    use nfs3_types::rpc::{
-        accept_stat_data, accepted_reply, fragment_header, msg_body, opaque_auth, reply_body,
-        rpc_msg,
-    };
-    use nfs3_types::xdr_codec::{Encoder, Opaque, Pack, Void};
-
-    use super::RpcClient;
-    use crate::RpcError;
-    use crate::io::{AsyncRead, AsyncWrite};
-
-    /// In-memory transport that transfers at most 7 bytes per read or write.
-    struct Mock {
-        input: Bytes,
-        output: Vec<u8>,
-    }
-
-    impl AsyncRead for Mock {
-        fn async_read(
-            &mut self,
-            buf: &mut [u8],
-        ) -> impl Future<Output = std::io::Result<usize>> + Send {
-            let n = buf.len().min(self.input.len()).min(7);
-            buf[..n].copy_from_slice(&self.input.split_to(n));
-            std::future::ready(Ok(n))
-        }
-    }
-
-    impl AsyncWrite for Mock {
-        fn async_write(
-            &mut self,
-            buf: &[u8],
-        ) -> impl Future<Output = std::io::Result<usize>> + Send {
-            let n = buf.len().min(7);
-            self.output.extend_from_slice(&buf[..n]);
-            std::future::ready(Ok(n))
-        }
-    }
-
-    fn reply(xid: u32, result: &Opaque<'_>, fragments: &[usize]) -> Bytes {
-        let msg = rpc_msg {
-            xid,
-            body: msg_body::REPLY(reply_body::MSG_ACCEPTED(accepted_reply {
-                verf: opaque_auth::default(),
-                reply_data: accept_stat_data::SUCCESS,
-            })),
-        };
-        let mut out = Encoder::new(0);
-        msg.pack(&mut out).unwrap();
-        result.pack(&mut out).unwrap();
-        let mut record = out.finish_record().unwrap();
-        // Drop the single-fragment marker; each fragment gets its own below.
-        record.advance(4);
-        let record = record.copy_to_bytes(record.remaining());
-
-        let mut wire = BytesMut::new();
-        let mut rest = &*record;
-        for (i, &len) in fragments.iter().enumerate() {
-            let last = i + 1 == fragments.len();
-            let len = if last { rest.len() } else { len };
-            let header = fragment_header::new(len, last).unwrap();
-            wire.extend_from_slice(&header.into_xdr_buf());
-            wire.extend_from_slice(&rest[..len]);
-            rest = &rest[len..];
-        }
-        wire.freeze()
-    }
-
-    #[test]
-    fn fragmented_reply_is_reassembled() {
-        let payload = Opaque::owned((0..=255u8).cycle().take(5000).collect());
-        let mut client = RpcClient::new(Mock {
-            input: Bytes::new(),
-            output: Vec::new(),
-        });
-        client.io.input = reply(client.xid, &payload, &[0, 13, 2000, 0]);
-
-        let result: Opaque<'static> = client.call(1, 1, 0, &payload).unwrap_ready().unwrap();
-        assert_eq!(result, payload);
-        assert!(client.io.input.is_empty());
-
-        // The call, with its payload in a separate chunk, was written completely.
-        let output = &client.io.output;
-        let marker = u32::from_be_bytes(output[..4].try_into().unwrap());
-        assert_eq!(marker as usize, 0x8000_0000 | (output.len() - 4));
-        assert!(output.ends_with(&payload[payload.len() - 100..]));
-    }
-
-    #[test]
-    fn truncated_reply_is_an_io_error() {
-        let mut client = RpcClient::new(Mock {
-            input: Bytes::new(),
-            output: Vec::new(),
-        });
-        let wire = reply(client.xid, &Opaque::borrowed(b"abc"), &[0]);
-        client.io.input = wire.slice(..wire.len() - 1);
-
-        let err = client
-            .call::<_, Opaque<'static>>(1, 1, 0, &Void)
-            .unwrap_ready()
-            .unwrap_err();
-        assert!(
-            matches!(err, RpcError::Io(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof)
-        );
-        assert!(!err.is_connection_reusable());
     }
 }

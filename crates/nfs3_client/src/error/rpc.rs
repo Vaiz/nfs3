@@ -18,8 +18,12 @@ use nfs3_types::rpc::{accept_stat_data, auth_stat, rejected_reply};
 pub enum RpcError {
     /// An I/O error occurred during network communication.
     Io(std::io::Error),
-    /// Failed to serialize or deserialize an XDR-encoded message.
-    Xdr(nfs3_types::xdr_codec::Error),
+    /// Failed to decode an XDR-encoded reply.
+    XdrDecode(nfs3_types::xdr_codec::Error),
+    /// Failed to encode the request before any I/O.
+    XdrEncode(nfs3_types::xdr_codec::Error),
+    /// A previous call caused the transport to be dropped; no I/O was attempted.
+    ConnectionUnusable,
     /// Received a CALL message when a REPLY was expected.
     UnexpectedCall,
     /// Server rejected the request due to an authentication failure.
@@ -31,7 +35,8 @@ pub enum RpcError {
         /// Highest supported RPC version.
         high: u32,
     },
-    /// The serialized RPC message length is not a multiple of 4 bytes.
+    /// The request length overflowed, was not a multiple of 4 bytes, or did
+    /// not match the serialized message.
     WrongLength,
     /// The reply XID does not match the request XID.
     UnexpectedXid,
@@ -61,7 +66,8 @@ impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(e) => e.fmt(f),
-            Self::Xdr(e) => e.fmt(f),
+            Self::XdrDecode(e) | Self::XdrEncode(e) => e.fmt(f),
+            Self::ConnectionUnusable => write!(f, "RPC connection is unusable"),
             Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
             Self::Auth(stat) => write!(f, "Authentication error: {stat}"),
             Self::RpcMismatch { low, high } => {
@@ -85,7 +91,7 @@ impl StdError for RpcError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io(e) => Some(e),
-            Self::Xdr(e) => Some(e),
+            Self::XdrDecode(e) | Self::XdrEncode(e) => Some(e),
             _ => None,
         }
     }
@@ -99,7 +105,7 @@ impl From<std::io::Error> for RpcError {
 
 impl From<nfs3_types::xdr_codec::Error> for RpcError {
     fn from(e: nfs3_types::xdr_codec::Error) -> Self {
-        Self::Xdr(e)
+        Self::XdrDecode(e)
     }
 }
 
@@ -131,17 +137,23 @@ impl RpcError {
     /// Returns `true` if the connection that produced this error is still in
     /// a clean state and may be reused for the next call.
     ///
-    /// Returns `false` only for [`Io`](Self::Io) (the transport is dead or
-    /// a reply was only partially read).
-    ///
-    /// All other errors — including [`Xdr`](Self::Xdr),
-    /// [`WrongLength`](Self::WrongLength), [`NotFullyParsed`](Self::NotFullyParsed),
-    /// and [`UnexpectedXid`](Self::UnexpectedXid) — are produced while
-    /// operating on in-memory buffers after the full record has already been
-    /// consumed from the wire, so the transport remains at a clean message
-    /// boundary.
+    /// Local request encoding errors and valid RPC error replies leave the
+    /// connection reusable. An I/O error, a reply that could not be decoded
+    /// completely or matched to the call, or an already unusable connection
+    /// requires a new connection.
     #[must_use]
     pub const fn is_connection_reusable(&self) -> bool {
-        !matches!(self, Self::Io(_))
+        matches!(
+            self,
+            Self::XdrEncode(_)
+                | Self::WrongLength
+                | Self::Auth(_)
+                | Self::RpcMismatch { .. }
+                | Self::ProgUnavail
+                | Self::ProgMismatch { .. }
+                | Self::ProcUnavail
+                | Self::GarbageArgs
+                | Self::SystemErr
+        )
     }
 }
