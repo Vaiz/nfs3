@@ -8,13 +8,14 @@ use crate::tcp::listener::accept_with_retry;
 
 #[test]
 fn accept_retries_without_delay() {
-    let mut errors = vec![
+    let errors = [
         ErrorKind::ConnectionAborted.into(),
         ErrorKind::ConnectionReset.into(),
         ErrorKind::Interrupted.into(),
-    ];
+    ]
+    .into_iter();
     #[cfg(target_os = "linux")]
-    errors.extend(
+    let errors = errors.chain(
         [
             libc::ENETDOWN,
             libc::EPROTO,
@@ -27,7 +28,7 @@ fn accept_retries_without_delay() {
         ]
         .map(Error::from_raw_os_error),
     );
-    let mut results = errors.into_iter().map(Err).chain([Ok(42)]);
+    let mut results = errors.map(Err).chain([Ok(42)]);
 
     let accepted = accept_with_retry(|| std::future::ready(results.next().unwrap())).unwrap_ready();
 
