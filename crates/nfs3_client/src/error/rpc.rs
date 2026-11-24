@@ -19,7 +19,7 @@ pub enum RpcError {
     /// An I/O error occurred during network communication.
     Io(std::io::Error),
     /// Failed to decode an XDR-encoded reply.
-    Xdr(nfs3_types::xdr_codec::Error),
+    XdrDecode(nfs3_types::xdr_codec::Error),
     /// Failed to encode the request before any I/O.
     XdrEncode(nfs3_types::xdr_codec::Error),
     /// A previous call caused the transport to be dropped; no I/O was attempted.
@@ -66,7 +66,7 @@ impl fmt::Display for RpcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(e) => e.fmt(f),
-            Self::Xdr(e) | Self::XdrEncode(e) => e.fmt(f),
+            Self::XdrDecode(e) | Self::XdrEncode(e) => e.fmt(f),
             Self::ConnectionUnusable => write!(f, "RPC connection is unusable"),
             Self::UnexpectedCall => write!(f, "Unexpected CALL request"),
             Self::Auth(stat) => write!(f, "Authentication error: {stat}"),
@@ -91,7 +91,7 @@ impl StdError for RpcError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io(e) => Some(e),
-            Self::Xdr(e) | Self::XdrEncode(e) => Some(e),
+            Self::XdrDecode(e) | Self::XdrEncode(e) => Some(e),
             _ => None,
         }
     }
@@ -105,7 +105,7 @@ impl From<std::io::Error> for RpcError {
 
 impl From<nfs3_types::xdr_codec::Error> for RpcError {
     fn from(e: nfs3_types::xdr_codec::Error) -> Self {
-        Self::Xdr(e)
+        Self::XdrDecode(e)
     }
 }
 
