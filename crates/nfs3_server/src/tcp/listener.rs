@@ -115,7 +115,6 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
             let context = RPCContext {
                 local_port: self.local_addr.port(),
                 client_addr: peer_addr.to_string(),
-                auth: nfs3_types::rpc::auth_unix::default(),
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
                 export_path: self.export_path.clone(),

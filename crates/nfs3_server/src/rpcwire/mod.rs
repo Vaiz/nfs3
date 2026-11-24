@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use call::{DecodedCall, RpcCall, RpcCallOutcome};
 use messages::RpcRecordReader;
-use nfs3_types::rpc::{accept_stat_data, auth_stat, call_body};
+use nfs3_types::rpc::{accept_stat_data, auth_flavor, auth_stat, auth_unix, call_body};
 use nfs3_types::xdr_codec::{Decoder, Encoded, Error, Pack, Unpack};
 use nfs3_types::{nfs3 as nfs, portmap};
 use tokio::io::AsyncRead;
@@ -25,7 +25,7 @@ const NFS_ID_MAP_PROGRAM: u32 = 100_270;
 const NFS_METADATA_PROGRAM: u32 = 200_024;
 
 pub(crate) async fn handle_rpc_message<T>(
-    mut context: RPCContext<T>,
+    context: RPCContext<T>,
     mut args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
 where
@@ -39,18 +39,26 @@ where
     let call = message.body();
     let prog = call.prog;
 
-    let unix = match context.set_auth(call) {
-        Ok(unix) => unix,
-        Err(err) => {
-            warn!("Invalid AUTH_SYS credential for XID {xid}: {err}");
-            return message.into_auth_error(auth_stat::AUTH_BADCRED);
+    let auth = if call.cred.flavor == auth_flavor::AUTH_UNIX {
+        match unpack_exact::<auth_unix>(Decoder::copying(call.cred.body.clone().into_bytes())) {
+            Ok(auth) => Some(auth),
+            Err(err) => {
+                warn!("Invalid AUTH_SYS credential for XID {xid}: {err}");
+                return message.into_auth_error(auth_stat::AUTH_BADCRED);
+            }
         }
+    } else {
+        None
     };
-    if prog != portmap::PROGRAM && !context.vfs.authorize(unix.then_some(&context.auth)) {
-        warn!(
-            "refusing a call from uid {} on {}",
-            context.auth.uid, context.client_addr
-        );
+    if prog != portmap::PROGRAM && !context.vfs.authorize(auth.as_ref()) {
+        if let Some(auth) = auth {
+            warn!(
+                "refusing a call from uid {} on {}",
+                auth.uid, context.client_addr
+            );
+        } else {
+            warn!("refusing a call on {}", context.client_addr);
+        }
         return message.into_auth_error(auth_stat::AUTH_TOOWEAK);
     }
 
