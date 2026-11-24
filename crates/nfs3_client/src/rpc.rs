@@ -15,9 +15,8 @@ use crate::io::{AsyncRead, AsyncWrite};
 
 /// RPC client
 pub struct RpcClient<IO> {
-    io: IO,
+    io: Option<IO>,
     xid: u32,
-    reusable: bool,
     credential: opaque_auth<'static>,
     verifier: opaque_auth<'static>,
 }
@@ -44,9 +43,8 @@ where
         verifier: opaque_auth<'static>,
     ) -> Self {
         Self {
-            io,
+            io: Some(io),
             xid: fastrand::u32(..),
-            reusable: true,
             credential,
             verifier,
         }
@@ -59,12 +57,13 @@ where
     /// On a successful return the connection is in a clean state and may be
     /// reused for the next call. When an error is returned, use
     /// [`RpcError::is_connection_reusable`] to decide whether the
-    /// connection can be kept.
+    /// connection can be kept. The client drops the transport on an I/O
+    /// error or an invalid reply.
     ///
     /// # Cancellation
     ///
     /// Dropping an unpolled call future is safe. Dropping it once I/O has
-    /// started leaves the connection unusable: further calls fail with
+    /// started drops the transport: further calls fail with
     /// [`RpcError::ConnectionUnusable`] without touching the transport.
     /// The server may already have applied the operation, so reconnecting
     /// does not make it safe to blindly retry a mutation.
@@ -83,7 +82,7 @@ where
         R: Unpack,
         C: Pack + Send + Sync,
     {
-        if !self.reusable {
+        if self.io.is_none() {
             return Err(RpcError::ConnectionUnusable);
         }
 
@@ -103,14 +102,17 @@ where
         let mut record = Self::encode_call(&msg, args)?;
         self.xid = self.xid.wrapping_add(1);
 
-        // Leave the connection unusable if this future is dropped at an await.
-        self.reusable = false;
-        self.io.async_write_all(&mut record).await?;
-        let result = Self::recv_reply(&mut self.io, xid).await;
-        self.reusable = result
+        // The in-flight future owns the transport until a verified reply.
+        let mut io = self.io.take().ok_or(RpcError::ConnectionUnusable)?;
+        io.async_write_all(&mut record).await?;
+        let result = Self::recv_reply(&mut io, xid).await;
+        if result
             .as_ref()
             .err()
-            .is_none_or(RpcError::is_connection_reusable);
+            .is_none_or(RpcError::is_connection_reusable)
+        {
+            self.io = Some(io);
+        }
         result
     }
 
@@ -191,6 +193,7 @@ mod tests {
     use std::future::poll_fn;
     use std::io;
     use std::pin::pin;
+    use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll, Waker};
 
     use bytes::{Buf, Bytes, BytesMut};
@@ -211,17 +214,32 @@ mod tests {
     struct Mock {
         input: Bytes,
         output: Vec<u8>,
-        reads: usize,
-        writes: usize,
+        stats: Arc<Mutex<IoStats>>,
         read_budget: Option<usize>,
         write_budget: Option<usize>,
         write_error: bool,
     }
 
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    struct IoStats {
+        reads: usize,
+        writes: usize,
+        bytes_read: usize,
+        bytes_written: usize,
+        dropped: bool,
+    }
+
+    impl Drop for Mock {
+        fn drop(&mut self) {
+            self.stats.lock().unwrap().dropped = true;
+        }
+    }
+
     impl AsyncRead for Mock {
         fn async_read(&mut self, buf: &mut [u8]) -> impl Future<Output = io::Result<usize>> + Send {
             poll_fn(move |_| {
-                self.reads += 1;
+                let mut stats = self.stats.lock().unwrap();
+                stats.reads += 1;
                 let mut n = buf.len().min(self.input.len()).min(7);
                 if let Some(budget) = &mut self.read_budget {
                     if *budget == 0 {
@@ -231,6 +249,7 @@ mod tests {
                     *budget -= n;
                 }
                 buf[..n].copy_from_slice(&self.input.split_to(n));
+                stats.bytes_read += n;
                 Poll::Ready(Ok(n))
             })
         }
@@ -239,7 +258,8 @@ mod tests {
     impl AsyncWrite for Mock {
         fn async_write(&mut self, buf: &[u8]) -> impl Future<Output = io::Result<usize>> + Send {
             poll_fn(move |_| {
-                self.writes += 1;
+                let mut stats = self.stats.lock().unwrap();
+                stats.writes += 1;
                 if self.write_error {
                     return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
                 }
@@ -252,6 +272,7 @@ mod tests {
                     *budget -= n;
                 }
                 self.output.extend_from_slice(&buf[..n]);
+                stats.bytes_written += n;
                 Poll::Ready(Ok(n))
             })
         }
@@ -276,6 +297,10 @@ mod tests {
         record.copy_to_bytes(record.remaining())
     }
 
+    fn set_reply(client: &mut RpcClient<Mock>, body: msg_body<'_, '_>, result: &impl Pack) {
+        client.io.as_mut().unwrap().input = wire_record(client.xid, body, result);
+    }
+
     fn reply(xid: u32, result: &Opaque<'_>, fragments: &[usize]) -> Bytes {
         let mut record = encode_record(xid, accepted(accept_stat_data::SUCCESS), result);
         // Drop the single-fragment marker; each fragment gets its own below.
@@ -296,14 +321,13 @@ mod tests {
     }
 
     fn assert_unusable_without_io(client: &mut RpcClient<Mock>) {
-        let counts = (client.io.reads, client.io.writes);
+        assert!(client.io.is_none());
         let error = client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
             .unwrap_err();
         assert!(matches!(error, RpcError::ConnectionUnusable));
         assert!(!error.is_connection_reusable());
-        assert_eq!((client.io.reads, client.io.writes), counts);
     }
 
     fn cancel_pending(future: impl Future) {
@@ -315,30 +339,35 @@ mod tests {
     }
 
     #[test]
-    fn dropped_partial_write_prevents_further_io() {
-        let mut client = RpcClient::new(Mock {
-            write_budget: Some(5),
-            ..Mock::default()
-        });
+    fn dropped_partial_write_drops_transport() {
+        let mut io = Mock::default();
+        io.write_budget = Some(5);
+        let stats = Arc::clone(&io.stats);
+        let mut client = RpcClient::new(io);
         cancel_pending(client.call::<_, Void>(1, 1, 0, &Void));
-        assert_eq!(client.io.output.len(), 5);
-        assert_eq!(client.io.reads, 0);
+        let after_cancel = *stats.lock().unwrap();
+        assert!(after_cancel.dropped);
+        assert_eq!(after_cancel.bytes_written, 5);
+        assert_eq!(after_cancel.reads, 0);
         assert_unusable_without_io(&mut client);
+        assert_eq!(*stats.lock().unwrap(), after_cancel);
     }
 
     #[test]
-    fn dropped_partial_read_prevents_further_io() {
+    fn dropped_partial_read_drops_transport() {
         // Interrupt once in the record marker and once in the reply body.
         for read_budget in [2, 9] {
-            let mut client = RpcClient::new(Mock {
-                read_budget: Some(read_budget),
-                ..Mock::default()
-            });
-            let wire = wire_record(client.xid, accepted(accept_stat_data::SUCCESS), &Void);
-            client.io.input = wire.clone();
+            let mut io = Mock::default();
+            io.read_budget = Some(read_budget);
+            let stats = Arc::clone(&io.stats);
+            let mut client = RpcClient::new(io);
+            set_reply(&mut client, accepted(accept_stat_data::SUCCESS), &Void);
             cancel_pending(client.call::<_, Void>(1, 1, 0, &Void));
-            assert_eq!(client.io.input, wire.slice(read_budget..));
+            let after_cancel = *stats.lock().unwrap();
+            assert!(after_cancel.dropped);
+            assert_eq!(after_cancel.bytes_read, read_budget);
             assert_unusable_without_io(&mut client);
+            assert_eq!(*stats.lock().unwrap(), after_cancel);
         }
     }
 
@@ -370,9 +399,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, RpcError::XdrEncode(_)));
         assert!(error.is_connection_reusable());
-        assert_eq!((client.io.reads, client.io.writes), (0, 0));
+        let io = client.io.as_ref().unwrap();
+        assert_eq!(*io.stats.lock().unwrap(), IoStats::default());
 
-        client.io.input = wire_record(client.xid, accepted(accept_stat_data::SUCCESS), &Void);
+        set_reply(&mut client, accepted(accept_stat_data::SUCCESS), &Void);
         client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
@@ -382,7 +412,7 @@ mod tests {
     #[test]
     fn valid_error_replies_preserve_connection() {
         let mut client = RpcClient::new(Mock::default());
-        client.io.input = wire_record(client.xid, accepted(accept_stat_data::PROC_UNAVAIL), &Void);
+        set_reply(&mut client, accepted(accept_stat_data::PROC_UNAVAIL), &Void);
         let error = client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
@@ -394,7 +424,7 @@ mod tests {
             low: 2,
             high: 2,
         }));
-        client.io.input = wire_record(client.xid, denied, &Void);
+        set_reply(&mut client, denied, &Void);
         let error = client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
@@ -403,14 +433,14 @@ mod tests {
         assert!(error.is_connection_reusable());
 
         let result = GETATTR3res::Err((nfsstat3::NFS3ERR_NOENT, Void));
-        client.io.input = wire_record(client.xid, accepted(accept_stat_data::SUCCESS), &result);
+        set_reply(&mut client, accepted(accept_stat_data::SUCCESS), &result);
         let result: GETATTR3res = client.call(1, 1, 0, &Void).unwrap_ready().unwrap();
         assert!(matches!(
             result,
             GETATTR3res::Err((nfsstat3::NFS3ERR_NOENT, Void))
         ));
 
-        client.io.input = wire_record(client.xid, accepted(accept_stat_data::SUCCESS), &Void);
+        set_reply(&mut client, accepted(accept_stat_data::SUCCESS), &Void);
         client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
@@ -428,7 +458,7 @@ mod tests {
             })),
         ] {
             let mut client = RpcClient::new(Mock::default());
-            client.io.input = wire_record(client.xid, body, &42u32);
+            set_reply(&mut client, body, &42u32);
             let error = client
                 .call::<_, Void>(1, 1, 0, &Void)
                 .unwrap_ready()
@@ -444,7 +474,8 @@ mod tests {
     #[test]
     fn invalid_or_mismatched_reply_prevents_further_io() {
         let mut client = RpcClient::new(Mock::default());
-        client.io.input = wire_record(client.xid, accepted(accept_stat_data::SUCCESS), &Void);
+        set_reply(&mut client, accepted(accept_stat_data::SUCCESS), &Void);
+        let stats = Arc::clone(&client.io.as_ref().unwrap().stats);
         let error = client
             .call::<_, u32>(1, 1, 0, &Void)
             .unwrap_ready()
@@ -454,10 +485,11 @@ mod tests {
             RpcError::Xdr(xdr_codec::Error::UnexpectedEof)
         ));
         assert!(!error.is_connection_reusable());
+        assert!(stats.lock().unwrap().dropped);
         assert_unusable_without_io(&mut client);
 
         let mut client = RpcClient::new(Mock::default());
-        client.io.input = wire_record(
+        client.io.as_mut().unwrap().input = wire_record(
             client.xid.wrapping_add(1),
             accepted(accept_stat_data::PROC_UNAVAIL),
             &Void,
@@ -471,8 +503,8 @@ mod tests {
         assert_unusable_without_io(&mut client);
 
         let mut client = RpcClient::new(Mock::default());
-        client.io.input = wire_record(
-            client.xid,
+        set_reply(
+            &mut client,
             msg_body::CALL(call_body {
                 rpcvers: 2,
                 prog: 1,
@@ -494,16 +526,17 @@ mod tests {
 
     #[test]
     fn write_failure_prevents_further_io() {
-        let mut client = RpcClient::new(Mock {
-            write_error: true,
-            ..Mock::default()
-        });
+        let mut io = Mock::default();
+        io.write_error = true;
+        let stats = Arc::clone(&io.stats);
+        let mut client = RpcClient::new(io);
         let error = client
             .call::<_, Void>(1, 1, 0, &Void)
             .unwrap_ready()
             .unwrap_err();
         assert!(matches!(error, RpcError::Io(ref e) if e.kind() == io::ErrorKind::BrokenPipe));
         assert!(!error.is_connection_reusable());
+        assert!(stats.lock().unwrap().dropped);
         assert_unusable_without_io(&mut client);
     }
 
@@ -511,14 +544,15 @@ mod tests {
     fn fragmented_reply_is_reassembled() {
         let payload = Opaque::owned((0..=255u8).cycle().take(5000).collect());
         let mut client = RpcClient::new(Mock::default());
-        client.io.input = reply(client.xid, &payload, &[0, 13, 2000, 0]);
+        client.io.as_mut().unwrap().input = reply(client.xid, &payload, &[0, 13, 2000, 0]);
 
         let result: Opaque<'static> = client.call(1, 1, 0, &payload).unwrap_ready().unwrap();
         assert_eq!(result, payload);
-        assert!(client.io.input.is_empty());
+        let io = client.io.as_ref().unwrap();
+        assert!(io.input.is_empty());
 
         // The call, with its payload in a separate chunk, was written completely.
-        let output = &client.io.output;
+        let output = &io.output;
         let marker = u32::from_be_bytes(output[..4].try_into().unwrap());
         assert_eq!(marker as usize, 0x8000_0000 | (output.len() - 4));
         assert!(output.ends_with(&payload[payload.len() - 100..]));
@@ -528,7 +562,8 @@ mod tests {
     fn truncated_reply_is_an_io_error() {
         let mut client = RpcClient::new(Mock::default());
         let wire = reply(client.xid, &Opaque::borrowed(b"abc"), &[0]);
-        client.io.input = wire.slice(..wire.len() - 1);
+        client.io.as_mut().unwrap().input = wire.slice(..wire.len() - 1);
+        let stats = Arc::clone(&client.io.as_ref().unwrap().stats);
 
         let err = client
             .call::<_, Opaque<'static>>(1, 1, 0, &Void)
@@ -536,6 +571,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, RpcError::Io(ref e) if e.kind() == io::ErrorKind::UnexpectedEof));
         assert!(!err.is_connection_reusable());
+        assert!(stats.lock().unwrap().dropped);
         assert_unusable_without_io(&mut client);
     }
 }

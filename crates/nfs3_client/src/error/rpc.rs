@@ -22,7 +22,7 @@ pub enum RpcError {
     Xdr(nfs3_types::xdr_codec::Error),
     /// Failed to encode the request before any I/O.
     XdrEncode(nfs3_types::xdr_codec::Error),
-    /// A previous call left the connection unusable; no I/O was attempted.
+    /// A previous call caused the transport to be dropped; no I/O was attempted.
     ConnectionUnusable,
     /// Received a CALL message when a REPLY was expected.
     UnexpectedCall,
