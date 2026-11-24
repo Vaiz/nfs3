@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use derive_where::derive_where;
 use nfs3_types::mount::{MNTPATHLEN, dirpath};
-use nfs3_types::rpc::{auth_flavor, auth_unix, call_body};
-use nfs3_types::xdr_codec::{BoundedOpaque, Decoder, Error};
+use nfs3_types::xdr_codec::BoundedOpaque;
 use tokio::sync::mpsc;
 
-use crate::rpcwire::unpack_exact;
 use crate::transaction_tracker::TransactionTracker;
 use crate::vfs::NfsFileSystem;
 use crate::vfs::handle::FileHandleConverter;
@@ -15,8 +13,6 @@ use crate::vfs::handle::FileHandleConverter;
 pub struct RPCContext<T: NfsFileSystem> {
     pub local_port: u16,
     pub client_addr: String,
-    // TODO: should it be removed from this struct?
-    pub auth: auth_unix,
     #[derive_where(skip(Debug))]
     pub vfs: Arc<T>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
@@ -49,19 +45,6 @@ pub(crate) async fn root_read_limit(vfs: &impl NfsFileSystem) -> std::io::Result
         .map_err(|status| std::io::Error::other(format!("root FSINFO failed: {status}")))
 }
 
-impl<T: NfsFileSystem> RPCContext<T> {
-    /// Decodes the call's `AUTH_UNIX` credential into `auth`.
-    ///
-    /// Returns whether the call uses `AUTH_UNIX`.
-    pub(crate) fn set_auth(&mut self, call: &call_body) -> Result<bool, Error> {
-        if call.cred.flavor != auth_flavor::AUTH_UNIX {
-            return Ok(false);
-        }
-        self.auth = unpack_exact(Decoder::copying(call.cred.body.clone().into_bytes()))?;
-        Ok(true)
-    }
-}
-
 #[doc(hidden)]
 #[cfg(feature = "__test_reexports")]
 impl<T> RPCContext<T>
@@ -73,7 +56,6 @@ where
         Ok(Self {
             local_port: 2049,
             client_addr: "localhost".to_owned(),
-            auth: auth_unix::default(),
             vfs,
             mount_signal: None,
             export_path: normalized_export_path(export_name)?,
