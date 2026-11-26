@@ -72,7 +72,7 @@ impl RecordBuf {
             !self.last && self.buf.len() == self.fragment_end,
             "previous fragment is incomplete or was the last"
         );
-        if self.fragments == MAX_FRAGMENTS {
+        if self.fragments >= MAX_FRAGMENTS {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "RPC record exceeds the fragment count limit",
