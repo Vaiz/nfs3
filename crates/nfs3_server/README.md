@@ -54,6 +54,9 @@ a service. The interface generally not difficult to implement; demanding mainly
 the ability to associate every file system object (directory/file) with a 64-bit
 ID. Directory listing can be a bit complicated due to the pagination requirements.
 
+Incoming RPC records are limited to 256 fragments, including empty and final
+fragments. Exceeding this fixed limit closes the connection.
+
 Relevant RFCs
 =============
  - XDR is the message format: [RFC 1014](https://datatracker.ietf.org/doc/html/rfc1014).

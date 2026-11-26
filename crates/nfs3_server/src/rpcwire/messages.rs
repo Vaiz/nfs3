@@ -35,7 +35,8 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
 
     /// Reads an RPC record, returning `Ok(None)` only at EOF between records.
     ///
-    /// A partial record or a record exceeding the configured payload limit is an error.
+    /// A partial record, a record exceeding the configured payload limit, or a
+    /// record with more than 256 fragments is an error.
     pub(crate) async fn read_record(&mut self) -> io::Result<Option<Decoder>> {
         if self.read_ahead.is_empty() && self.fill_read_ahead().await? == 0 {
             return Ok(None);

@@ -2,6 +2,9 @@
 
 `nfs3_client` is a Rust crate that provides an asynchronous client implementation for interacting with `NFSv3` servers. It includes functionality for connecting to NFS servers, performing various NFS operations, and handling the underlying RPC communication.
 
+Incoming RPC records are limited to 256 fragments, including empty and final
+fragments. Exceeding this fixed limit returns an I/O error and discards the connection.
+
 ## Features
 
 This crate supports multiple async runtimes via feature flags:
