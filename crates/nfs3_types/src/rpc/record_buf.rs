@@ -19,7 +19,7 @@ const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
 /// [Linux's `SVC_TCP_MAX_FRAGS`](https://github.com/torvalds/linux/blob/47439bb1635e8dd9245e876c2046b66a9b6f9400/net/sunrpc/svcsock.c)
 /// uses 256 as a per-socket-lock processing budget and resumes later. Here the
 /// same value is a per-record limit: excess fragments are rejected.
-const MAX_FRAGMENTS: usize = 256;
+const MAX_FRAGMENTS: u16 = 256;
 
 /// Receive buffer that reassembles one RPC record (RFC 5531 record marking).
 ///
@@ -39,7 +39,7 @@ const MAX_FRAGMENTS: usize = 256;
 pub struct RecordBuf {
     buf: BytesMut,
     fragment_end: usize,
-    fragments: usize,
+    fragments: u16,
     last: bool,
     max_len: usize,
 }
