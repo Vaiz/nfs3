@@ -154,7 +154,14 @@ fn excessive_reply_fragments_drop_transport() {
         .call::<_, Void>(1, 1, 0, &Void)
         .unwrap_ready()
         .expect_err("reply exceeds the fragment count limit");
-    assert!(matches!(err, RpcError::Io(ref err) if err.kind() == io::ErrorKind::InvalidData));
+    let RpcError::Io(err) = err else {
+        panic!("expected a fragment-limit I/O error, got {err:?}");
+    };
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(
+        err.to_string(),
+        "RPC record exceeds the fragment count limit"
+    );
     assert_eq!(
         progress.lock().expect("read transport progress").read,
         257 * 4

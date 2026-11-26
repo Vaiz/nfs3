@@ -236,6 +236,33 @@ async fn tcp_fragment_limit_closes_only_the_offending_connection() -> anyhow::Re
 }
 
 #[tokio::test]
+async fn server_returns_fragment_limit_error() -> anyhow::Result<()> {
+    let (socket, mut client) = tokio::io::duplex(257 * 4);
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let server = Server::new(socket, fs).await?;
+    let (result, client_result) = timeout(Duration::from_secs(5), async {
+        tokio::join!(server.run(), async {
+            client.write_all(&[0; 257 * 4]).await?;
+            assert_eq!(client.read(&mut [0; 4]).await?, 0);
+            Ok::<_, io::Error>(())
+        })
+    })
+    .await
+    .context("server did not reject excessive fragments")?;
+    client_result?;
+    let err = result.expect_err("excessive fragments must fail");
+    let err = err
+        .downcast_ref::<io::Error>()
+        .context("expected a fragment-limit I/O error")?;
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(
+        err.to_string(),
+        "RPC record exceeds the fragment count limit"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
     // The one-byte capacity forces the server to consume part of any marker
     // prefix written below before the client's write can complete.

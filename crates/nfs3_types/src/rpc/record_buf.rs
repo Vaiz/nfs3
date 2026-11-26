@@ -211,6 +211,10 @@ mod tests {
             for marker in [[0; 4], [0x80, 0, 0, 0], [0, 0, 0, 1], [0x80, 0, 0, 1]] {
                 let err = record.start_fragment(marker).unwrap_err();
                 assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+                assert_eq!(
+                    err.to_string(),
+                    "RPC record exceeds the fragment count limit"
+                );
                 assert!(!record.is_complete());
                 assert!(record.buf_mut().is_none());
             }
