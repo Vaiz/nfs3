@@ -1,8 +1,8 @@
 use crate::nfs3_types::nfs3::{
-    cookie3, entry3, entryplus3, fattr3, fileid3, filename3, nfsstat3, post_op_attr, post_op_fh3,
+    cookie3, entry3, entryplus3, fattr3, fileid3, filename3, nfs_fh3, nfsstat3, post_op_attr,
+    post_op_fh3,
 };
 use crate::vfs::FileHandle;
-use crate::vfs::handle::FileHandleConverter;
 
 /// Same as `entry3`
 pub type DirEntry = entry3<'static>;
@@ -18,7 +18,7 @@ pub struct DirEntryPlus<H: FileHandle> {
 }
 
 impl<H: FileHandle> DirEntryPlus<H> {
-    pub(crate) fn into_entry(self, converter: &FileHandleConverter) -> entryplus3<'static> {
+    pub(crate) fn into_entry(self, encode: impl FnOnce(&H) -> nfs_fh3) -> entryplus3<'static> {
         entryplus3 {
             fileid: self.fileid,
             name: self.name,
@@ -26,9 +26,9 @@ impl<H: FileHandle> DirEntryPlus<H> {
             name_attributes: self
                 .name_attributes
                 .map_or(post_op_attr::None, post_op_attr::Some),
-            name_handle: self.name_handle.map_or(post_op_fh3::None, |h| {
-                post_op_fh3::Some(converter.fh_to_nfs(&h))
-            }),
+            name_handle: self
+                .name_handle
+                .map_or(post_op_fh3::None, |h| post_op_fh3::Some(encode(&h))),
         }
     }
 }

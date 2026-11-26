@@ -26,12 +26,13 @@ pub(crate) mod handle;
 mod iterator;
 
 use bytes::Bytes;
-pub use handle::{FileHandle, FileHandleBytes, FileHandleU64};
+pub use handle::{FileHandle, FileHandleBytes, FileHandleConverter, FileHandleU64};
 pub use iterator::*;
 
+use crate::nfs3_types::mount::mountstat3;
 use crate::nfs3_types::nfs3::{
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
+    filename3, nfs_fh3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
 };
 use crate::nfs3_types::rpc::auth_unix;
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -63,6 +64,48 @@ pub trait NfsReadFileSystem: Send + Sync {
     fn authorize(&self, auth: Option<&auth_unix>) -> bool {
         let _ = auth;
         true
+    }
+
+    /// Encodes a handle into an on-the-wire [`nfs_fh3`].
+    fn encode_handle(&self, converter: &FileHandleConverter, handle: &Self::Handle) -> nfs_fh3 {
+        converter.fh_to_nfs(handle)
+    }
+
+    /// Decodes an on-the-wire [`nfs_fh3`] into a handle.
+    fn decode_handle(
+        &self,
+        converter: &FileHandleConverter,
+        fh: &nfs_fh3,
+    ) -> Result<Self::Handle, nfsstat3> {
+        converter.fh_from_nfs(fh)
+    }
+
+    /// Resolves a `MOUNTPROC3_MNT` request for `path` against `export_name`.
+    ///
+    /// Implementations may override this to enforce one-shot mounts, export
+    /// rotation, or custom mount authorization.
+    fn mount(
+        &self,
+        export_name: &str,
+        path: &str,
+        exact_export_match: bool,
+    ) -> impl Future<Output = Result<Self::Handle, mountstat3>> + Send {
+        async move {
+            let rel = if exact_export_match {
+                if path == export_name {
+                    ""
+                } else {
+                    return Err(mountstat3::MNT3ERR_NOENT);
+                }
+            } else if let Some(rest) = path.strip_prefix(export_name) {
+                rest.trim_start_matches('/').trim_end_matches('/').trim()
+            } else {
+                return Err(mountstat3::MNT3ERR_NOENT);
+            };
+            self.lookup_by_path(rel)
+                .await
+                .map_err(|_status| mountstat3::MNT3ERR_NOENT)
+        }
     }
 
     /// Look up the id of a path in a directory
@@ -331,4 +374,32 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         offset: u64,
         count: u32,
     ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
+}
+
+#[cfg(all(test, feature = "memfs"))]
+mod tests {
+    use super::*;
+    use crate::memfs::{MemFs, MemFsConfig};
+
+    #[tokio::test]
+    async fn default_mount_respects_exact_export_match() {
+        let mut config = MemFsConfig::default();
+        config.add_dir("/sub");
+        let fs = MemFs::new(config).expect("create test filesystem");
+
+        fs.mount("/export", "/export", true)
+            .await
+            .expect("exact export match should succeed");
+        assert!(matches!(
+            fs.mount("/export", "/export/sub", true).await,
+            Err(mountstat3::MNT3ERR_NOENT)
+        ));
+        fs.mount("/export", "/export/sub", false)
+            .await
+            .expect("subpath mount should succeed when exact match is disabled");
+        assert!(matches!(
+            fs.mount("/export", "/other", false).await,
+            Err(mountstat3::MNT3ERR_NOENT)
+        ));
+    }
 }

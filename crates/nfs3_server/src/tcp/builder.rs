@@ -16,6 +16,8 @@ use crate::vfs::{NfsFileSystem, NfsReadFileSystem};
 pub struct Builder<FS = ()> {
     fs: FS,
     export_path: io::Result<dirpath<'static>>,
+    hide_exports: bool,
+    exact_export_match: bool,
     generation_number: Option<u64>,
     max_rpc_record_size: Option<NonZeroUsize>,
 }
@@ -25,6 +27,8 @@ impl Default for Builder {
         Self {
             fs: (),
             export_path: Ok(DEFAULT_EXPORT_PATH.clone()),
+            hide_exports: false,
+            exact_export_match: false,
             generation_number: None,
             max_rpc_record_size: None,
         }
@@ -42,6 +46,8 @@ impl Builder {
         Builder {
             fs,
             export_path: self.export_path,
+            hide_exports: self.hide_exports,
+            exact_export_match: self.exact_export_match,
             generation_number: self.generation_number,
             max_rpc_record_size: self.max_rpc_record_size,
         }
@@ -64,6 +70,19 @@ impl<FS> Builder<FS> {
     /// [`Builder::bind`] rejects normalized paths longer than 1,024 bytes.
     pub fn export_name(mut self, name: impl AsRef<str>) -> Self {
         self.export_path = normalized_export_path(name.as_ref());
+        self
+    }
+
+    /// Makes `MOUNTPROC3_EXPORT` return an empty export list so the export path is not disclosed.
+    pub const fn hidden_exports(mut self) -> Self {
+        self.hide_exports = true;
+        self
+    }
+
+    /// Requires `MOUNTPROC3_MNT` to match the configured export path verbatim,
+    /// refusing subpath and prefix mounts.
+    pub const fn exact_export_match(mut self) -> Self {
+        self.exact_export_match = true;
         self
     }
 
@@ -103,6 +122,8 @@ impl<T: NfsFileSystem + 'static> Builder<T> {
             listener,
             self.fs,
             export_path,
+            self.hide_exports,
+            self.exact_export_match,
             self.generation_number,
             self.max_rpc_record_size,
         )

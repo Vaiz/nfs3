@@ -91,17 +91,15 @@ where
             return mountres3::Err(mountstat3::MNT3ERR_SERVERFAULT);
         }
     };
-    let path = if let Some(path) = utf8path.strip_prefix(export_path) {
-        path.trim_start_matches('/').trim_end_matches('/').trim()
-    } else {
-        // invalid export
-        debug!("{xid} --> no matching export");
-        return mountres3::Err(mountstat3::MNT3ERR_NOENT);
-    };
-
-    match context.vfs.lookup_by_path(path).await {
+    match context
+        .vfs
+        .mount(export_path, utf8path, context.exact_export_match)
+        .await
+    {
         Ok(fileid) => {
-            let root = context.file_handle_converter.fh_to_nfs(&fileid);
+            let root = context
+                .vfs
+                .encode_handle(&context.file_handle_converter, &fileid);
             let response = mountres3_ok {
                 fhandle: fhandle3(root.data),
                 auth_flavors: BoundedVec::from_array([
@@ -115,9 +113,9 @@ where
             }
             mountres3::Ok(response)
         }
-        Err(e) => {
-            debug!("{xid} --> MNT3ERR_NOENT({e:?})");
-            mountres3::Err(mountstat3::MNT3ERR_NOENT)
+        Err(stat) => {
+            debug!("{xid} --> {stat:?}");
+            mountres3::Err(stat)
         }
     }
 }
@@ -157,6 +155,9 @@ async fn mountproc3_export<T>(context: RPCContext<T>, _: u32, _: Void) -> export
 where
     T: crate::vfs::NfsFileSystem,
 {
+    if context.hide_exports {
+        return List::default();
+    }
     List(vec![export_node {
         ex_dir: context.export_path,
         ex_groups: List::default(),

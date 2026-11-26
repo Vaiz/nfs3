@@ -174,7 +174,13 @@ impl FileHandleConverter {
         }
     }
 
-    pub(crate) fn fh_to_nfs(&self, id: &impl FileHandle) -> nfs_fh3 {
+    /// Encodes a VFS handle into an on-the-wire [`nfs_fh3`] with the generation prefix.
+    #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "FileHandleBytes is bounded to 56 bytes, so generation + handle always fits in 64 bytes"
+    )]
+    pub fn fh_to_nfs(&self, id: &impl FileHandle) -> nfs_fh3 {
         let bytes = id.as_bytes();
         let bytes = bytes.as_ref();
         let mut data = [0; NFS3_FHSIZE];
@@ -189,7 +195,8 @@ impl FileHandleConverter {
         }
     }
 
-    pub(crate) fn fh_from_nfs<FH>(&self, id: &nfs_fh3) -> Result<FH, nfsstat3>
+    /// Decodes an on-the-wire [`nfs_fh3`] after checking its generation prefix.
+    pub fn fh_from_nfs<FH>(&self, id: &nfs_fh3) -> Result<FH, nfsstat3>
     where
         FH: FileHandle,
     {
@@ -224,6 +231,7 @@ impl FileHandleConverter {
     /// consistent during a single boot session and must be
     /// unique between instances of the NFS version 3 protocol
     /// server where uncommitted data may be lost.
+    #[must_use]
     pub const fn verf(&self) -> writeverf3 {
         writeverf3(self.generation_number_le)
     }

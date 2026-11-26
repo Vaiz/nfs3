@@ -118,6 +118,8 @@ impl<T: NfsFileSystem + 'static> NFSTcp for NFSTcpListener<T> {
                 vfs: Arc::clone(&self.arcfs),
                 mount_signal: self.mount_signal.clone(),
                 export_path: self.export_path.clone(),
+                hide_exports: self.hide_exports,
+                exact_export_match: self.exact_export_match,
                 transaction_tracker: Arc::clone(&self.transaction_tracker),
                 read_limit: self.read_limit,
                 file_handle_converter: self.file_handle_converter,
