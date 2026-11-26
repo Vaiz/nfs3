@@ -35,7 +35,8 @@ impl<R: AsyncRead + Unpin> RpcRecordReader<R> {
 
     /// Reads an RPC record, returning `Ok(None)` only at EOF between records.
     ///
-    /// A partial record or a record exceeding the configured payload limit is an error.
+    /// A partial record, a record exceeding the configured payload limit, or a
+    /// record with more than 256 fragments is an error.
     pub(crate) async fn read_record(&mut self) -> io::Result<Option<Decoder>> {
         if self.read_ahead.is_empty() && self.fill_read_ahead().await? == 0 {
             return Ok(None);
@@ -146,6 +147,31 @@ mod tests {
                 .into_remaining(),
             b"abcd"[..],
         );
+    }
+
+    #[test]
+    fn fragment_count_limit_resets_between_records() {
+        let mut input = Vec::new();
+        for payload in [b"a", b"b"] {
+            input.extend_from_slice(&[0; 255 * 4]);
+            input.extend(fragment(payload, true));
+        }
+        let mut reader = RpcRecordReader::new(input.as_slice(), None);
+        for expected in [b"a", b"b"] {
+            let record = reader.read_record().unwrap_ready().unwrap().unwrap();
+            assert_eq!(record.into_remaining(), expected[..]);
+        }
+        assert!(reader.read_record().unwrap_ready().unwrap().is_none());
+    }
+
+    #[test]
+    fn excessive_fragments_rejected_before_processing_payload() {
+        let mut input = vec![0; 256 * 4];
+        input.extend(fragment(b"payload", true));
+        let mut reader = RpcRecordReader::new(input.as_slice(), NonZeroUsize::new(7));
+        let err = reader.read_record().unwrap_ready().unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(reader.read_ahead, b"payload"[..]);
     }
 
     #[test]

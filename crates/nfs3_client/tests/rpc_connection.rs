@@ -141,6 +141,28 @@ fn cancel_pending(call: impl Future) {
 }
 
 #[test]
+fn excessive_reply_fragments_drop_transport() {
+    let mut transport = Transport::default();
+    transport.replies.push_back(Box::new(|xid| {
+        let mut reply = vec![0; 256 * 4];
+        reply.extend_from_slice(&success(xid));
+        reply.into()
+    }));
+    let progress = Arc::clone(&transport.progress);
+    let mut client = RpcClient::new(transport);
+    let err = client
+        .call::<_, Void>(1, 1, 0, &Void)
+        .unwrap_ready()
+        .expect_err("reply exceeds the fragment count limit");
+    assert!(matches!(err, RpcError::Io(ref err) if err.kind() == io::ErrorKind::InvalidData));
+    assert_eq!(
+        progress.lock().expect("read transport progress").read,
+        257 * 4
+    );
+    assert_unusable(&mut client, &progress);
+}
+
+#[test]
 fn cancelling_partial_io_drops_transport() {
     for (write_limit, read_limit) in [(Some(5), None), (None, Some(2)), (None, Some(9))] {
         let mut transport = Transport::default();

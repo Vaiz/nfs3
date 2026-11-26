@@ -14,7 +14,17 @@ use crate::xdr_codec::Decoder;
 /// in one allocation.
 const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
 
+/// Bounds framing work even when fragments carry no payload.
+///
+/// [Linux's `SVC_TCP_MAX_FRAGS`](https://github.com/torvalds/linux/blob/47439bb1635e8dd9245e876c2046b66a9b6f9400/net/sunrpc/svcsock.c)
+/// uses 256 as a per-socket-lock processing budget and resumes later. Here the
+/// same value is a per-record limit: excess fragments are rejected.
+const MAX_FRAGMENTS: usize = 256;
+
 /// Receive buffer that reassembles one RPC record (RFC 5531 record marking).
+///
+/// Records may contain at most 256 fragments, including empty and final
+/// fragments. This is an implementation limit, not an RFC requirement.
 ///
 /// The caller does the I/O: it passes each fragment marker to
 /// [`start_fragment`](Self::start_fragment), appends the fragment data to
@@ -29,6 +39,7 @@ const EAGER_RESERVE: usize = 1024 * 1024 + 4096;
 pub struct RecordBuf {
     buf: BytesMut,
     fragment_end: usize,
+    fragments: usize,
     last: bool,
     max_len: usize,
 }
@@ -40,6 +51,7 @@ impl RecordBuf {
         Self {
             buf: BytesMut::new(),
             fragment_end: 0,
+            fragments: 0,
             last: false,
             max_len,
         }
@@ -50,7 +62,7 @@ impl RecordBuf {
     /// # Errors
     ///
     /// Fails with [`io::ErrorKind::InvalidData`] if the record would exceed the
-    /// size limit.
+    /// size limit or contain more than 256 fragments.
     ///
     /// # Panics
     ///
@@ -60,6 +72,12 @@ impl RecordBuf {
             !self.last && self.buf.len() == self.fragment_end,
             "previous fragment is incomplete or was the last"
         );
+        if self.fragments == MAX_FRAGMENTS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "RPC record exceeds the fragment count limit",
+            ));
+        }
         let header = fragment_header::from(marker);
         self.fragment_end = self
             .buf
@@ -73,6 +91,7 @@ impl RecordBuf {
                 )
             })?;
         self.last = header.eof();
+        self.fragments += 1;
         Ok(())
     }
 
@@ -158,6 +177,44 @@ mod tests {
         assert!(record.buf_mut().is_none());
         assert!(record.is_complete());
         assert_eq!(record.into_decoder().into_remaining(), b""[..]);
+    }
+
+    #[test]
+    fn accepts_final_fragment_at_the_count_limit() {
+        for payload_len in [0, 1] {
+            let mut record = RecordBuf::new(usize::MAX);
+            for _ in 0..255 {
+                record.start_fragment([0, 0, 0, payload_len]).unwrap();
+                if let Some(mut buf) = record.buf_mut() {
+                    buf.put_u8(b'a');
+                }
+            }
+            record.start_fragment([0x80, 0, 0, 1]).unwrap();
+            record.buf_mut().unwrap().put_u8(b'b');
+            assert!(record.is_complete());
+            let mut expected = vec![b'a'; 255 * usize::from(payload_len)];
+            expected.push(b'b');
+            assert_eq!(record.into_decoder().into_remaining(), expected);
+        }
+    }
+
+    #[test]
+    fn rejects_excessive_fragments_even_with_no_payload() {
+        for payload_len in [0, 1] {
+            let mut record = RecordBuf::new(usize::MAX);
+            for _ in 0..256 {
+                record.start_fragment([0, 0, 0, payload_len]).unwrap();
+                if let Some(mut buf) = record.buf_mut() {
+                    buf.put_u8(b'a');
+                }
+            }
+            for marker in [[0; 4], [0x80, 0, 0, 0], [0, 0, 0, 1], [0x80, 0, 0, 1]] {
+                let err = record.start_fragment(marker).unwrap_err();
+                assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+                assert!(!record.is_complete());
+                assert!(record.buf_mut().is_none());
+            }
+        }
     }
 
     #[test]
