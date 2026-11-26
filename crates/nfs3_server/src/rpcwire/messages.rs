@@ -150,31 +150,6 @@ mod tests {
     }
 
     #[test]
-    fn fragment_count_limit_resets_between_records() {
-        let mut input = Vec::new();
-        for payload in [b"a", b"b"] {
-            input.extend_from_slice(&[0; 255 * 4]);
-            input.extend(fragment(payload, true));
-        }
-        let mut reader = RpcRecordReader::new(input.as_slice(), None);
-        for expected in [b"a", b"b"] {
-            let record = reader.read_record().unwrap_ready().unwrap().unwrap();
-            assert_eq!(record.into_remaining(), expected[..]);
-        }
-        assert!(reader.read_record().unwrap_ready().unwrap().is_none());
-    }
-
-    #[test]
-    fn excessive_fragments_rejected_before_processing_payload() {
-        let mut input = vec![0; 256 * 4];
-        input.extend(fragment(b"payload", true));
-        let mut reader = RpcRecordReader::new(input.as_slice(), NonZeroUsize::new(7));
-        let err = reader.read_record().unwrap_ready().unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(reader.read_ahead, b"payload"[..]);
-    }
-
-    #[test]
     fn truncated_records_are_not_clean_eof() {
         for truncated in [&b"\x80"[..], &b"\x80\0\0\x02a"[..], &b"\0\0\0\0"[..]] {
             let err = RpcRecordReader::new(truncated, None)

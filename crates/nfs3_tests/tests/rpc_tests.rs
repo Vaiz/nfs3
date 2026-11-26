@@ -180,6 +180,62 @@ async fn tcp_listener_enforces_rpc_record_payload_limit() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
+async fn tcp_fragment_limit_closes_only_the_offending_connection() -> anyhow::Result<()> {
+    async fn null_call(stream: &mut TcpStream, xid: u32) -> anyhow::Result<()> {
+        stream.write_all(&null_call_record(xid)?).await?;
+        let mut marker = [0; 4];
+        stream.read_exact(&mut marker).await?;
+        let header = fragment_header::from(marker);
+        assert!(header.eof());
+        let mut payload = vec![0; header.fragment_length() as usize];
+        stream.read_exact(&mut payload).await?;
+        let reply = rpc_msg::unpack(&mut Decoder::copying(payload))?;
+        check_reply_header(xid, &reply)
+    }
+
+    let fs = MemFs::new(MemFsConfig::default()).expect("initialize the test filesystem");
+    let listener = Builder::new()
+        .filesystem(fs)
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await?;
+    let addr = SocketAddr::new(listener.get_listen_ip(), listener.get_listen_port());
+
+    let clients = async {
+        let mut healthy = TcpStream::connect(addr).await?;
+        null_call(&mut healthy, 1).await?;
+        let mut offending = TcpStream::connect(addr).await?;
+        for xid in [2, 3] {
+            offending.write_all(&[0; 255 * 4]).await?;
+            null_call(&mut offending, xid).await?;
+        }
+
+        offending.write_all(&[0; 256 * 4]).await?;
+        // The 257th marker alone must close the connection without waiting
+        // for its advertised payload or a final fragment.
+        let marker = fragment_header::new(1, false)?;
+        offending.write_all(&marker.into_xdr_buf()).await?;
+        assert_eq!(offending.read(&mut [0; 4]).await?, 0);
+
+        null_call(&mut healthy, 4).await?;
+        let mut fresh = TcpStream::connect(addr).await?;
+        null_call(&mut fresh, 5).await?;
+        Ok::<_, anyhow::Error>(())
+    };
+
+    timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = clients => result,
+            result = listener.handle_forever() => {
+                result?;
+                bail!("TCP listener stopped early");
+            }
+        }
+    })
+    .await
+    .context("TCP listener did not enforce the fragment limit")?
+}
+
+#[tokio::test]
 async fn socket_reads_and_writes_progress_independently() -> anyhow::Result<()> {
     // The one-byte capacity forces the server to consume part of any marker
     // prefix written below before the client's write can complete.
