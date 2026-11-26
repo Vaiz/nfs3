@@ -374,8 +374,6 @@ async fn test_symlink() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_mknod() -> Result<(), anyhow::Error> {
-    use nfs3_client::RpcError;
-
     let mut client = TestContext::setup_ro().await;
     let root = client.root_dir().clone();
 
@@ -387,12 +385,12 @@ async fn test_mknod() -> Result<(), anyhow::Error> {
             },
             what: mknoddata3::NF3FIFO(sattr3::default()),
         })
-        .await;
+        .await?;
 
     tracing::info!("{mknod:?}");
     assert!(
-        matches!(mknod, Err(RpcError::ProcUnavail)),
-        "Expected ProcUnavail error"
+        matches!(mknod, MKNOD3res::Err((nfsstat3::NFS3ERR_ROFS, _))),
+        "Expected NFS3ERR_ROFS error, got: {mknod:?}"
     );
 
     client.shutdown().await
@@ -541,8 +539,6 @@ async fn test_rename() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn test_link() -> Result<(), anyhow::Error> {
-    use nfs3_client::RpcError;
-
     let mut client = TestContext::setup_ro().await;
     let root = client.root_dir().clone();
 
@@ -554,11 +550,11 @@ async fn test_link() -> Result<(), anyhow::Error> {
                 name: b"new_link".as_slice().into(),
             },
         })
-        .await;
+        .await?;
 
     assert!(
-        matches!(link, Err(RpcError::ProcUnavail)),
-        "Expected ProcUnavail error"
+        matches!(link, LINK3res::Err((nfsstat3::NFS3ERR_ROFS, _))),
+        "Expected NFS3ERR_ROFS error, got: {link:?}"
     );
 
     client.shutdown().await

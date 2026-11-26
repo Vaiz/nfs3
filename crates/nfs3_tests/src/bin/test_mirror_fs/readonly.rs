@@ -861,10 +861,9 @@ pub async fn mknod_readonly_error(ctx: &mut TestContext, _subdir: PathBuf, subdi
         .await;
 
     match mknod_result {
-        Err(nfs3_client::RpcError::ProcUnavail) => {}
+        Ok(nfs3_client::nfs3_types::nfs3::MKNOD3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {}
         _ => panic!(
-            "Expected RpcError::ProcUnavail error for mknod on readonly filesystem, got: \
-             {mknod_result:?}"
+            "Expected NFS3ERR_ROFS error for mknod on readonly filesystem, got: {mknod_result:?}"
         ),
     }
 }
@@ -991,10 +990,9 @@ pub async fn link_readonly_error(ctx: &mut TestContext, subdir: PathBuf, subdir_
         .await;
 
     match link_result {
-        Err(nfs3_client::RpcError::ProcUnavail) => {}
+        Ok(nfs3_client::nfs3_types::nfs3::LINK3res::Err((nfsstat3::NFS3ERR_ROFS, _))) => {}
         _ => panic!(
-            "Expected RpcError::ProcUnavail error for link on readonly filesystem, got: \
-             {link_result:?}"
+            "Expected NFS3ERR_ROFS error for link on readonly filesystem, got: {link_result:?}"
         ),
     }
 }
