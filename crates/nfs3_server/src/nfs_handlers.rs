@@ -78,10 +78,8 @@ where
         NFSPROC3_SYMLINK => handle(context, message, args, nfsproc3_symlink).await,
         NFSPROC3_READLINK => handle(context, message, args, nfsproc3_readlink).await,
         NFSPROC3_COMMIT => handle(context, message, args, nfsproc3_commit).await,
-        NFSPROC3_MKNOD | NFSPROC3_LINK => {
-            warn!("Unimplemented message {proc}");
-            message.into_error_reply(accept_stat_data::PROC_UNAVAIL)
-        }
+        NFSPROC3_MKNOD => handle(context, message, args, nfsproc3_mknod).await,
+        NFSPROC3_LINK => handle(context, message, args, nfsproc3_link).await,
     }
 }
 
@@ -999,6 +997,41 @@ where
             READLINK3res::Err((stat, READLINK3resfail { symlink_attributes }))
         }
     }
+}
+
+async fn nfsproc3_mknod<T>(context: RPCContext<T>, _xid: u32, _args: MKNOD3args<'_>) -> MKNOD3res
+where
+    T: NfsFileSystem,
+{
+    let stat = if matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+        nfsstat3::NFS3ERR_NOTSUPP
+    } else {
+        nfsstat3::NFS3ERR_ROFS
+    };
+    MKNOD3res::Err((
+        stat,
+        MKNOD3resfail {
+            dir_wcc: wcc_data::default(),
+        },
+    ))
+}
+
+async fn nfsproc3_link<T>(context: RPCContext<T>, _xid: u32, _args: LINK3args<'_>) -> LINK3res
+where
+    T: NfsFileSystem,
+{
+    let stat = if matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
+        nfsstat3::NFS3ERR_NOTSUPP
+    } else {
+        nfsstat3::NFS3ERR_ROFS
+    };
+    LINK3res::Err((
+        stat,
+        LINK3resfail {
+            file_attributes: post_op_attr::None,
+            linkdir_wcc: wcc_data::default(),
+        },
+    ))
 }
 
 fn nfs_option_from_result<T: Pack + Unpack, E>(result: Result<T, E>) -> Nfs3Option<T> {
