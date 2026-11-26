@@ -6,7 +6,9 @@ mod iterator;
 
 use bytes::Bytes;
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::nfs3::{FSINFO3resok, fattr3, filename3, nfsstat3, post_op_attr, sattr3};
+use nfs3_types::nfs3::{
+    FSINFO3resok, cookieverf3, fattr3, filename3, nfsstat3, post_op_attr, sattr3,
+};
 
 use super::{
     DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
@@ -103,6 +105,55 @@ where
             Ok((mut attr, target)) => {
                 remove_write_permissions_post_op(&mut attr);
                 Ok((attr, target))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
+    }
+
+    async fn readdirplus_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<
+        (
+            post_op_attr,
+            cookieverf3,
+            impl ReadDirPlusIterator<Self::Handle>,
+        ),
+        (nfsstat3, post_op_attr),
+    > {
+        match self
+            .0
+            .readdirplus_verf(dirid, cookie, cookieverf, auth)
+            .await
+        {
+            Ok((mut attr, verf, iter)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, verf, ReadOnlyIterator(iter)))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
+    }
+
+    async fn readdir_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<(post_op_attr, cookieverf3, impl ReadDirIterator), (nfsstat3, post_op_attr)> {
+        match self.0.readdir_verf(dirid, cookie, cookieverf, auth).await {
+            Ok((mut attr, verf, iter)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, verf, iter))
             }
             Err((stat, mut attr)) => {
                 remove_write_permissions_post_op(&mut attr);

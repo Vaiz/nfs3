@@ -29,10 +29,12 @@ use bytes::Bytes;
 pub use handle::{FileHandle, FileHandleBytes, FileHandleU64};
 pub use iterator::*;
 
+use crate::nfs_ext::CookieVerfExt;
 use crate::nfs3_types::nfs3::{
     ACCESS3_DELETE, ACCESS3_EXECUTE, ACCESS3_EXTEND, ACCESS3_LOOKUP, ACCESS3_MODIFY, ACCESS3_READ,
-    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    filename3, ftype3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
+    FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, cookieverf3,
+    createverf3, fattr3, filename3, ftype3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3,
+    stable_how,
 };
 use crate::nfs3_types::rpc::auth_unix;
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -148,6 +150,66 @@ pub trait NfsReadFileSystem: Send + Sync {
             match self.readlink(id).await {
                 Ok(target) => Ok((attr, target)),
                 Err(stat) => Err((stat, attr)),
+            }
+        }
+    }
+
+    /// Validates `cookieverf` and opens a `READDIRPLUS` iterator, returning
+    /// `(dir_attr, nonzero_cookieverf, iter)`.
+    fn readdirplus_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&auth_unix>,
+    ) -> impl Future<
+        Output = Result<
+            (
+                post_op_attr,
+                cookieverf3,
+                impl ReadDirPlusIterator<Self::Handle>,
+            ),
+            (nfsstat3, post_op_attr),
+        >,
+    > + Send {
+        let _ = auth;
+        async move {
+            let dir_attr = self
+                .getattr(dirid)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
+            let expected = validate_cookieverf(&dir_attr, cookie, cookieverf)?;
+            match self.readdirplus(dirid, cookie).await {
+                Ok(iter) => Ok((dir_attr, expected, iter)),
+                Err(stat) => Err((stat, dir_attr)),
+            }
+        }
+    }
+
+    /// Validates `cookieverf` and opens a `READDIR` iterator, returning
+    /// `(dir_attr, nonzero_cookieverf, iter)`.
+    fn readdir_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&auth_unix>,
+    ) -> impl Future<
+        Output = Result<
+            (post_op_attr, cookieverf3, impl ReadDirIterator),
+            (nfsstat3, post_op_attr),
+        >,
+    > + Send {
+        let _ = auth;
+        async move {
+            let dir_attr = self
+                .getattr(dirid)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
+            let expected = validate_cookieverf(&dir_attr, cookie, cookieverf)?;
+            match self.readdir(dirid, cookie).await {
+                Ok(iter) => Ok((dir_attr, expected, iter)),
+                Err(stat) => Err((stat, dir_attr)),
             }
         }
     }
@@ -420,6 +482,21 @@ pub trait NfsFileSystem: NfsReadFileSystem {
     ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
 }
 
+fn validate_cookieverf(
+    dir_attr: &post_op_attr,
+    cookie: u64,
+    cookieverf: cookieverf3,
+) -> Result<cookieverf3, (nfsstat3, post_op_attr)> {
+    let mut expected = cookieverf3::from_attr(dir_attr);
+    if expected.is_none() {
+        expected = cookieverf3::SOME_COOKIE_VERF;
+    }
+    if (cookie != 0 || !cookieverf.is_none()) && cookieverf != expected {
+        return Err((nfsstat3::NFS3ERR_BAD_COOKIE, dir_attr.clone()));
+    }
+    Ok(expected)
+}
+
 /// Computes POSIX `ACCESS` bits from `attr`, `auth`, and filesystem capabilities.
 #[must_use]
 pub fn posix_access(
@@ -586,5 +663,28 @@ mod tests {
             ),
             ACCESS3_READ | ACCESS3_LOOKUP | ACCESS3_MODIFY | ACCESS3_EXTEND | ACCESS3_DELETE
         );
+    }
+
+    #[test]
+    fn validate_cookieverf_emits_nonzero_and_rejects_mismatch() {
+        let zero_mtime_dir = post_op_attr::Some(make_attr(ftype3::NF3DIR, 0o755, 0, 0));
+        let verf = validate_cookieverf(&zero_mtime_dir, 0, cookieverf3::NONE_COOKIE_VERF)
+            .expect("initial call succeeds");
+        assert!(!verf.is_none());
+        assert_eq!(verf, cookieverf3::SOME_COOKIE_VERF);
+
+        assert_eq!(
+            validate_cookieverf(&zero_mtime_dir, 1, verf).expect("matching continuation succeeds"),
+            verf
+        );
+
+        let err = validate_cookieverf(&zero_mtime_dir, 1, cookieverf3::NONE_COOKIE_VERF)
+            .expect_err("nonzero cookie with zero verifier must fail");
+        assert_eq!(err.0, nfsstat3::NFS3ERR_BAD_COOKIE);
+
+        let wrong_verf = cookieverf3([1; 8]);
+        let err = validate_cookieverf(&zero_mtime_dir, 0, wrong_verf)
+            .expect_err("mismatched verifier must fail");
+        assert_eq!(err.0, nfsstat3::NFS3ERR_BAD_COOKIE);
     }
 }

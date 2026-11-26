@@ -1,9 +1,3 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "The directory handlers check for errors before unwrapping. FIXME: Remove this \
-              suppression after refactoring the directory handlers."
-)]
-
 #[cfg_attr(
     not(test),
     expect(
@@ -17,7 +11,7 @@ use nfs3_types::xdr_codec::{BoundedList, Decoder, Opaque, Pack, Unpack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
-use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
+use crate::nfs_ext::BoundedEntryPlusList;
 use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
 use crate::rpcwire::{handle, handle_with_auth};
 use crate::units::{GIBIBYTE, TEBIBYTE};
@@ -68,8 +62,10 @@ where
         NFSPROC3_ACCESS => handle_with_auth(context, auth, message, args, nfsproc3_access).await,
         NFSPROC3_PATHCONF => handle(context, message, args, nfsproc3_pathconf).await,
         NFSPROC3_FSSTAT => handle(context, message, args, nfsproc3_fsstat).await,
-        NFSPROC3_READDIR => handle(context, message, args, nfsproc3_readdir).await,
-        NFSPROC3_READDIRPLUS => handle(context, message, args, nfsproc3_readdirplus).await,
+        NFSPROC3_READDIR => handle_with_auth(context, auth, message, args, nfsproc3_readdir).await,
+        NFSPROC3_READDIRPLUS => {
+            handle_with_auth(context, auth, message, args, nfsproc3_readdirplus).await
+        }
         NFSPROC3_WRITE => handle(context, message, args, nfsproc3_write).await,
         NFSPROC3_CREATE => handle(context, message, args, nfsproc3_create).await,
         NFSPROC3_SETATTR => handle(context, message, args, nfsproc3_setattr).await,
@@ -295,6 +291,7 @@ where
 
 async fn nfsproc3_readdirplus<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     xid: u32,
     args: READDIRPLUS3args,
 ) -> READDIRPLUS3res<'static>
@@ -304,93 +301,29 @@ where
     use crate::vfs::ReadDirPlusIterator;
 
     let dirid = fh_to_id!(context, &args.dir);
-    let dir_attr_maybe = context.vfs.getattr(&dirid).await;
-
-    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
-
-    let dirversion = cookieverf3::from_attr(&dir_attributes);
-    debug!(" -- Dir attr {dir_attributes:?}");
-    debug!(" -- Dir version {dirversion:?}");
-    let has_version = args.cookieverf.is_some();
-    // initial call should have empty cookie verf
-    // subsequent calls should have cvf_version as defined above
-    // which is based off the mtime.
-    //
-    // TODO: This is *far* too aggressive. and unnecessary.
-    // The client should maintain this correctly typically.
-    //
-    // The way cookieverf is handled is quite interesting...
-    //
-    // There are 2 notes in the RFC of interest:
-    // 1. If the
-    // server detects that the cookie is no longer valid, the
-    // server will reject the READDIR request with the status,
-    // NFS3ERR_BAD_COOKIE. The client should be careful to
-    // avoid holding directory entry cookies across operations
-    // that modify the directory contents, such as REMOVE and
-    // CREATE.
-    //
-    // 2. One implementation of the cookie-verifier mechanism might
-    //  be for the server to use the modification time of the
-    //  directory. This might be overly restrictive, however. A
-    //  better approach would be to record the time of the last
-    //  directory modification that changed the directory
-    //  organization in a way that would make it impossible to
-    //  reliably interpret a cookie. Servers in which directory
-    //  cookies are always valid are free to use zero as the
-    //  verifier always.
-    //
-    //  Basically, as long as the cookie is "kinda" intepretable,
-    //  we should keep accepting it.
-    //  On testing, the Mac NFS client pretty much expects that
-    //  especially on highly concurrent modifications to the directory.
-    //
-    //  1. If part way through a directory enumeration we fail with BAD_COOKIE
-    //  if the directory contents change, the client listing may fail resulting
-    //  in a "no such file or directory" error.
-    //  2. if we cache readdir results. i.e. we think of a readdir as two parts a. enumerating
-    //     everything first b. the cookie is then used to paginate the enumeration we can run into
-    //     file time synchronization issues. i.e. while one listing occurs and another file is
-    //     touched, the listing may report an outdated file status.
-    //
-    //     This cache also appears to have to be *quite* long lasting
-    //     as the client may hold on to a directory enumerator
-    //     with unbounded time.
-    //
-    //  Basically, if we think about how linux directory listing works
-    //  is that you just get an enumerator. There is no mechanic available for
-    //  "restarting" a pagination and this enumerator is assumed to be valid
-    //  even across directory modifications and should reflect changes
-    //  immediately.
-    //
-    //  The best solution is simply to really completely avoid sending
-    //  BAD_COOKIE all together and to ignore the cookie mechanism.
-    //
-    // if args.cookieverf != cookieverf3::default() && args.cookieverf != dirversion {
-    // info!(" -- Dir version mismatch. Received {:?}", args.cookieverf);
-    // make_success_reply(xid).pack(output)?;
-    // nfsstat3::NFS3ERR_BAD_COOKIE.pack(output)?;
-    // dir_attr.pack(output)?;
-    // return Ok(());
-    // }
 
     // subtract off the final entryplus* field (which must be false) and the eof
     if args.maxcount < 128 {
         // we have no space to write anything
+        let dir_attributes = nfs_option_from_result(context.vfs.getattr(&dirid).await);
         let stat = nfsstat3::NFS3ERR_TOOSMALL;
         error!("readdirplus error {xid} --> {stat}");
         return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
     }
     let max_bytes_allowed = args.maxcount as usize - 128;
 
-    let iter = context.vfs.readdirplus(&dirid, args.cookie).await;
+    let (dir_attributes, dirversion, mut iter) = match context
+        .vfs
+        .readdirplus_verf(&dirid, args.cookie, args.cookieverf, auth.as_ref())
+        .await
+    {
+        Ok(ok) => ok,
+        Err((stat, dir_attributes)) => {
+            error!("readdirplus error {xid} --> {stat}");
+            return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
+        }
+    };
 
-    if let Err(stat) = iter {
-        error!("readdirplus error {xid} --> {stat}");
-        return READDIRPLUS3res::Err((stat, READDIRPLUS3resfail { dir_attributes }));
-    }
-
-    let mut iter = iter.unwrap();
     let eof;
 
     // this is a wrapper around a writer that also just counts the number of bytes
@@ -427,8 +360,7 @@ where
 
     debug!("  -- readdirplus eof {eof}");
     debug!(
-        "readdirplus {dirid:?}, has_version {has_version}, start at {}, flushing {} entries, \
-         complete {eof}",
+        "readdirplus {dirid:?}, start at {}, flushing {} entries, complete {eof}",
         args.cookie,
         entries.0.len()
     );
@@ -442,6 +374,7 @@ where
 
 async fn nfsproc3_readdir<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     xid: u32,
     readdir3args: READDIR3args,
 ) -> READDIR3res<'static>
@@ -451,28 +384,22 @@ where
     use crate::vfs::ReadDirIterator;
 
     let dirid = fh_to_id!(context, &readdir3args.dir);
-    let dir_attr_maybe = context.vfs.getattr(&dirid).await;
-    let dir_attributes = dir_attr_maybe.map_or(post_op_attr::None, post_op_attr::Some);
-    let cookieverf = cookieverf3::from_attr(&dir_attributes);
-
-    if readdir3args.cookieverf.is_none() {
-        if readdir3args.cookie != 0 {
-            warn!(
-                " -- Invalid cookie. Expected 0, got {}",
-                readdir3args.cookie
-            );
-            return READDIR3res::Err((nfsstat3::NFS3ERR_BAD_COOKIE, READDIR3resfail::default()));
-        }
-        debug!(" -- Start of readdir");
-    } else if readdir3args.cookieverf != cookieverf {
-        warn!(
-            " -- Dir version mismatch. Received {:?}, Expected: {cookieverf:?}",
+    let (dir_attributes, cookieverf, mut iter) = match context
+        .vfs
+        .readdir_verf(
+            &dirid,
+            readdir3args.cookie,
             readdir3args.cookieverf,
-        );
-        return READDIR3res::Err((nfsstat3::NFS3ERR_BAD_COOKIE, READDIR3resfail::default()));
-    } else {
-        debug!(" -- Resuming readdir. Cookie {}", readdir3args.cookie);
-    }
+            auth.as_ref(),
+        )
+        .await
+    {
+        Ok(ok) => ok,
+        Err((stat, dir_attributes)) => {
+            warn!("readdir error {xid} --> {stat}");
+            return READDIR3res::Err((stat, READDIR3resfail { dir_attributes }));
+        }
+    };
 
     debug!(" -- Dir attr {dir_attributes:?}");
     debug!(" -- Dir version {cookieverf:?}");
@@ -495,17 +422,6 @@ where
     }
     let max_bytes_allowed = readdir3args.count as usize - empty_len;
 
-    let iter = context.vfs.readdir(&dirid, readdir3args.cookie).await;
-    if let Err(stat) = iter {
-        return READDIR3res::Err((
-            stat,
-            READDIR3resfail {
-                dir_attributes: resok.dir_attributes,
-            },
-        ));
-    }
-
-    let mut iter = iter.unwrap();
     let mut entries = BoundedList::new(max_bytes_allowed);
     let eof;
     loop {
