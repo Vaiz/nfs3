@@ -18,6 +18,9 @@ bytes.workspace = true
 
 derive-where.workspace = true
 
+[dev-dependencies]
+uuid.workspace = true
+
 [package.metadata.cargo-machete]
 ignored = ["byteorder"]
 
