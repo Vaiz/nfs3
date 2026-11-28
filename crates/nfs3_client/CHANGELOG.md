@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.9.1...nfs3_client-v0.10.0) - 2026-11-28
+
+### Added
+
+- [**breaking**] bytes-based XDR codec with shared READ/WRITE payloads ([#187](https://github.com/Vaiz/nfs3/pull/187))
+- simplify standard trait implementations with derive-where ([#188](https://github.com/Vaiz/nfs3/pull/188))
+
+### Fixed
+
+- limit RPC records to 256 fragments ([#211](https://github.com/Vaiz/nfs3/pull/211))
+- *(nfs3_client)* refuse RPC reuse after interrupted I/O ([#204](https://github.com/Vaiz/nfs3/pull/204))
+- [**breaking**] enforce XDR bounds for RPC auth, NFS handles, and MOUNT fields ([#191](https://github.com/Vaiz/nfs3/pull/191))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+- remediate dependency advisories and define license policy ([#173](https://github.com/Vaiz/nfs3/pull/173))
+
+### Other
+
+- fix Rust 1.99 Clippy lints in RPC client mock ([#193](https://github.com/Vaiz/nfs3/pull/193))
+
 ## [0.9.1](https://github.com/Vaiz/nfs3/compare/nfs3_client-v0.9.0...nfs3_client-v0.9.1) - 2026-10-21
 
 ### Other

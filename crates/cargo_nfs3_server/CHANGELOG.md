@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Vaiz/nfs3/compare/cargo-nfs3-server-v0.2.3...cargo-nfs3-server-v0.3.0) - 2026-11-28
+
+### Added
+
+- [**breaking**] bytes-based XDR codec with shared READ/WRITE payloads ([#187](https://github.com/Vaiz/nfs3/pull/187))
+- simplify standard trait implementations with derive-where ([#188](https://github.com/Vaiz/nfs3/pull/188))
+- *(nfs3_server)* add a typed TCP listener builder ([#184](https://github.com/Vaiz/nfs3/pull/184))
+
+### Fixed
+
+- preserve MirrorFS file contents on unchecked create ([#212](https://github.com/Vaiz/nfs3/pull/212))
+- *(cli)* sync MirrorFS writes before reporting FILE_SYNC ([#201](https://github.com/Vaiz/nfs3/pull/201))
+- cap NFS READ counts before calling the VFS ([#189](https://github.com/Vaiz/nfs3/pull/189))
+- cap incoming RPC records in the CLI and server examples ([#185](https://github.com/Vaiz/nfs3/pull/185))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
+### Other
+
+- [**breaking**] bump MSRV to Rust 1.95 ([#171](https://github.com/Vaiz/nfs3/pull/171))
+
 ### Fixed
 
 - MirrorFS synchronizes each write to stable storage before returning `FILE_SYNC`.
