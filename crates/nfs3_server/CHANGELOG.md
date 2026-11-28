@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.11.1...nfs3_server-v0.12.0) - 2026-11-28
+
+### Added
+
+- [**breaking**] bytes-based XDR codec with shared READ/WRITE payloads ([#187](https://github.com/Vaiz/nfs3/pull/187))
+- simplify standard trait implementations with derive-where ([#188](https://github.com/Vaiz/nfs3/pull/188))
+- *(nfs3_server)* add a typed TCP listener builder ([#184](https://github.com/Vaiz/nfs3/pull/184))
+- *(nfs3_server)* read RPC records directly from TCP sockets ([#182](https://github.com/Vaiz/nfs3/pull/182))
+- *(nfs3_server)* add support for limiting the size of incoming RPC messages ([#181](https://github.com/Vaiz/nfs3/pull/181))
+
+### Fixed
+
+- preserve MirrorFS file contents on unchecked create ([#212](https://github.com/Vaiz/nfs3/pull/212))
+- limit RPC records to 256 fragments ([#211](https://github.com/Vaiz/nfs3/pull/211))
+- *(nfs3_server)* return NFS3ERR_ROFS for MKNOD and LINK on read-only filesystems ([#207](https://github.com/Vaiz/nfs3/pull/207))
+- *(server)* keep the TCP listener running after recoverable accept errors ([#203](https://github.com/Vaiz/nfs3/pull/203))
+- [**breaking**] bound MOUNT authentication flavors ([#197](https://github.com/Vaiz/nfs3/pull/197))
+- [**breaking**] enforce XDR bounds for RPC auth, NFS handles, and MOUNT fields ([#191](https://github.com/Vaiz/nfs3/pull/191))
+- cap NFS READ counts before calling the VFS ([#189](https://github.com/Vaiz/nfs3/pull/189))
+- cap incoming RPC records in the CLI and server examples ([#185](https://github.com/Vaiz/nfs3/pull/185))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
+### Other
+
+- add UUID file handle example to nfs3_server ([#213](https://github.com/Vaiz/nfs3/pull/213))
+- update authors for nfs3_server ([#206](https://github.com/Vaiz/nfs3/pull/206))
+- *(nfs3_server)* keep UNIX credentials local to RPC dispatch ([#205](https://github.com/Vaiz/nfs3/pull/205))
+- *(types)* store small bounded XDR opaques inline ([#196](https://github.com/Vaiz/nfs3/pull/196))
+- [**breaking**] bump MSRV to Rust 1.95 ([#171](https://github.com/Vaiz/nfs3/pull/171))
+
 ## [0.11.1](https://github.com/Vaiz/nfs3/compare/nfs3_server-v0.11.0...nfs3_server-v0.11.1) - 2026-10-21
 
 ### Added

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.3...nfs3_types-v0.6.0) - 2026-11-28
+
+### Added
+
+- [**breaking**] bytes-based XDR codec with shared READ/WRITE payloads ([#187](https://github.com/Vaiz/nfs3/pull/187))
+- simplify standard trait implementations with derive-where ([#188](https://github.com/Vaiz/nfs3/pull/188))
+
+### Fixed
+
+- limit RPC records to 256 fragments ([#211](https://github.com/Vaiz/nfs3/pull/211))
+- [**breaking**] bound MOUNT authentication flavors ([#197](https://github.com/Vaiz/nfs3/pull/197))
+- [**breaking**] enforce XDR bounds for RPC auth, NFS handles, and MOUNT fields ([#191](https://github.com/Vaiz/nfs3/pull/191))
+- apply recommended Clippy lints workspace-wide ([#177](https://github.com/Vaiz/nfs3/pull/177))
+
+### Other
+
+- *(types)* inline short opaques and reuse XDR padding ([#202](https://github.com/Vaiz/nfs3/pull/202))
+- *(types)* store small bounded XDR opaques inline ([#196](https://github.com/Vaiz/nfs3/pull/196))
+- fix Clippy lint in XDR encoder assertion ([#192](https://github.com/Vaiz/nfs3/pull/192))
+
 ## [0.5.3](https://github.com/Vaiz/nfs3/compare/nfs3_types-v0.5.2...nfs3_types-v0.5.3) - 2026-10-21
 
 ### Other
