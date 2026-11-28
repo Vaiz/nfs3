@@ -17,6 +17,8 @@ pub struct RPCContext<T: NfsFileSystem> {
     pub vfs: Arc<T>,
     pub mount_signal: Option<mpsc::Sender<bool>>,
     pub(crate) export_path: dirpath<'static>,
+    pub(crate) hide_exports: bool,
+    pub(crate) exact_export_match: bool,
     pub transaction_tracker: Arc<TransactionTracker>,
     pub(crate) read_limit: u32,
     #[derive_where(skip(Debug))]
@@ -59,6 +61,8 @@ where
             vfs,
             mount_signal: None,
             export_path: normalized_export_path(export_name)?,
+            hide_exports: false,
+            exact_export_match: false,
             transaction_tracker: Arc::new(TransactionTracker::new(
                 std::time::Duration::from_mins(1),
                 256,
@@ -70,6 +74,7 @@ where
     }
     #[must_use]
     pub fn root_dir(&self) -> nfs3_types::nfs3::nfs_fh3 {
-        self.file_handle_converter.fh_to_nfs(&self.vfs.root_dir())
+        self.vfs
+            .encode_handle(&self.file_handle_converter, &self.vfs.root_dir())
     }
 }

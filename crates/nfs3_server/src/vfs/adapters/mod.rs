@@ -6,11 +6,12 @@ mod iterator;
 
 use bytes::Bytes;
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::nfs3::{FSINFO3resok, fattr3, filename3, nfsstat3, post_op_attr, sattr3};
+use nfs3_types::mount::mountstat3;
+use nfs3_types::nfs3::{FSINFO3resok, fattr3, filename3, nfs_fh3, nfsstat3, post_op_attr, sattr3};
 
 use super::{
-    DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
-    ReadDirPlusIterator, VFSCapabilities,
+    DirEntryPlus, FileHandleConverter, NextResult, NfsFileSystem, NfsReadFileSystem,
+    ReadDirIterator, ReadDirPlusIterator, VFSCapabilities,
 };
 use crate::vfs::FileHandle;
 
@@ -39,6 +40,27 @@ where
 
     fn authorize(&self, auth: Option<&nfs3_types::rpc::auth_unix>) -> bool {
         self.0.authorize(auth)
+    }
+
+    fn encode_handle(&self, converter: &FileHandleConverter, handle: &Self::Handle) -> nfs_fh3 {
+        self.0.encode_handle(converter, handle)
+    }
+
+    fn decode_handle(
+        &self,
+        converter: &FileHandleConverter,
+        fh: &nfs_fh3,
+    ) -> Result<Self::Handle, nfsstat3> {
+        self.0.decode_handle(converter, fh)
+    }
+
+    async fn mount(
+        &self,
+        export_name: &str,
+        path: &str,
+        exact_export_match: bool,
+    ) -> Result<Self::Handle, mountstat3> {
+        self.0.mount(export_name, path, exact_export_match).await
     }
 
     fn root_dir(&self) -> Self::Handle {
