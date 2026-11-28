@@ -335,8 +335,12 @@ impl MirrorFs {
             }
             CreateFSObject::File(setattr) => {
                 debug!("create {:?}", path);
-                let file =
-                    std::fs::File::create(&path).map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
+                let file = std::fs::File::options()
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(&path)
+                    .map_err(|_io_error| nfsstat3::NFS3ERR_IO)?;
                 let _ = file_setattr(&file, setattr).await;
             }
             CreateFSObject::Exclusive => {
