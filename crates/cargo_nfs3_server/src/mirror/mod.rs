@@ -285,7 +285,12 @@ impl NfsFileSystem for Fs {
         let file_path = dir_path.join(filename.as_os_str());
 
         async {
-            let file = tokio::fs::File::create(&file_path).await?;
+            let file = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&file_path)
+                .await?;
             if let set_size3::Some(size) = attr.size {
                 file.set_len(size).await?;
             }
@@ -504,6 +509,43 @@ mod tests {
         let fs = Fs::new(&root_path);
         let root_handle = fs.root_dir();
         (temp_dir, fs, root_handle)
+    }
+
+    #[tokio::test]
+    async fn unchecked_create_without_size_preserves_existing_content() {
+        let (temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let (_, attr) = fs
+            .create(&root, &b"file.txt".as_slice().into(), sattr3::default())
+            .await
+            .expect("create existing file");
+
+        assert_eq!(attr.size, 7);
+        assert_eq!(
+            fs::read(temp_dir.path().join("file.txt")).await.unwrap(),
+            b"content"
+        );
+    }
+
+    #[tokio::test]
+    async fn unchecked_create_with_smaller_size_preserves_existing_prefix() {
+        let (temp_dir, fs, root) = create_test_fs_with_files(&["file.txt"]).await;
+        let (_, attr) = fs
+            .create(
+                &root,
+                &b"file.txt".as_slice().into(),
+                sattr3 {
+                    size: set_size3::Some(3),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("resize existing file");
+
+        assert_eq!(attr.size, 3);
+        assert_eq!(
+            fs::read(temp_dir.path().join("file.txt")).await.unwrap(),
+            b"con"
+        );
     }
 
     #[tokio::test]
