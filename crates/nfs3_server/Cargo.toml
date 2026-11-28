@@ -39,6 +39,7 @@ libc.workspace = true
 windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 
 [dev-dependencies]
+uuid.workspace = true
 future_assert.workspace = true
 tracing-subscriber = { workspace = true, features = ["tracing-log"] }
 intaglio.workspace = true

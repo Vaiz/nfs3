@@ -1015,6 +1015,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "windows-sys",
 ]
 
@@ -1041,7 +1042,6 @@ dependencies = [
  "bytes",
  "derive-where",
  "nfs3_macros",
- "uuid",
 ]
 
 [[package]]
