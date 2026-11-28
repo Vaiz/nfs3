@@ -30,8 +30,9 @@ pub use handle::{FileHandle, FileHandleBytes, FileHandleU64};
 pub use iterator::*;
 
 use crate::nfs3_types::nfs3::{
+    ACCESS3_DELETE, ACCESS3_EXECUTE, ACCESS3_EXTEND, ACCESS3_LOOKUP, ACCESS3_MODIFY, ACCESS3_READ,
     FSF3_CANSETTIME, FSF3_HOMOGENEOUS, FSF3_SYMLINK, FSINFO3resok as fsinfo3, createverf3, fattr3,
-    filename3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
+    filename3, ftype3, nfspath3, nfsstat3, nfstime3, post_op_attr, sattr3, stable_how,
 };
 use crate::nfs3_types::rpc::auth_unix;
 use crate::units::{GIBIBYTE, MEBIBYTE};
@@ -63,6 +64,92 @@ pub trait NfsReadFileSystem: Send + Sync {
     fn authorize(&self, auth: Option<&auth_unix>) -> bool {
         let _ = auth;
         true
+    }
+
+    /// Computes POSIX access bits for `auth` on `id`, returning post-op attributes and granted
+    /// bits. Errors from resolving `id` are returned rather than swallowed.
+    fn access(
+        &self,
+        id: &Self::Handle,
+        auth: Option<&auth_unix>,
+        requested: u32,
+        capabilities: VFSCapabilities,
+    ) -> impl Future<Output = Result<(fattr3, u32), nfsstat3>> + Send {
+        async move {
+            let attr = self.getattr(id).await?;
+            let granted = posix_access(&attr, auth, requested, capabilities);
+            Ok((attr, granted))
+        }
+    }
+
+    /// Look up `filename` in `dirid`, returning `(child_handle, child_attr, dir_attr)`.
+    fn lookup_with_attr(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+        auth: Option<&auth_unix>,
+    ) -> impl Future<
+        Output = Result<(Self::Handle, post_op_attr, post_op_attr), (nfsstat3, post_op_attr)>,
+    > + Send {
+        let _ = auth;
+        async move {
+            let dir_attr = self
+                .getattr(dirid)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
+            match self.lookup(dirid, filename).await {
+                Ok(fid) => {
+                    let obj_attr = self
+                        .getattr(&fid)
+                        .await
+                        .map_or(post_op_attr::None, post_op_attr::Some);
+                    Ok((fid, obj_attr, dir_attr))
+                }
+                Err(stat) => Err((stat, dir_attr)),
+            }
+        }
+    }
+
+    /// Reads bytes and post-op attributes for `id` in a single request.
+    fn read_with_attr(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        count: u32,
+        auth: Option<&auth_unix>,
+    ) -> impl Future<Output = Result<(post_op_attr, Bytes, bool), (nfsstat3, post_op_attr)>> + Send
+    {
+        let _ = auth;
+        async move {
+            let attr = self
+                .getattr(id)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
+            match self.read(id, offset, count).await {
+                Ok((bytes, eof)) => Ok((attr, bytes, eof)),
+                Err(stat) => Err((stat, attr)),
+            }
+        }
+    }
+
+    /// Reads a symlink target and post-op attributes for `id` in a single request.
+    fn readlink_with_attr(
+        &self,
+        id: &Self::Handle,
+        auth: Option<&auth_unix>,
+    ) -> impl Future<Output = Result<(post_op_attr, nfspath3<'_>), (nfsstat3, post_op_attr)>> + Send
+    {
+        let _ = auth;
+        async move {
+            let attr = self
+                .getattr(id)
+                .await
+                .map_or(post_op_attr::None, post_op_attr::Some);
+            match self.readlink(id).await {
+                Ok(target) => Ok((attr, target)),
+                Err(stat) => Err((stat, attr)),
+            }
+        }
     }
 
     /// Look up the id of a path in a directory
@@ -331,4 +418,173 @@ pub trait NfsFileSystem: NfsReadFileSystem {
         offset: u64,
         count: u32,
     ) -> impl Future<Output = Result<(), nfsstat3>> + Send;
+}
+
+/// Computes POSIX `ACCESS` bits from `attr`, `auth`, and filesystem capabilities.
+#[must_use]
+pub fn posix_access(
+    attr: &fattr3,
+    auth: Option<&auth_unix>,
+    requested: u32,
+    capabilities: VFSCapabilities,
+) -> u32 {
+    let mode = attr.mode;
+    let is_dir = matches!(attr.type_, ftype3::NF3DIR);
+    let is_reg = matches!(attr.type_, ftype3::NF3REG);
+    let (can_read, can_write, can_exec) = match auth {
+        Some(auth) if auth.uid == 0 => {
+            let exec = if is_dir {
+                true
+            } else if is_reg {
+                (mode & 0o111) != 0
+            } else {
+                false
+            };
+            (true, true, exec)
+        }
+        Some(auth) => {
+            let triad = if auth.uid == attr.uid {
+                (mode >> 6) & 0o7
+            } else if auth.gid == attr.gid || auth.gids.contains(&attr.gid) {
+                (mode >> 3) & 0o7
+            } else {
+                mode & 0o7
+            };
+            ((triad & 0o4) != 0, (triad & 0o2) != 0, (triad & 0o1) != 0)
+        }
+        None => {
+            let triad = mode & 0o7;
+            ((triad & 0o4) != 0, (triad & 0o2) != 0, (triad & 0o1) != 0)
+        }
+    };
+
+    let mut granted = 0u32;
+    if can_read {
+        granted |= ACCESS3_READ;
+    }
+    if is_dir && can_exec {
+        granted |= ACCESS3_LOOKUP;
+    }
+    if is_reg && can_exec {
+        granted |= ACCESS3_EXECUTE;
+    }
+    if matches!(capabilities, VFSCapabilities::ReadWrite) && can_write {
+        granted |= ACCESS3_MODIFY | ACCESS3_EXTEND;
+        if is_dir {
+            granted |= ACCESS3_DELETE;
+        }
+    }
+    requested & granted
+}
+
+#[cfg(test)]
+mod tests {
+    use nfs3_types::nfs3::specdata3;
+    use nfs3_types::xdr_codec::BoundedVec;
+
+    use super::*;
+
+    const ALL_ACCESS: u32 = ACCESS3_READ
+        | ACCESS3_LOOKUP
+        | ACCESS3_MODIFY
+        | ACCESS3_EXTEND
+        | ACCESS3_DELETE
+        | ACCESS3_EXECUTE;
+
+    fn make_attr(type_: ftype3, mode: u32, uid: u32, gid: u32) -> fattr3 {
+        fattr3 {
+            type_,
+            mode,
+            nlink: 1,
+            uid,
+            gid,
+            size: 0,
+            used: 0,
+            rdev: specdata3::default(),
+            fsid: 0,
+            fileid: 1,
+            atime: nfstime3::default(),
+            mtime: nfstime3::default(),
+            ctime: nfstime3::default(),
+        }
+    }
+
+    fn make_auth(uid: u32, gid: u32, gids: &[u32]) -> auth_unix {
+        auth_unix {
+            uid,
+            gid,
+            gids: BoundedVec::try_from(gids.to_vec()).expect("test gids fit"),
+            ..auth_unix::default()
+        }
+    }
+
+    #[test]
+    fn posix_access_checks_owner_group_supplementary_and_other() {
+        let attr = make_attr(ftype3::NF3REG, 0o754, 1000, 2000);
+        let owner = make_auth(1000, 3000, &[]);
+        let group = make_auth(1001, 2000, &[]);
+        let supp = make_auth(1001, 3000, &[2000]);
+        let other = make_auth(1001, 3000, &[]);
+
+        assert_eq!(
+            posix_access(&attr, Some(&owner), ALL_ACCESS, VFSCapabilities::ReadWrite),
+            ACCESS3_READ | ACCESS3_EXECUTE | ACCESS3_MODIFY | ACCESS3_EXTEND
+        );
+        assert_eq!(
+            posix_access(&attr, Some(&owner), ALL_ACCESS, VFSCapabilities::ReadOnly),
+            ACCESS3_READ | ACCESS3_EXECUTE
+        );
+        assert_eq!(
+            posix_access(&attr, Some(&group), ALL_ACCESS, VFSCapabilities::ReadWrite),
+            ACCESS3_READ | ACCESS3_EXECUTE
+        );
+        assert_eq!(
+            posix_access(&attr, Some(&supp), ALL_ACCESS, VFSCapabilities::ReadWrite),
+            ACCESS3_READ | ACCESS3_EXECUTE
+        );
+        assert_eq!(
+            posix_access(&attr, Some(&other), ALL_ACCESS, VFSCapabilities::ReadWrite),
+            ACCESS3_READ
+        );
+        assert_eq!(
+            posix_access(&attr, None, ALL_ACCESS, VFSCapabilities::ReadWrite),
+            ACCESS3_READ
+        );
+    }
+
+    #[test]
+    fn posix_access_root_requires_exec_bit_on_regular_files() {
+        let root = make_auth(0, 0, &[]);
+        let non_exec_file = make_attr(ftype3::NF3REG, 0o644, 1000, 1000);
+        let exec_file = make_attr(ftype3::NF3REG, 0o641, 1000, 1000);
+        let zero_dir = make_attr(ftype3::NF3DIR, 0o000, 1000, 1000);
+
+        assert_eq!(
+            posix_access(
+                &non_exec_file,
+                Some(&root),
+                ALL_ACCESS,
+                VFSCapabilities::ReadOnly
+            ),
+            ACCESS3_READ
+        );
+        assert_eq!(
+            posix_access(
+                &exec_file,
+                Some(&root),
+                ALL_ACCESS,
+                VFSCapabilities::ReadOnly
+            ),
+            ACCESS3_READ | ACCESS3_EXECUTE
+        );
+        assert_eq!(
+            posix_access(
+                &zero_dir,
+                Some(&root),
+                ALL_ACCESS,
+                VFSCapabilities::ReadWrite
+            ),
+            ACCESS3_READ | ACCESS3_LOOKUP | ACCESS3_MODIFY | ACCESS3_EXTEND | ACCESS3_DELETE
+        );
+    }
 }

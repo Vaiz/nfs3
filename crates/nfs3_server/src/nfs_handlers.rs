@@ -12,14 +12,14 @@
     )
 )]
 use nfs3_types::nfs3::*;
-use nfs3_types::rpc::accept_stat_data;
+use nfs3_types::rpc::{accept_stat_data, auth_unix};
 use nfs3_types::xdr_codec::{BoundedList, Decoder, Opaque, Pack, Unpack, Void};
 use tracing::{debug, error, trace, warn};
 
 use crate::context::RPCContext;
 use crate::nfs_ext::{BoundedEntryPlusList, CookieVerfExt};
 use crate::rpcwire::call::{RpcCall, RpcCallOutcome};
-use crate::rpcwire::handle;
+use crate::rpcwire::{handle, handle_with_auth};
 use crate::units::{GIBIBYTE, TEBIBYTE};
 use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 
@@ -32,6 +32,7 @@ use crate::vfs::{NextResult, NfsFileSystem, VFSCapabilities};
 )]
 pub(crate) async fn handle_nfs<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     message: RpcCall,
     args: Decoder,
 ) -> anyhow::Result<RpcCallOutcome>
@@ -61,10 +62,10 @@ where
     match proc {
         NFSPROC3_NULL => handle(context, message, args, nfsproc3_null).await,
         NFSPROC3_GETATTR => handle(context, message, args, nfsproc3_getattr).await,
-        NFSPROC3_LOOKUP => handle(context, message, args, nfsproc3_lookup).await,
-        NFSPROC3_READ => handle(context, message, args, nfsproc3_read).await,
+        NFSPROC3_LOOKUP => handle_with_auth(context, auth, message, args, nfsproc3_lookup).await,
+        NFSPROC3_READ => handle_with_auth(context, auth, message, args, nfsproc3_read).await,
         NFSPROC3_FSINFO => handle(context, message, args, nfsproc3_fsinfo).await,
-        NFSPROC3_ACCESS => handle(context, message, args, nfsproc3_access).await,
+        NFSPROC3_ACCESS => handle_with_auth(context, auth, message, args, nfsproc3_access).await,
         NFSPROC3_PATHCONF => handle(context, message, args, nfsproc3_pathconf).await,
         NFSPROC3_FSSTAT => handle(context, message, args, nfsproc3_fsstat).await,
         NFSPROC3_READDIR => handle(context, message, args, nfsproc3_readdir).await,
@@ -76,7 +77,9 @@ where
         NFSPROC3_RENAME => handle(context, message, args, nfsproc3_rename).await,
         NFSPROC3_MKDIR => handle(context, message, args, nfsproc3_mkdir).await,
         NFSPROC3_SYMLINK => handle(context, message, args, nfsproc3_symlink).await,
-        NFSPROC3_READLINK => handle(context, message, args, nfsproc3_readlink).await,
+        NFSPROC3_READLINK => {
+            handle_with_auth(context, auth, message, args, nfsproc3_readlink).await
+        }
         NFSPROC3_COMMIT => handle(context, message, args, nfsproc3_commit).await,
         NFSPROC3_MKNOD => handle(context, message, args, nfsproc3_mknod).await,
         NFSPROC3_LINK => handle(context, message, args, nfsproc3_link).await,
@@ -127,6 +130,7 @@ where
 
 async fn nfsproc3_lookup<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     xid: u32,
     lookup3args: LOOKUP3args<'_>,
 ) -> LOOKUP3res
@@ -135,10 +139,12 @@ where
 {
     let dirops = lookup3args.what;
     let dirid = fh_to_id!(context, &dirops.dir);
-    let dir_attributes = nfs_option_from_result(context.vfs.getattr(&dirid).await);
-    match context.vfs.lookup(&dirid, &dirops.name).await {
-        Ok(fid) => {
-            let obj_attributes = nfs_option_from_result(context.vfs.getattr(&fid).await);
+    match context
+        .vfs
+        .lookup_with_attr(&dirid, &dirops.name, auth.as_ref())
+        .await
+    {
+        Ok((fid, obj_attributes, dir_attributes)) => {
             debug!("lookup success {} --> {:?}", xid, obj_attributes);
             LOOKUP3res::Ok(LOOKUP3resok {
                 object: context.file_handle_converter.fh_to_nfs(&fid),
@@ -146,8 +152,8 @@ where
                 dir_attributes,
             })
         }
-        Err(stat) => {
-            debug!("lookup error {xid}({:?}) --> {stat}", dirops.name,);
+        Err((stat, dir_attributes)) => {
+            debug!("lookup error {xid}({:?}) --> {stat}", dirops.name);
             LOOKUP3res::Err((stat, LOOKUP3resfail { dir_attributes }))
         }
     }
@@ -155,6 +161,7 @@ where
 
 async fn nfsproc3_read<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     xid: u32,
     read3args: READ3args,
 ) -> READ3res<'static>
@@ -163,10 +170,13 @@ where
 {
     let handle = read3args.file;
     let id = fh_to_id!(context, &handle);
-    let file_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
     let count = read3args.count.min(context.read_limit);
-    match context.vfs.read(&id, read3args.offset, count).await {
-        Ok((bytes, eof)) => {
+    match context
+        .vfs
+        .read_with_attr(&id, read3args.offset, count, auth.as_ref())
+        .await
+    {
+        Ok((file_attributes, bytes, eof)) => {
             debug!(" {xid} --> read {} bytes, eof: {eof}", bytes.len());
             READ3res::Ok(READ3resok {
                 file_attributes,
@@ -175,7 +185,7 @@ where
                 data: Opaque::from_bytes(bytes),
             })
         }
-        Err(stat) => {
+        Err((stat, file_attributes)) => {
             error!("read error {} --> {stat}", xid);
             READ3res::Err((stat, READ3resfail { file_attributes }))
         }
@@ -205,24 +215,35 @@ where
     }
 }
 
-async fn nfsproc3_access<T>(context: RPCContext<T>, xid: u32, args: ACCESS3args) -> ACCESS3res
+async fn nfsproc3_access<T>(
+    context: RPCContext<T>,
+    auth: Option<auth_unix>,
+    xid: u32,
+    args: ACCESS3args,
+) -> ACCESS3res
 where
     T: NfsFileSystem,
 {
     let handle = args.object;
-    let mut access = args.access;
     let id = fh_to_id!(context, &handle);
-    let obj_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
-
-    if !matches!(context.vfs.capabilities(), VFSCapabilities::ReadWrite) {
-        access &= ACCESS3_READ | ACCESS3_LOOKUP | ACCESS3_EXECUTE;
+    let capabilities = context.vfs.capabilities();
+    match context
+        .vfs
+        .access(&id, auth.as_ref(), args.access, capabilities)
+        .await
+    {
+        Ok((attr, access)) => {
+            debug!("access success {xid} --> {access:?}");
+            ACCESS3res::Ok(ACCESS3resok {
+                obj_attributes: post_op_attr::Some(attr),
+                access,
+            })
+        }
+        Err(stat) => {
+            warn!("access error {xid} --> {stat}");
+            ACCESS3res::Err((stat, ACCESS3resfail::default()))
+        }
     }
-
-    debug!("access success {xid} --> {access:?}");
-    ACCESS3res::Ok(ACCESS3resok {
-        obj_attributes,
-        access,
-    })
 }
 
 async fn nfsproc3_pathconf<T>(context: RPCContext<T>, xid: u32, args: PATHCONF3args) -> PATHCONF3res
@@ -975,6 +996,7 @@ where
 
 async fn nfsproc3_readlink<T>(
     context: RPCContext<T>,
+    auth: Option<auth_unix>,
     xid: u32,
     args: READLINK3args,
 ) -> READLINK3res<'static>
@@ -982,17 +1004,16 @@ where
     T: NfsFileSystem,
 {
     let id = fh_to_id!(context, &args.symlink);
-    let symlink_attributes = nfs_option_from_result(context.vfs.getattr(&id).await);
 
-    match context.vfs.readlink(&id).await {
-        Ok(data) => {
+    match context.vfs.readlink_with_attr(&id, auth.as_ref()).await {
+        Ok((symlink_attributes, data)) => {
             debug!("readlink success {xid} --> {data:?}");
             READLINK3res::Ok(READLINK3resok {
                 symlink_attributes,
                 data: data.into_owned(),
             })
         }
-        Err(stat) => {
+        Err((stat, symlink_attributes)) => {
             error!("readlink error {xid} --> {stat}");
             READLINK3res::Err((stat, READLINK3resfail { symlink_attributes }))
         }
