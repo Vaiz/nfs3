@@ -81,7 +81,7 @@ where
     match prog {
         portmap::PROGRAM => portmap_handlers::handle_portmap(context, message, args).await,
         nfs3_types::mount::PROGRAM => mount_handlers::handle_mount(context, message, args).await,
-        nfs::PROGRAM => nfs_handlers::handle_nfs(context, message, args).await,
+        nfs::PROGRAM => nfs_handlers::handle_nfs(context, auth, message, args).await,
         NFS_ACL_PROGRAM | NFS_ID_MAP_PROGRAM | NFS_METADATA_PROGRAM => {
             trace!("ignoring NFS_ACL packet");
             message.into_error_reply(accept_stat_data::PROG_UNAVAIL)
@@ -114,6 +114,31 @@ where
     };
 
     let result = handler(context, message.xid(), args).await;
+    message.into_success_reply(&result)
+}
+
+/// Handles an RPC message, passing decoded `AUTH_UNIX` credentials to the handler.
+pub(crate) async fn handle_with_auth<I, O, T>(
+    context: RPCContext<T>,
+    auth: Option<auth_unix>,
+    message: RpcCall,
+    args: Decoder,
+    handler: impl AsyncFnOnce(RPCContext<T>, Option<auth_unix>, u32, I) -> O,
+) -> anyhow::Result<RpcCallOutcome>
+where
+    I: Unpack,
+    O: Pack + Send + 'static,
+    T: NfsFileSystem,
+{
+    let args = match unpack_exact::<I>(args) {
+        Ok(args) => args,
+        Err(err) => {
+            error!("Failed to unpack message: {err}");
+            return message.into_error_reply(accept_stat_data::GARBAGE_ARGS);
+        }
+    };
+
+    let result = handler(context, auth, message.xid(), args).await;
     message.into_success_reply(&result)
 }
 

@@ -6,7 +6,9 @@ mod iterator;
 
 use bytes::Bytes;
 pub use iterator::ReadDirPlusToReadDir;
-use nfs3_types::nfs3::{FSINFO3resok, fattr3, filename3, nfsstat3, post_op_attr, sattr3};
+use nfs3_types::nfs3::{
+    FSINFO3resok, cookieverf3, fattr3, filename3, nfsstat3, post_op_attr, sattr3,
+};
 
 use super::{
     DirEntryPlus, NextResult, NfsFileSystem, NfsReadFileSystem, ReadDirIterator,
@@ -39,6 +41,125 @@ where
 
     fn authorize(&self, auth: Option<&nfs3_types::rpc::auth_unix>) -> bool {
         self.0.authorize(auth)
+    }
+
+    async fn access(
+        &self,
+        id: &Self::Handle,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+        requested: u32,
+        _capabilities: VFSCapabilities,
+    ) -> Result<(fattr3, u32), nfsstat3> {
+        let (mut attr, granted) = self
+            .0
+            .access(id, auth, requested, VFSCapabilities::ReadOnly)
+            .await?;
+        remove_write_permissions(&mut attr);
+        Ok((attr, granted))
+    }
+
+    async fn lookup_with_attr(
+        &self,
+        dirid: &Self::Handle,
+        filename: &filename3<'_>,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<(Self::Handle, post_op_attr, post_op_attr), (nfsstat3, post_op_attr)> {
+        match self.0.lookup_with_attr(dirid, filename, auth).await {
+            Ok((fid, mut obj_attr, mut dir_attr)) => {
+                remove_write_permissions_post_op(&mut obj_attr);
+                remove_write_permissions_post_op(&mut dir_attr);
+                Ok((fid, obj_attr, dir_attr))
+            }
+            Err((stat, mut dir_attr)) => {
+                remove_write_permissions_post_op(&mut dir_attr);
+                Err((stat, dir_attr))
+            }
+        }
+    }
+
+    async fn read_with_attr(
+        &self,
+        id: &Self::Handle,
+        offset: u64,
+        count: u32,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<(post_op_attr, Bytes, bool), (nfsstat3, post_op_attr)> {
+        match self.0.read_with_attr(id, offset, count, auth).await {
+            Ok((mut attr, bytes, eof)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, bytes, eof))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
+    }
+
+    async fn readlink_with_attr(
+        &self,
+        id: &Self::Handle,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<(post_op_attr, nfs3_types::nfs3::nfspath3<'_>), (nfsstat3, post_op_attr)> {
+        match self.0.readlink_with_attr(id, auth).await {
+            Ok((mut attr, target)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, target))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
+    }
+
+    async fn readdirplus_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<
+        (
+            post_op_attr,
+            cookieverf3,
+            impl ReadDirPlusIterator<Self::Handle>,
+        ),
+        (nfsstat3, post_op_attr),
+    > {
+        match self
+            .0
+            .readdirplus_verf(dirid, cookie, cookieverf, auth)
+            .await
+        {
+            Ok((mut attr, verf, iter)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, verf, ReadOnlyIterator(iter)))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
+    }
+
+    async fn readdir_verf(
+        &self,
+        dirid: &Self::Handle,
+        cookie: u64,
+        cookieverf: cookieverf3,
+        auth: Option<&nfs3_types::rpc::auth_unix>,
+    ) -> Result<(post_op_attr, cookieverf3, impl ReadDirIterator), (nfsstat3, post_op_attr)> {
+        match self.0.readdir_verf(dirid, cookie, cookieverf, auth).await {
+            Ok((mut attr, verf, iter)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Ok((attr, verf, iter))
+            }
+            Err((stat, mut attr)) => {
+                remove_write_permissions_post_op(&mut attr);
+                Err((stat, attr))
+            }
+        }
     }
 
     fn root_dir(&self) -> Self::Handle {
@@ -216,4 +337,10 @@ where
 
 const fn remove_write_permissions(attr: &mut fattr3) {
     attr.mode &= 0o555; // Read-only permissions
+}
+
+const fn remove_write_permissions_post_op(attr: &mut post_op_attr) {
+    if let post_op_attr::Some(attr) = attr {
+        remove_write_permissions(attr);
+    }
 }

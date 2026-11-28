@@ -7,7 +7,6 @@ pub trait CookieVerfExt {
 
     fn from_attr(dir_attr: &post_op_attr) -> Self;
     fn is_none(&self) -> bool;
-    fn is_some(&self) -> bool;
 }
 
 impl CookieVerfExt for cookieverf3 {
@@ -23,10 +22,6 @@ impl CookieVerfExt for cookieverf3 {
 
     fn is_none(&self) -> bool {
         self == &Self::NONE_COOKIE_VERF
-    }
-
-    fn is_some(&self) -> bool {
-        !self.is_none()
     }
 }
 pub struct BoundedEntryPlusList {
